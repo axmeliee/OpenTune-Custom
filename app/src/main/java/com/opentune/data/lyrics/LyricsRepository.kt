@@ -35,7 +35,8 @@ import okhttp3.Request
 /**
  * Lyrics from LRCLIB (lrclib.net): free, keyless, and mostly line-synced, with
  * word sync for some tracks; from LyricsPlus (see [LyricsPlus]), often word
- * by word; from KuGou (see [KuGou]) and NetEase (see
+ * by word; from SimpMusic (see [SimpMusic]), matched by YouTube video;
+ * from KuGou (see [KuGou]) and NetEase (see
  * [NetEase]), line-synced; and from YouTube Music, unsynced.
  *
  * Every enabled source is asked at once and the answers are read in the
@@ -154,12 +155,13 @@ object LyricsRepository {
     private const val BUDGET_MS = 12_000L
 
     /** Sources whose failure means a plain-text answer may only be standing in. */
-    private val COUNTED = setOf(LyricsSource.LRCLIB, LyricsSource.LYRICSPLUS, LyricsSource.KUGOU, LyricsSource.NETEASE)
+    private val COUNTED = setOf(LyricsSource.LRCLIB, LyricsSource.LYRICSPLUS, LyricsSource.KUGOU, LyricsSource.NETEASE, LyricsSource.SIMPMUSIC)
 
     private suspend fun ask(source: LyricsSource, videoId: String, title: String, artist: String, durationMs: Long): Result<Lyrics?> = runCatching {
         when (source) {
             LyricsSource.LRCLIB -> lookup(title, artist, durationMs)
             LyricsSource.LYRICSPLUS -> LyricsPlus.lookup(title, artist, durationMs)
+            LyricsSource.SIMPMUSIC -> if (!isYouTubeId(videoId)) null else runInterruptible { SimpMusic.lookup(videoId, durationMs) }
             LyricsSource.KUGOU -> runInterruptible { KuGou.lookup(title, artist, durationMs) }
             LyricsSource.NETEASE -> runInterruptible { NetEase.lookup(title, artist, durationMs) }
             LyricsSource.UNISON -> if (!isYouTubeId(videoId)) null else runInterruptible { Unison.lookup(videoId, title, artist, durationMs) }

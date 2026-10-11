@@ -103,6 +103,7 @@ class ChoiceSheetScreenshotTest {
     @Test fun lyricsSources() {
         show { com.opentune.ui.settings.LyricsSourcesDialog(onDismiss = {}) }
         save("lyrics_sources")
+        compose.onNodeWithText("SimpMusic").performScrollTo().assertIsDisplayed()
         compose.onNodeWithText("Romanized lyrics").performScrollTo().assertIsDisplayed()
         compose.waitForIdle()
         save("lyrics_sources_end")
