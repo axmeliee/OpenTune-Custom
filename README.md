@@ -60,6 +60,28 @@ Built with Kotlin, Jetpack Compose and Media3. Android 8.0 and newer.
 
 Each release lists SHA-256 checksums of its APKs in `SHA256SUMS.txt`.
 
+### iPhone and iPad (early)
+
+There's a first iOS version, written natively in SwiftUI: Home, search,
+album, playlist and artist pages, a full player with synced lyrics and a
+queue you can edit, radio once the queue runs out, background play,
+lock-screen controls, AirPlay, likes and history. Downloads, the
+equalizer and the other Android extras aren't in it yet.
+
+It isn't on the App Store, and Apple doesn't allow apps like it there, so
+it's installed the way other open-source iOS apps are:
+
+1. Download `OpenTune-iOS-v…-unsigned.ipa` from the
+   [latest release](https://github.com/justshivv/Opentune/releases/latest).
+2. Install it with [AltStore](https://altstore.io) or
+   [SideStore](https://sidestore.io) (on the phone), or
+   [Sideloadly](https://sideloadly.io) (from a computer). They sign it with
+   your own Apple ID.
+3. With a free Apple ID the app has to be re-signed every 7 days, which
+   AltStore and SideStore do for you in the background.
+
+iOS 16 or newer.
+
 ## Highlights
 
 - **No ads in the app, no account, no server.** Signing in is optional and
@@ -586,7 +608,12 @@ app/src/main/java/com/opentune/
   playback/         PlaybackService (ExoPlayer, cache, loudness, upgrade, sleep timer),
                     Crossfade, DSP
   ui/               Compose screens: home, explore, search, library, player, settings
-docs/               README banner, screenshots and the 30-second video
+ios/
+  OpenTuneCore/     Swift package: YouTube Music client and parsers, LRCLIB lyrics,
+                    likes and history (Foundation only; `swift test` runs on Linux too)
+  OpenTune/         SwiftUI app: screens, AVPlayer playback, lock screen, AirPlay
+  project.yml       XcodeGen project (`xcodegen generate`, then open in Xcode)
+docs/               README banner, screenshots and the 40-second video
 ```
 
 The README's screenshots are drawn from the app's own screens by
