@@ -109,6 +109,32 @@ class ChoiceSheetScreenshotTest {
         save("lyrics_sources_end")
     }
 
+    @Test fun resetLyricsOptionsKeepsPerSongChoicesAndTiming() {
+        val saved = com.opentune.data.settings.AppSettings.lyrics.value
+        val id = "4NRXx6U8ABQ"
+        val source = com.opentune.data.settings.LyricsSource.SIMPMUSIC
+        try {
+            com.opentune.data.settings.AppSettings.updateLyrics { it.copy(
+                sources = listOf(com.opentune.data.settings.LyricsSourceEntry(source, enabled = false)),
+                preferWordSynced = false,
+                romanize = false,
+                offsets = mapOf(id to 500L),
+                chosen = mapOf(id to source),
+            ) }
+            show { com.opentune.ui.settings.LyricsSourcesDialog(onDismiss = {}) }
+            compose.onNodeWithText("Reset to default").performClick()
+            compose.waitForIdle()
+            val reset = com.opentune.data.settings.AppSettings.lyrics.value
+            assertEquals(com.opentune.data.settings.DEFAULT_LYRICS_SOURCES, reset.sources)
+            assertTrue(reset.preferWordSynced)
+            assertTrue(reset.romanize)
+            assertEquals(mapOf(id to 500L), reset.offsets)
+            assertEquals(mapOf(id to source), reset.chosen)
+        } finally {
+            com.opentune.data.settings.AppSettings.updateLyrics { saved }
+        }
+    }
+
     @Test fun remix() {
         show { RemixSheet(onDismiss = {}) }
         save("remix_sheet")

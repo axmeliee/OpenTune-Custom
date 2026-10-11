@@ -35,7 +35,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.zIndex
 import com.opentune.data.settings.AppSettings
-import com.opentune.data.settings.DEFAULT_LYRICS_SOURCES
+import com.opentune.data.settings.LyricsSettings
 import com.opentune.data.settings.LyricsSourceEntry
 import com.opentune.ui.components.AppSwitch
 import com.opentune.ui.components.FloatingDialog
@@ -66,7 +66,7 @@ fun LyricsSourcesDialog(onDismiss: () -> Unit) {
         onDismissRequest = onDismiss,
         title = { Text("Lyrics sources", modifier = Modifier.fillMaxWidth(), textAlign = TextAlign.Center) },
         text = {
-            // Seven sources and two switches are taller than a phone's sheet: it scrolls,
+            // The sources and two switches are taller than a phone's sheet: it scrolls,
             // rather than squeezing the last rows. Drag handles still move rows.
             Column(Modifier.verticalScroll(rememberScrollState())) {
                 Text(
@@ -180,7 +180,14 @@ fun LyricsSourcesDialog(onDismiss: () -> Unit) {
         },
         confirmButton = { SheetButton("Done", onClick = onDismiss, closes = true) },
         dismissButton = {
-            SheetButton("Reset to default", onClick = { AppSettings.updateLyrics { it.copy(sources = DEFAULT_LYRICS_SOURCES, preferWordSynced = false) } })
+            SheetButton("Reset to default", onClick = {
+                val defaults = LyricsSettings()
+                AppSettings.updateLyrics { it.copy(
+                    sources = defaults.sources,
+                    preferWordSynced = defaults.preferWordSynced,
+                    romanize = defaults.romanize,
+                ) }
+            })
         },
     )
 }

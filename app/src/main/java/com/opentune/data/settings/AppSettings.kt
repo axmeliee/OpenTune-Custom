@@ -253,7 +253,7 @@ data class PlaybackSettings(
     val noRepeatInSession: Boolean = false,
     /** Whose suggestions autoplay and Home's "Because you played" follow. */
     val recommender: Recommender = Recommender.YOUTUBE,
-    val stopOnTaskRemoved: Boolean = false,
+    val stopOnTaskRemoved: Boolean = true,
     /** Swiping a row queues it to play next; off queues it at the end. */
     val playNextOnSwipe: Boolean = true,
     /** Buffer the next track and resolve its neighbours early, for instant skips. */
@@ -262,7 +262,7 @@ data class PlaybackSettings(
     val qualityUpgrade: Boolean = true,
     /** Community FLAC lookup runs after playback starts. Downloads remain YouTube audio. */
     val losslessStreaming: Boolean = false,
-    val losslessUnmeteredOnly: Boolean = true,
+    val losslessUnmeteredOnly: Boolean = false,
     val losslessHiRes: Boolean = false,
     val jioSaavnQuality: Boolean = false,
     /** Optional base URL implementing Meld's /api/get-music and /api/download-music protocol. */
@@ -497,11 +497,11 @@ data class LyricsSettings(
     /** Tried in this order; the first with lyrics wins unless [preferWordSynced]. */
     val sources: List<LyricsSourceEntry> = DEFAULT_LYRICS_SOURCES,
     /** Keep looking past a line-synced match for word-by-word lyrics. */
-    val preferWordSynced: Boolean = false,
+    val preferWordSynced: Boolean = true,
     /** Per-song timing shift in ms, set from the player's "Lyrics offset". */
     val offsets: Map<String, Long> = emptyMap(),
     /** A line in Latin letters under each one in another script. */
-    val romanize: Boolean = false,
+    val romanize: Boolean = true,
     /** Per-song source picked from the player's "Lyrics source"; the others aren't asked first. */
     val chosen: Map<String, LyricsSource> = emptyMap(),
 ) {
