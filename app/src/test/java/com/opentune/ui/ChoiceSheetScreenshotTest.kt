@@ -17,6 +17,8 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performScrollTo
+import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.performTouchInput
 import androidx.compose.ui.test.swipeUp
 import com.opentune.data.settings.AudioQuality
@@ -95,6 +97,15 @@ class ChoiceSheetScreenshotTest {
             )
         }
         save("confirm_dialog")
+    }
+
+    /** Every row of the lyrics sources sheet keeps its label: the list scrolls rather than squeezing the last ones. */
+    @Test fun lyricsSources() {
+        show { com.opentune.ui.settings.LyricsSourcesDialog(onDismiss = {}) }
+        save("lyrics_sources")
+        compose.onNodeWithText("Romanized lyrics").performScrollTo().assertIsDisplayed()
+        compose.waitForIdle()
+        save("lyrics_sources_end")
     }
 
     @Test fun remix() {

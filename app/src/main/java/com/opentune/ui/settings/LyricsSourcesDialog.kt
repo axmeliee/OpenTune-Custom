@@ -40,6 +40,8 @@ import com.opentune.data.settings.LyricsSourceEntry
 import com.opentune.ui.components.AppSwitch
 import com.opentune.ui.components.FloatingDialog
 import com.opentune.ui.components.SheetButton
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import kotlin.math.roundToInt
 
 private val ROW = 68.dp
@@ -64,7 +66,9 @@ fun LyricsSourcesDialog(onDismiss: () -> Unit) {
         onDismissRequest = onDismiss,
         title = { Text("Lyrics sources", modifier = Modifier.fillMaxWidth(), textAlign = TextAlign.Center) },
         text = {
-            Column {
+            // Seven sources and two switches are taller than a phone's sheet: it scrolls,
+            // rather than squeezing the last rows. Drag handles still move rows.
+            Column(Modifier.verticalScroll(rememberScrollState())) {
                 Text(
                     "Sources are tried in this order. Drag to reorder them. The first source with lyrics wins unless word-by-word lyrics are prioritized.",
                     style = MaterialTheme.typography.bodyMedium,
