@@ -11,10 +11,14 @@ import com.opentune.data.download.Downloads
 import com.opentune.data.settings.LyricsSource
 import com.opentune.data.settings.AppSettings
 import kotlin.math.abs
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.runInterruptible
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
@@ -27,12 +31,14 @@ import okhttp3.Request
 
 /**
  * Lyrics from LRCLIB (lrclib.net): free, keyless, and mostly line-synced, with
- * word sync for some tracks; from KuGou (see [KuGou]) and NetEase (see
+ * word sync for some tracks; from LyricsPlus (see [LyricsPlus]), often word
+ * by word; from KuGou (see [KuGou]) and NetEase (see
  * [NetEase]), line-synced; and from YouTube Music, unsynced.
  *
- * Sources are tried in the order set in Settings › Lyrics sources, and
- * plain text never stops the search: every source is asked until one has
- * them synced, and plain text shows only when none does. Within
+ * Every enabled source is asked at once and the answers are read in the
+ * order set in Settings › Lyrics sources. Plain text never stops the search:
+ * the first source in that order with synced lyrics wins, and plain text
+ * shows only when none has them. Within
  * LRCLIB: an exact match on title, artist and duration; then a search on
  * title and artist, preferring synced results whose duration is closest;
  * then a free-text search on the cleaned title. YouTube Music's lyrics are
@@ -71,39 +77,36 @@ object LyricsRepository {
         val settings = AppSettings.lyrics.value
         val key = "$videoId|${settings.ordered.filter { it.enabled }.joinToString(",") { it.source.name }}|${settings.preferWordSynced}"
         if (cache.containsKey(key)) return cache[key]
+        val enabled = settings.ordered.filter { it.enabled }.map { it.source }
+        val target = if (settings.preferWordSynced) WORD_SYNCED else LINE_SYNCED
+        // Every source is asked at once, as Echo Music does, and the answers
+        // are read in the user's order: a slow source no longer holds up the
+        // ones after it, and the order still decides between them.
+        val pending = enabled.map { source -> source to lookups.async { ask(source, videoId, title, artist, durationMs) } }
+        val deadline = System.nanoTime() + BUDGET_MS * 1_000_000
         var failed = false
-        val result = withContext(Dispatchers.IO) {
-            var best: Lyrics? = null
-            for (entry in settings.ordered) {
-                if (!entry.enabled) continue
-                val found = when (entry.source) {
-                    LyricsSource.LRCLIB -> runCatching { lookup(title, artist, durationMs) }
-                        .onFailure { failed = true; Log.w(TAG, "LRCLIB lookup failed for $videoId", it) }
-                        .getOrNull()
-                    LyricsSource.KUGOU -> runCatching { KuGou.lookup(title, artist, durationMs) }
-                        .onFailure { failed = true; Log.w(TAG, "KuGou lookup failed for $videoId", it) }
-                        .getOrNull()
-                    LyricsSource.NETEASE -> runCatching { NetEase.lookup(title, artist, durationMs) }
-                        .onFailure { failed = true; Log.w(TAG, "NetEase lookup failed for $videoId", it) }
-                        .getOrNull()
-                    LyricsSource.UNISON -> if (!isYouTubeId(videoId)) null else runCatching { Unison.lookup(videoId, title, artist, durationMs) }
-                        .onFailure { Log.w(TAG, "Unison lookup failed for $videoId", it) }
-                        .getOrNull()
-                    LyricsSource.YOUTUBE_CAPTIONS -> if (!isYouTubeId(videoId)) null else runCatching { YouTubeCaptions.lookup(videoId) }
-                        .onFailure { Log.w(TAG, "YouTube captions failed for $videoId", it) }
-                        .getOrNull()
-                    LyricsSource.YOUTUBE_MUSIC -> if (!isYouTubeId(videoId)) null else runCatching { youTubeMusic(videoId) }
-                        .onFailure { Log.w(TAG, "YouTube Music lyrics failed for $videoId", it) }
-                        .getOrNull()
-                } ?: continue
+        var best: Lyrics? = null
+        try {
+            for ((source, answer) in pending) {
+                val wait = (deadline - System.nanoTime()) / 1_000_000
+                // Past the budget, only answers already in are read.
+                val outcome = if (answer.isCompleted || wait > 0) withTimeoutOrNull(wait.coerceAtLeast(1)) { answer.await() } else null
+                if (outcome == null || outcome.isFailure) {
+                    if (source in COUNTED) failed = true
+                    outcome?.exceptionOrNull()?.let { Log.w(TAG, "${source.label} lookup failed for $videoId", it) }
+                    continue
+                }
+                val found = outcome.getOrNull() ?: continue
                 if (rank(found) > rank(best)) best = found
                 // The first source with synced lyrics wins (word by word, when
                 // that's wanted). Plain text only holds the place: a later
                 // source may well have the same song in time.
-                if (rank(found) >= (if (settings.preferWordSynced) WORD_SYNCED else LINE_SYNCED)) break
+                if (rank(found) >= target) break
             }
-            best
+        } finally {
+            pending.forEach { it.second.cancel() }
         }
+        val result = best
         // Only remember answers, and only ones matched on the song's length:
         // without it any version's lyrics can match, timed for another cut.
         // Plain text found while a synced source was down isn't kept either,
@@ -121,6 +124,27 @@ object LyricsRepository {
 
     private const val LINE_SYNCED = 2
     private const val WORD_SYNCED = 3
+
+    /** Lookups outlive the caller's wait: a source that's still out is dropped, not waited for. */
+    private val lookups = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+
+    /** How long the sources get, all together, before the best answer in hand is shown. */
+    private const val BUDGET_MS = 12_000L
+
+    /** Sources whose failure means a plain-text answer may only be standing in. */
+    private val COUNTED = setOf(LyricsSource.LRCLIB, LyricsSource.LYRICSPLUS, LyricsSource.KUGOU, LyricsSource.NETEASE)
+
+    private suspend fun ask(source: LyricsSource, videoId: String, title: String, artist: String, durationMs: Long): Result<Lyrics?> = runCatching {
+        when (source) {
+            LyricsSource.LRCLIB -> lookup(title, artist, durationMs)
+            LyricsSource.LYRICSPLUS -> LyricsPlus.lookup(title, artist, durationMs)
+            LyricsSource.KUGOU -> runInterruptible { KuGou.lookup(title, artist, durationMs) }
+            LyricsSource.NETEASE -> runInterruptible { NetEase.lookup(title, artist, durationMs) }
+            LyricsSource.UNISON -> if (!isYouTubeId(videoId)) null else runInterruptible { Unison.lookup(videoId, title, artist, durationMs) }
+            LyricsSource.YOUTUBE_CAPTIONS -> if (!isYouTubeId(videoId)) null else YouTubeCaptions.lookup(videoId)
+            LyricsSource.YOUTUBE_MUSIC -> if (!isYouTubeId(videoId)) null else youTubeMusic(videoId)
+        }
+    }
 
     private suspend fun lookup(title: String, artist: String, durationMs: Long): Lyrics? = coroutineScope {
         val cleaned = TrackNameCleaner.clean(title, artist)

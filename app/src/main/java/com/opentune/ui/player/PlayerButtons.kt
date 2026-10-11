@@ -164,6 +164,9 @@ private fun EchoPlay(playing: Boolean, buffering: Boolean, animate: Boolean, onC
     val interaction = remember { MutableInteractionSource() }
     val press = pressAmount(interaction.collectIsPressedAsState().value, animate)
     val phase = rememberEchoPhase(playing && animate, 8_000)
+    // Its own, quicker clock: the lobes stand still while paused, and a
+    // loading arc that only turned with them looked frozen.
+    val spin = rememberEchoPhase(buffering && animate, 1_100)
     val depth by animateFloatAsState(if (playing) 0.08f else 0f, if (animate) tween(300, easing = LinearEasing) else snap(), label = "echoIndent")
     val fill = MaterialTheme.colorScheme.primary
     val ink = MaterialTheme.colorScheme.onPrimary
@@ -173,7 +176,7 @@ private fun EchoPlay(playing: Boolean, buffering: Boolean, animate: Boolean, onC
             .drawBehind {
                 wavyCircle(path, size, size.minDimension / 2f, depth, phase.value * 360f)
                 drawPath(path, fill)
-                if (buffering) drawArc(ink.copy(alpha = 0.65f), phase.value * 360f, 90f, false,
+                if (buffering) drawArc(ink.copy(alpha = 0.65f), spin.value * 360f - 90f, 90f, false,
                     topLeft = Offset(12.dp.toPx(), 12.dp.toPx()),
                     size = Size(size.width - 24.dp.toPx(), size.height - 24.dp.toPx()),
                     style = Stroke(2.dp.toPx(), cap = StrokeCap.Round))

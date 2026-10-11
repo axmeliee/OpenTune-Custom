@@ -1,6 +1,10 @@
 package com.opentune.ui.player
 
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.shape.CircleShape
@@ -38,6 +42,11 @@ internal fun SourceQualityBadge(mediaId: String, format: AudioFormatInfo?, onCli
         border = BorderStroke(1.dp, colors.outlineVariant.copy(alpha = 0.6f)),
         contentPadding = PaddingValues(horizontal = 14.dp, vertical = 8.dp),
     ) {
+        // Still finding the stream: a turning mark says it's working, not stuck.
+        if (source == null || source.provider.startsWith("Checking highest")) {
+            CircularProgressIndicator(Modifier.size(12.dp), color = colors.primary, strokeWidth = 1.5.dp, trackColor = colors.primary.copy(alpha = 0.2f))
+            Spacer(Modifier.width(8.dp))
+        }
         Text(label, style = MaterialTheme.typography.labelMedium,
             maxLines = 1, overflow = TextOverflow.Ellipsis)
     }

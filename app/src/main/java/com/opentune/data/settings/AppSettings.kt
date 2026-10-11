@@ -480,6 +480,7 @@ enum class LyricsAnimation(val label: String, val summary: String) {
 @Serializable
 enum class LyricsSource(val label: String, val summary: String) {
     LRCLIB("LRCLIB", "Community lyrics, line by line and sometimes word by word"),
+    LYRICSPLUS("LyricsPlus", "Word-by-word lyrics from the servers behind YouLyPlus, as Echo Music uses them"),
     KUGOU("KuGou", "Line-synced lyrics from KuGou's large catalogue, strong on Asian music"),
     NETEASE("NetEase", "Line-synced lyrics from NetEase Cloud Music, a large catalogue of every kind of music"),
     UNISON("Unison", "Better Lyrics' community lyrics, written and timed by its users, often word by word"),
