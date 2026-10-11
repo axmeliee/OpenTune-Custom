@@ -33,7 +33,7 @@ class LosslessMediaItemsTest {
         assertFalse(old.losslessStreaming)
         assertFalse(old.jioSaavnQuality)
         assertEquals("", old.qobuzRelayUrl)
-        assertTrue(old.losslessUnmeteredOnly)
+        assertFalse(old.losslessUnmeteredOnly)
         val settings = old.copy(losslessStreaming = true, losslessHiRes = true, losslessUnmeteredOnly = false,
             jioSaavnQuality = true, qobuzRelayUrl = "https://relay.example")
         assertEquals(settings, Json.decodeFromString<PlaybackSettings>(Json.encodeToString(PlaybackSettings.serializer(), settings)))
