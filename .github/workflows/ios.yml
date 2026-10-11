@@ -62,8 +62,11 @@ jobs:
             MARKETING_VERSION="${{ steps.version.outputs.name }}" \
             CURRENT_PROJECT_VERSION="${{ steps.version.outputs.code }}" \
             CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY="" \
-            build | tee build.log | grep -E "error:|warning: .*deprecated|BUILD (SUCCEEDED|FAILED)" || true
-          test -d build/Build/Products/Release-iphoneos/OpenTune.app || { tail -n 80 build.log; exit 1; }
+            build > build.log 2>&1 && status=0 || status=$?
+          grep -E "error:|BUILD (SUCCEEDED|FAILED)" build.log || true
+          # A failed build still leaves a partial .app behind, so the result is what counts.
+          if [ "$status" -ne 0 ] || ! grep -q "BUILD SUCCEEDED" build.log; then tail -n 80 build.log; exit 1; fi
+          test -x build/Build/Products/Release-iphoneos/OpenTune.app/OpenTune
 
       - name: Package .ipa
         id: ipa

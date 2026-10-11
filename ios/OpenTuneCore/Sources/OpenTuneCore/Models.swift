@@ -62,6 +62,15 @@ public struct ShelfItem: Codable, Hashable, Identifiable, Sendable {
     public var browseId: String?
     public var explicit: Bool
 
+    public init(title: String, subtitle: String, thumbnailUrl: String?, videoId: String?, browseId: String?, explicit: Bool = false) {
+        self.title = title
+        self.subtitle = subtitle
+        self.thumbnailUrl = thumbnailUrl
+        self.videoId = videoId
+        self.browseId = browseId
+        self.explicit = explicit
+    }
+
     public var id: String { videoId.map { "v:\($0)" } ?? browseId.map { "b:\($0)" } ?? "t:\(title)" }
 
     public var type: BrowseType? { browseId.map(BrowseType.of) }
@@ -79,6 +88,14 @@ public struct HomeShelf: Hashable, Identifiable, Sendable {
     public var moreBrowseId: String?
     public var moreParams: String?
     public var id: String { title + (items.first?.id ?? "") }
+
+    public init(title: String, items: [ShelfItem], strapline: String = "", moreBrowseId: String? = nil, moreParams: String? = nil) {
+        self.title = title
+        self.items = items
+        self.strapline = strapline
+        self.moreBrowseId = moreBrowseId
+        self.moreParams = moreParams
+    }
 }
 
 /** An album, artist or playlist row in search. */
