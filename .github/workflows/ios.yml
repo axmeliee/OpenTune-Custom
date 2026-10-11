@@ -1,0 +1,98 @@
+# The iOS app: the core package's tests on Linux, then an unsigned build on
+# macOS packed as an .ipa for sideloading (AltStore, SideStore, Sideloadly
+# re-sign it with the installer's own Apple ID). On main, the .ipa is also
+# attached to the release for the current versionName once that exists.
+name: iOS
+
+on:
+  push:
+    branches: ["**"]
+    paths: ["ios/**", ".github/workflows/ios.yml", "app/build.gradle.kts"]
+  pull_request:
+    paths: ["ios/**", ".github/workflows/ios.yml"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  core:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: Core tests
+        working-directory: ios/OpenTuneCore
+        run: |
+          swift --version
+          swift test
+
+  app:
+    runs-on: macos-15
+    timeout-minutes: 45
+    needs: core
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Version
+        id: version
+        run: |
+          name="$(sed -n 's/.*versionName = "\(.*\)".*/\1/p' app/build.gradle.kts | head -n 1)"
+          code="$(sed -n 's/.*versionCode = \([0-9]*\).*/\1/p' app/build.gradle.kts | head -n 1)"
+          echo "name=$name" >> "$GITHUB_OUTPUT"
+          echo "code=$code" >> "$GITHUB_OUTPUT"
+
+      - name: Generate the Xcode project
+        working-directory: ios
+        run: |
+          brew install xcodegen
+          xcodegen generate
+
+      - name: Build (unsigned)
+        working-directory: ios
+        run: |
+          xcodebuild -version
+          xcodebuild \
+            -project OpenTune.xcodeproj \
+            -scheme OpenTune \
+            -configuration Release \
+            -sdk iphoneos \
+            -destination 'generic/platform=iOS' \
+            -derivedDataPath build \
+            MARKETING_VERSION="${{ steps.version.outputs.name }}" \
+            CURRENT_PROJECT_VERSION="${{ steps.version.outputs.code }}" \
+            CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY="" \
+            build | tee build.log | grep -E "error:|warning: .*deprecated|BUILD (SUCCEEDED|FAILED)" || true
+          test -d build/Build/Products/Release-iphoneos/OpenTune.app || { tail -n 80 build.log; exit 1; }
+
+      - name: Package .ipa
+        id: ipa
+        working-directory: ios
+        run: |
+          file="OpenTune-iOS-v${{ steps.version.outputs.name }}-unsigned.ipa"
+          mkdir -p Payload
+          cp -R build/Build/Products/Release-iphoneos/OpenTune.app Payload/
+          zip -qry "$file" Payload
+          ls -la "$file"
+          echo "file=ios/$file" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: OpenTune-iOS-unsigned
+          path: ${{ steps.ipa.outputs.file }}
+
+      # The Android release workflow makes the release; wait for it, then add the .ipa.
+      - name: Attach to the release
+        if: github.ref == 'refs/heads/main'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          tag="v${{ steps.version.outputs.name }}"
+          for i in $(seq 1 30); do
+            if gh release view "$tag" > /dev/null 2>&1; then
+              gh release upload "$tag" "${{ steps.ipa.outputs.file }}" --clobber
+              exit 0
+            fi
+            sleep 30
+          done
+          echo "No release $tag yet; the .ipa is in this run's artifacts."
