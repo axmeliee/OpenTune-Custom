@@ -470,6 +470,8 @@ fun SeekBar(
     waveVersion: () -> Int = { 0 },
     /** The lyric line sung at a moment, shown above the finger while the bar is dragged. */
     lyricAt: ((Long) -> String?)? = null,
+    /** Where the song's parts (verse, chorus) begin, in ms, marked as small gaps in the track. */
+    marks: List<Long> = emptyList(),
 ) {
     var dragFraction by remember { mutableStateOf<Float?>(null) }
     var scrubStartY by remember { mutableStateOf(0f) }
@@ -483,10 +485,17 @@ fun SeekBar(
     val active = MaterialTheme.colorScheme.onSurface
     val inactive = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.18f)
     val bufferedColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.3f)
+    val markGap = MaterialTheme.colorScheme.surface.copy(alpha = 0.85f)
 
     val seekHaptics = com.opentune.ui.components.rememberHaptics()
     fun fraction(): Float = dragFraction
         ?: if (durationMs > 0) (position().toFloat() / durationMs).coerceIn(0f, 1f) else 0f
+    // Until the song's length is known there's nothing to seek: a band of light runs along the
+    // track instead, so it reads as loading rather than stuck at the start.
+    val loading = durationMs <= 0
+    val sweep = if (loading) rememberInfiniteTransition(label = "seekLoading")
+        .animateFloat(-0.3f, 1.3f, infiniteRepeatable(tween(1_300, easing = LinearEasing)), label = "sweep") else null
+    val sheen = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.55f)
 
     Column(modifier) {
         Box {
@@ -564,6 +573,15 @@ fun SeekBar(
                 return@Canvas
             }
             drawRoundRect(inactive, Offset(0f, y), Size(size.width, h), r)
+            if (sweep != null) {
+                val at = sweep.value * size.width
+                val band = size.width * 0.25f
+                drawRoundRect(
+                    Brush.horizontalGradient(0f to Color.Transparent, 0.5f to sheen, 1f to Color.Transparent, startX = at - band, endX = at + band),
+                    Offset(0f, y), Size(size.width, h), r,
+                )
+                return@Canvas
+            }
             drawRoundRect(bufferedColor, Offset(0f, y), Size(size.width * maxOf(b, f), h), r)
             if (amplitude > 0f) {
                 // Played part as a sine wave, a stroke as thick as the track.
@@ -581,6 +599,11 @@ fun SeekBar(
             } else {
                 drawRoundRect(active, Offset(0f, y), Size(size.width * f, h), r)
             }
+            // A notch where each part of the song begins.
+            if (durationMs > 0) marks.forEach { ms ->
+                val x = size.width * (ms.toFloat() / durationMs)
+                if (x > h && x < size.width - h) drawRect(markGap, Offset(x - 1.dp.toPx(), y - 1f), Size(2.dp.toPx(), h + 2f))
+            }
             if (thumbRadius > 0.dp) drawCircle(active, thumbRadius.toPx(), Offset(size.width * f, size.height / 2))
         }
         }
@@ -589,10 +612,10 @@ fun SeekBar(
             derivedStateOf { ((dragFraction?.times(durationMs)?.toLong() ?: position()) / 1000) }
         }
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-            Text(formatTime(elapsedSeconds * 1000), style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            // Time left, as Apple Music shows it; the total until the length is known.
+            Text(if (loading) "--:--" else formatTime(elapsedSeconds * 1000), style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            // Time left, as Apple Music shows it.
             Text(
-                if (durationMs > 0) "-" + formatTime((durationMs - elapsedSeconds * 1000).coerceAtLeast(0)) else formatTime(0),
+                if (durationMs > 0) "-" + formatTime((durationMs - elapsedSeconds * 1000).coerceAtLeast(0)) else "--:--",
                 style = MaterialTheme.typography.labelMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )

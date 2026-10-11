@@ -19,14 +19,31 @@ data class LyricLine(
      */
     val words: List<LyricWord>,
     val wordSynced: Boolean,
+    /** Who sings it, where the source says: 0 the lead, 1 a second voice in a duet, 2 everyone together. */
+    val voice: Int = VOICE_LEAD,
+    /** Backing vocals sung under this line, shown smaller beneath it. */
+    val background: String? = null,
 )
+
+const val VOICE_LEAD = 0
+const val VOICE_SECOND = 1
+const val VOICE_TOGETHER = 2
+
+/** A named stretch of a song (verse, chorus, bridge) as the lyrics source marks it. */
+@Serializable
+data class SongPart(val name: String, val startMs: Long, val endMs: Long)
 
 @Serializable
 sealed interface Lyrics {
     val source: String
 
     @Serializable
-    data class Synced(val lines: List<LyricLine>, override val source: String) : Lyrics
+    data class Synced(
+        val lines: List<LyricLine>,
+        override val source: String,
+        /** The song's verse, chorus and so on, when the source marks them; see [SongParts]. */
+        val parts: List<SongPart> = emptyList(),
+    ) : Lyrics
 
     @Serializable
     data class Plain(val text: String, override val source: String) : Lyrics

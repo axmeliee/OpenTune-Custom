@@ -24,6 +24,20 @@ class BetterLyricsSourcesTest {
         assertTrue(lines.none { it.wordSynced })
     }
 
+    @Test fun ttmlDuetsAndBackingVocals() {
+        val xml = """<tt xmlns:ttm="http://www.w3.org/ns/ttml#metadata"><head><metadata>
+            <ttm:agent type="person" xml:id="v1"/><ttm:agent type="person" xml:id="v2"/><ttm:agent type="group" xml:id="v1000"/>
+            </metadata></head><body><div>
+            <p begin="1.0" end="3.0" ttm:agent="v1"><span begin="1.0" end="1.5">Hello </span><span begin="1.5" end="2.0">there</span><span ttm:role="x-bg"><span begin="2.0" end="2.5">(hey)</span></span></p>
+            <p begin="3.0" end="5.0" ttm:agent="v2"><span begin="3.0" end="4.0">Hi </span><span begin="4.0" end="5.0">back</span></p>
+            <p begin="5.0" end="7.0" ttm:agent="v1000"><span begin="5.0" end="6.0">All </span><span begin="6.0" end="7.0">together</span></p>
+            </div></body></tt>"""
+        val lines = Ttml.parse(xml)
+        assertEquals(listOf("Hello there", "Hi back", "All together"), lines.map { it.text })
+        assertEquals("(hey)", lines[0].background)
+        assertEquals(listOf(VOICE_LEAD, VOICE_SECOND, VOICE_TOGETHER), lines.map { it.voice })
+    }
+
     @Test fun readsCaptionJsonAndCalmsCapitals() {
         val json = """{"events":[{"tStartMs":1000,"dDurationMs":2000,"segs":[{"utf8":"HELLO "},{"utf8":"THERE"}]},{"tStartMs":4000,"dDurationMs":1000,"segs":[{"utf8":"GOOD\nNIGHT"}]}]}"""
         assertEquals(listOf("Hello there", "Good night"), YouTubeCaptions.parse(json).map { it.text })

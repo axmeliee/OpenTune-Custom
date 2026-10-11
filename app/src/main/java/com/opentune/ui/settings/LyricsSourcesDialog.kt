@@ -156,6 +156,22 @@ fun LyricsSourcesDialog(onDismiss: () -> Unit) {
                     }
                     AppSwitch(settings.preferWordSynced, { v -> AppSettings.updateLyrics { it.copy(preferWordSynced = v) } })
                 }
+                if (com.opentune.data.lyrics.Romanizer.available) {
+                    Row(
+                        Modifier.fillMaxWidth().clickable { AppSettings.updateLyrics { it.copy(romanize = !it.romanize) } }.padding(vertical = 14.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Column(Modifier.weight(1f)) {
+                            Text("Romanized lyrics", style = MaterialTheme.typography.titleMedium)
+                            Text(
+                                "A line in Latin letters under lyrics in Hindi, Korean, Japanese and other scripts",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                        AppSwitch(settings.romanize, { v -> AppSettings.updateLyrics { it.copy(romanize = v) } })
+                    }
+                }
             }
         },
         confirmButton = { SheetButton("Done", onClick = onDismiss, closes = true) },

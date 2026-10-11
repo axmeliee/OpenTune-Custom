@@ -33,6 +33,22 @@ class LyricsPlusTest {
         assertNull(LyricsPlus.parse(resource("lyricsplus-aaja-piya.json"), 290_000))
     }
 
+    @Test fun backingVocalsGoUnderTheirLine() {
+        val lyrics = LyricsPlus.parse(resource("lyricsplus-blinding-lights.json"), 200_000) as Lyrics.Synced
+        val backed = lyrics.lines.filter { it.background != null }
+        assertTrue(backed.isNotEmpty())
+        assertTrue(backed.none { line -> line.words.any { w -> line.background!!.contains(w.text.trim()) && w.text.trim().startsWith("(") } })
+        // One singer: every line is the lead's.
+        assertTrue(lyrics.lines.all { it.voice == VOICE_LEAD })
+    }
+
+    @Test fun singersAreToldApart() {
+        val agents = kotlinx.serialization.json.Json.parseToJsonElement(
+            """{"v1":{"type":"person"},"v2":{"type":"person"},"v1000":{"type":"group"}}""",
+        ) as kotlinx.serialization.json.JsonObject
+        assertEquals(mapOf("v1" to VOICE_LEAD, "v2" to VOICE_SECOND, "v1000" to VOICE_TOGETHER), LyricsPlus.voicesOf(agents))
+    }
+
     @Test fun aMissHasNoLyrics() {
         assertNull(LyricsPlus.parse("""{"error":{"message":"Lyrics not found","status":404}}""", 200_000))
         assertNull(LyricsPlus.parse("not json", 200_000))

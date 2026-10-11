@@ -77,6 +77,12 @@ import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.unit.dp
 import com.opentune.data.lyrics.LyricLine
+import com.opentune.data.lyrics.Romanizer
+import com.opentune.data.lyrics.VOICE_SECOND
+import com.opentune.data.lyrics.VOICE_TOGETHER
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.buildAnnotatedString
+import androidx.compose.ui.text.withStyle
 import com.opentune.data.lyrics.Lyrics
 import com.opentune.data.lyrics.activeIndex
 import com.opentune.ui.LyricsState
@@ -175,7 +181,24 @@ private fun PlainLyrics(text: String, source: String, note: String? = "These lyr
             )
         }
         val style = lyricsStyle()
-        Text(text, Modifier.fillMaxWidth(), style = style.copy(fontSize = style.fontSize * 0.8f, lineHeight = style.lineHeight * 0.85f))
+        val romanize = AppSettings.lyrics.collectAsState().value.romanize
+        val romanized by androidx.compose.runtime.produceState<List<String?>>(emptyList(), text, romanize) {
+            value = if (!romanize) emptyList() else kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Default) { Romanizer.lines(text.lines()) }
+        }
+        val dimmed = MaterialTheme.colorScheme.onSurfaceVariant
+        val shown = remember(text, romanized, dimmed) {
+            if (romanized.none { it != null }) AnnotatedString(text) else buildAnnotatedString {
+                text.lines().forEachIndexed { i, line ->
+                    if (i > 0) append("\n")
+                    append(line)
+                    romanized.getOrNull(i)?.let { r ->
+                        append("\n")
+                        withStyle(SpanStyle(color = dimmed, fontSize = style.fontSize * 0.5f)) { append(r) }
+                    }
+                }
+            }
+        }
+        Text(shown, Modifier.fillMaxWidth(), style = style.copy(fontSize = style.fontSize * 0.8f, lineHeight = style.lineHeight * 0.85f))
         Credit(source)
     }
 }
@@ -200,6 +223,12 @@ private fun SyncedLyrics(
     val reduced = ui.reduceAnimation || !android.animation.ValueAnimator.areAnimatorsEnabled()
     val animation = if (reduced) LyricsAnimation.MINIMAL else ui.lyricsAnimation
     val listState = rememberLazyListState()
+    val romanize = AppSettings.lyrics.collectAsState().value.romanize
+    val romanized by androidx.compose.runtime.produceState<List<String?>>(emptyList(), lines, romanize) {
+        value = if (!romanize) emptyList() else kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Default) { Romanizer.lines(lines.map { it.text }) }
+    }
+    // Two singers trade lines: the second voice's sit on the other side.
+    val duet = remember(lines) { lines.any { it.voice == VOICE_SECOND } }
     // The position function changes with the lyrics offset; read the latest.
     val pos by rememberUpdatedState(position)
     // A line lights a moment before its timestamp, so it's there as the singer starts it.
@@ -251,6 +280,8 @@ private fun SyncedLyrics(
                     animation = animation,
                     blurEnabled = blur && following,
                     position = position,
+                    romanized = romanized.getOrNull(i),
+                    duet = duet,
                     onClick = {
                         onSeek(line.startMs)
                         following = true
@@ -343,6 +374,8 @@ private fun LyricLineView(
     position: () -> Long,
     onClick: () -> Unit,
     onLongClick: (() -> Unit)? = null,
+    romanized: String? = null,
+    duet: Boolean = false,
 ) {
     val motion = motionOf(animation)
     val bright = MaterialTheme.colorScheme.onSurface
@@ -370,7 +403,15 @@ private fun LyricLineView(
     )
     val ui by AppSettings.ui.collectAsState()
     val centred = ui.lyricsAlign == LyricsAlign.CENTER
-    val base = lyricsStyle()
+    // In a duet the second voice's lines sit on the right and lines sung together in the middle.
+    val align = when {
+        !duet || centred -> if (centred) TextAlign.Center else TextAlign.Start
+        line.voice == VOICE_SECOND -> TextAlign.End
+        line.voice == VOICE_TOGETHER -> TextAlign.Center
+        else -> TextAlign.Start
+    }
+    val origin = when (align) { TextAlign.Center -> 0.5f; TextAlign.End -> 1f; else -> 0f }
+    val base = lyricsStyle().copy(textAlign = align)
     val style = if ((motion.glow || ui.lyricsGlow) && isActive) base.copy(shadow = Shadow(bright.copy(alpha = 0.55f), blurRadius = 24f)) else base
     val text = remember(line) { if (line.words.isEmpty()) line.text else line.words.joinToString("") { it.text } }
     var layout by remember { mutableStateOf<TextLayoutResult?>(null) }
@@ -401,12 +442,8 @@ private fun LyricLineView(
         }
     }
 
-    Text(
-        text = text,
-        style = style,
-        color = if (isActive) bright else dim,
-        onTextLayout = { layout = it },
-        modifier = Modifier
+    Column(
+        Modifier
             .fillMaxWidth()
             .clip(MaterialTheme.shapes.medium)
             .combinedClickable(remember { MutableInteractionSource() }, indication = null, onLongClick = onLongClick, onClick = onClick)
@@ -416,19 +453,45 @@ private fun LyricLineView(
                 scaleY = scale
                 this.alpha = alpha
                 translationX = shift.toPx()
-                transformOrigin = TransformOrigin(if (centred) 0.5f else 0f, 0.5f)
+                transformOrigin = TransformOrigin(origin, 0.5f)
                 // The sweep below cuts into the text's own pixels, so it needs a layer of its own.
                 if (sweep) compositingStrategy = CompositingStrategy.Offscreen
             }
-            .then(if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && blur > 0.dp) Modifier.blur(blur) else Modifier)
-            .then(
-                when {
-                    perWord && words.isNotEmpty() -> Modifier.drawWithContent { drawMovingWords(line, words, position(), motion.word, bright, dim) }
-                    sweep -> Modifier.drawWithContent { drawContent(); sweepWords(line, wordBoxes, position()) }
-                    else -> Modifier
-                },
-            ),
-    )
+            .then(if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && blur > 0.dp) Modifier.blur(blur) else Modifier),
+    ) {
+        Text(
+            text = text,
+            style = style,
+            color = if (isActive) bright else dim,
+            onTextLayout = { layout = it },
+            modifier = Modifier
+                .fillMaxWidth()
+                .then(
+                    when {
+                        perWord && words.isNotEmpty() -> Modifier.drawWithContent { drawMovingWords(line, words, position(), motion.word, bright, dim) }
+                        sweep -> Modifier.drawWithContent { drawContent(); sweepWords(line, wordBoxes, position()) }
+                        else -> Modifier
+                    },
+                ),
+        )
+        // Backing vocals, smaller and softer, under the line they're sung with.
+        line.background?.let {
+            Text(
+                it,
+                style = base.copy(fontSize = base.fontSize * 0.62f, lineHeight = base.lineHeight * 0.62f),
+                color = (if (isActive) bright else dim).copy(alpha = if (isActive) 0.6f else 0.25f),
+                modifier = Modifier.fillMaxWidth().padding(top = 2.dp),
+            )
+        }
+        romanized?.let {
+            Text(
+                it,
+                style = base.copy(fontSize = base.fontSize * 0.5f, lineHeight = base.lineHeight * 0.55f, fontWeight = androidx.compose.ui.text.font.FontWeight.Medium),
+                color = (if (isActive) bright else dim).copy(alpha = if (isActive) 0.75f else 0.3f),
+                modifier = Modifier.fillMaxWidth().padding(top = 4.dp),
+            )
+        }
+    }
 }
 
 /**

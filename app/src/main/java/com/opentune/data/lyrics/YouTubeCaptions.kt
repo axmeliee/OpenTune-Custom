@@ -120,23 +120,42 @@ object Unison {
 
 /** The TTML timed-lyrics format (as Apple Music writes it): `<p begin end>` lines, `<span begin end>` words. */
 internal object Ttml {
-    fun parse(xml: String): List<LyricLine> =
-        Regex("""<p\b([^>]*)>(.*?)</p>""", RegexOption.DOT_MATCHES_ALL).findAll(xml).mapNotNull { p ->
+    fun parse(xml: String): List<LyricLine> {
+        val voices = voicesOf(xml)
+        return Regex("""<p\b([^>]*)>(.*?)</p>""", RegexOption.DOT_MATCHES_ALL).findAll(xml).mapNotNull { p ->
             val start = time(attr(p.groupValues[1], "begin")) ?: return@mapNotNull null
             val end = time(attr(p.groupValues[1], "end")) ?: start + 4_000
-            val inner = p.groupValues[2]
+            // Backing vocals come wrapped in a span of their own; they're shown under the line.
+            var background: String? = null
+            val inner = BACKING.replace(p.groupValues[2]) { m ->
+                val said = unescape(m.groupValues[1].replace(Regex("<[^>]+>"), "")).replace(Regex("\\s+"), " ").trim()
+                if (said.isNotEmpty()) background = listOfNotNull(background, said).joinToString(" ")
+                ""
+            }
+            val voice = voices[attr(p.groupValues[1], "ttm:agent")] ?: VOICE_LEAD
             val spans = Regex("""<span\b([^>]*)>([^<]*)</span>(\s*)""").findAll(inner).mapNotNull { s ->
                 val b = time(attr(s.groupValues[1], "begin")) ?: return@mapNotNull null
                 val e = time(attr(s.groupValues[1], "end")) ?: b
-                // Background vocals (ttm:role) are kept as words like any other.
                 LyricWord(unescape(s.groupValues[2]) + s.groupValues[3].ifEmpty { "" }, b, e)
             }.filter { it.text.isNotBlank() }.toList()
             val text = if (spans.isNotEmpty()) spans.joinToString("") { it.text }.replace(Regex("\\s+"), " ").trim()
             else unescape(inner.replace(Regex("<[^>]+>"), "")).replace(Regex("\\s+"), " ").trim()
             if (text.isEmpty()) return@mapNotNull null
-            if (spans.size >= 2) LyricLine(start, end, text, spans, wordSynced = true)
-            else LyricLine(start, end, text, LrcParser.spreadWords(text, start, end), wordSynced = false)
+            if (spans.size >= 2) LyricLine(start, end, text, spans, wordSynced = true, voice = voice, background = background)
+            else LyricLine(start, end, text, LrcParser.spreadWords(text, start, end), wordSynced = false, voice = voice, background = background)
         }.toList()
+    }
+
+    private val BACKING = Regex("""<span\b[^>]*ttm:role="x-bg"[^>]*>((?:\s*<span\b[^>]*>[^<]*</span>\s*)*)</span>""")
+
+    /** The singers declared in the head (`<ttm:agent type xml:id>`), mapped as [LyricsPlus.voicesOf] does. */
+    private fun voicesOf(xml: String): Map<String, Int> {
+        var person = 0
+        return Regex("""<ttm:agent\b([^>]*)>""").findAll(xml).mapNotNull { m ->
+            val id = attr(m.groupValues[1], "xml:id") ?: return@mapNotNull null
+            id to if (attr(m.groupValues[1], "type") == "group") VOICE_TOGETHER else if (person++ % 2 == 0) VOICE_LEAD else VOICE_SECOND
+        }.toMap()
+    }
 
     private fun attr(attrs: String, name: String) = Regex("""\b$name="([^"]+)"""").find(attrs)?.groupValues?.get(1)
 

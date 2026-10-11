@@ -1,0 +1,6 @@
+• Lyrics come faster: every source is asked at once, and LyricsPlus adds word-by-word timing for many songs
+• Duets: a second singer's lines sit on the other side, and backing vocals show smaller under their line
+• Skip to chorus: a button jumps to the next chorus, and the seek bar marks where each part starts
+• Romanized lyrics: a line in Latin letters under Hindi, Korean, Japanese and other scripts
+• Pick the lyrics source for a song from the player's menu
+• Loading no longer looks frozen: the play button and seek bar move while a song loads

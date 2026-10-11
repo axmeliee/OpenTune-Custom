@@ -499,6 +499,10 @@ data class LyricsSettings(
     val preferWordSynced: Boolean = false,
     /** Per-song timing shift in ms, set from the player's "Lyrics offset". */
     val offsets: Map<String, Long> = emptyMap(),
+    /** A line in Latin letters under each one in another script. */
+    val romanize: Boolean = false,
+    /** Per-song source picked from the player's "Lyrics source"; the others aren't asked first. */
+    val chosen: Map<String, LyricsSource> = emptyMap(),
 ) {
     /** The saved order, with any source added since appended at the end. */
     val ordered: List<LyricsSourceEntry>
@@ -625,6 +629,11 @@ object AppSettings {
 
     fun setLyricsOffset(videoId: String, ms: Long) = updateLyrics { l ->
         l.copy(offsets = if (ms == 0L) l.offsets - videoId else (l.offsets + (videoId to ms)).entries.toList().takeLast(500).associate { it.toPair() })
+    }
+
+    /** Pins [videoId]'s lyrics to [source]; null goes back to the usual order. */
+    fun setLyricsSource(videoId: String, source: LyricsSource?) = updateLyrics { l ->
+        l.copy(chosen = if (source == null) l.chosen - videoId else (l.chosen - videoId + (videoId to source)).entries.toList().takeLast(500).associate { it.toPair() })
     }
 
     fun setAutoplay(enabled: Boolean) = updatePlayback { it.copy(autoplay = enabled) }

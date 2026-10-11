@@ -105,26 +105,48 @@ object LyricsPlus {
         if (durationMs > 0 && total != null && total > 0 && abs(total - durationMs) > TOLERANCE_MS) return null
         val items = (root["lyrics"] as? JsonArray).orEmpty().filterIsInstance<JsonObject>()
         val wordType = (root["type"] as? JsonPrimitive)?.contentOrNull.equals("Word", ignoreCase = true)
+        val voices = voicesOf(meta?.get("agents") as? JsonObject)
         val lines = items.mapIndexedNotNull { i, item ->
             val start = item.long("time") ?: return@mapIndexedNotNull null
             val next = items.getOrNull(i + 1)?.long("time")
             val end = item.long("duration")?.let { start + it } ?: next ?: (start + 4_000)
-            // Background vocals are left out: they'd sweep under the lead line.
-            val words = (item["syllabus"] as? JsonArray).orEmpty().filterIsInstance<JsonObject>()
-                .filter { (it["isBackground"] as? JsonPrimitive)?.booleanOrNull != true }
-                .mapNotNull { s ->
-                    val text = (s["text"] as? JsonPrimitive)?.contentOrNull ?: return@mapNotNull null
-                    val b = s.long("time") ?: return@mapNotNull null
-                    LyricWord(text, b, b + (s.long("duration") ?: 0))
-                }
-                .filter { it.text.isNotBlank() }
+            val (backing, lead) = (item["syllabus"] as? JsonArray).orEmpty().filterIsInstance<JsonObject>()
+                .partition { (it["isBackground"] as? JsonPrimitive)?.booleanOrNull == true }
+            val words = lead.mapNotNull { s ->
+                val text = (s["text"] as? JsonPrimitive)?.contentOrNull ?: return@mapNotNull null
+                val b = s.long("time") ?: return@mapNotNull null
+                LyricWord(text, b, b + (s.long("duration") ?: 0))
+            }.filter { it.text.isNotBlank() }
             val text = (if (words.isNotEmpty()) words.joinToString("") { it.text } else (item["text"] as? JsonPrimitive)?.contentOrNull.orEmpty())
                 .replace(Regex("\\s+"), " ").trim()
             if (text.isEmpty()) return@mapIndexedNotNull null
-            if (wordType && words.size >= 2) LyricLine(start, end, text, words, wordSynced = true)
-            else LyricLine(start, end, text, LrcParser.spreadWords(text, start, end), wordSynced = false)
+            // Backing vocals go under the line rather than into its sweep.
+            val background = backing.joinToString("") { (it["text"] as? JsonPrimitive)?.contentOrNull.orEmpty() }
+                .replace(Regex("\\s+"), " ").trim().takeIf { it.isNotEmpty() }
+            val singer = ((item["element"] as? JsonObject)?.get("singer") as? JsonPrimitive)?.contentOrNull
+            val voice = voices[singer] ?: VOICE_LEAD
+            if (wordType && words.size >= 2) LyricLine(start, end, text, words, wordSynced = true, voice = voice, background = background)
+            else LyricLine(start, end, text, LrcParser.spreadWords(text, start, end), wordSynced = false, voice = voice, background = background)
         }
-        return lines.takeIf { it.isNotEmpty() }?.let { Lyrics.Synced(it, "LyricsPlus") }
+        if (lines.isEmpty()) return null
+        val parts = (meta?.get("songParts") as? JsonArray).orEmpty().filterIsInstance<JsonObject>().mapNotNull { p ->
+            val at = p.long("time") ?: return@mapNotNull null
+            SongPart((p["name"] as? JsonPrimitive)?.contentOrNull.orEmpty(), at, at + (p.long("duration") ?: 0))
+        }
+        return Lyrics.Synced(lines, "LyricsPlus", parts)
+    }
+
+    /**
+     * Singers by id: a group sings together; of the people, the first
+     * listed is the lead and the next a second voice, and so on in turn.
+     */
+    internal fun voicesOf(agents: JsonObject?): Map<String, Int> {
+        agents ?: return emptyMap()
+        var person = 0
+        return agents.mapValues { (_, v) ->
+            val type = ((v as? JsonObject)?.get("type") as? JsonPrimitive)?.contentOrNull
+            if (type == "group") VOICE_TOGETHER else if (person++ % 2 == 0) VOICE_LEAD else VOICE_SECOND
+        }
     }
 
     private fun JsonObject.long(key: String): Long? = (this[key] as? JsonPrimitive)?.longOrNull

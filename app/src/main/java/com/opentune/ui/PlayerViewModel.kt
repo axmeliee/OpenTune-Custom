@@ -61,7 +61,7 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
     private suspend fun watchLyrics() {
         combine(
             currentSong.distinctUntilChangedBy { it?.videoId },
-            AppSettings.lyrics.map { it.ordered to it.preferWordSynced }.distinctUntilChanged(),
+            AppSettings.lyrics.map { Triple(it.ordered, it.preferWordSynced, it.chosen) }.distinctUntilChanged(),
         ) { song, _ -> song }.collectLatest { song ->
             if (song == null) return@collectLatest
             // A station has no fixed song to look lyrics up for.

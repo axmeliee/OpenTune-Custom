@@ -31,6 +31,9 @@ import androidx.compose.material.icons.rounded.Favorite
 import androidx.compose.material.icons.rounded.GraphicEq
 import androidx.compose.material.icons.rounded.Image
 import androidx.compose.material.icons.rounded.Lyrics
+import androidx.compose.material.icons.rounded.Translate
+import androidx.compose.material.icons.rounded.FastForward
+import androidx.compose.material.icons.rounded.Groups
 import androidx.compose.material.icons.rounded.NewReleases
 import androidx.compose.material.icons.automirrored.rounded.QueueMusic
 import androidx.compose.material.icons.rounded.Waves
@@ -59,6 +62,13 @@ object WhatsNew {
 
     /** Newest first. Add the coming version's notes at the top when releasing. */
     val NOTES: List<Pair<String, List<Note>>> = listOf(
+        "0.4.5" to listOf(
+            Note(Icons.Rounded.Lyrics, "Lyrics, faster and word by word", "Every lyrics source is asked at once, and LyricsPlus joins them with word-by-word timing for many songs."),
+            Note(Icons.Rounded.Groups, "Duets and backing vocals", "A second singer's lines sit on the other side, and backing vocals show smaller under their line."),
+            Note(Icons.Rounded.FastForward, "Skip to the chorus", "A button beside the source pill jumps to the next chorus, and the seek bar marks where each part starts."),
+            Note(Icons.Rounded.Translate, "Romanized lyrics", "Hindi, Korean, Japanese and other scripts get a line in Latin letters underneath. In the player's menu."),
+            Note(Icons.Rounded.Lyrics, "Pick the lyrics source", "Player menu › Lyrics source shows what each source has for the song; the one you pick stays for that song."),
+        ),
         "0.4.0" to listOf(
             Note(Icons.Rounded.SurroundSound, "3D sound", "In Remix: the music goes all the way round you, overhead and underneath too. Put headphones on."),
             Note(Icons.Rounded.Explicit, "Explicit, marked", "Songs and albums marked explicit show a small E, in lists, on Home, in search and in the player."),

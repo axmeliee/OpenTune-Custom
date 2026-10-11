@@ -15,6 +15,9 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.async
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.channelFlow
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.runInterruptible
 import kotlinx.coroutines.withContext
@@ -75,8 +78,16 @@ object LyricsRepository {
     suspend fun lyricsFor(videoId: String, title: String, artist: String, durationMs: Long): Lyrics? {
         withContext(Dispatchers.IO) { readOffline(videoId) }?.let { return it }
         val settings = AppSettings.lyrics.value
-        val key = "$videoId|${settings.ordered.filter { it.enabled }.joinToString(",") { it.source.name }}|${settings.preferWordSynced}"
+        val chosen = settings.chosen[videoId]
+        val key = "$videoId|${settings.ordered.filter { it.enabled }.joinToString(",") { it.source.name }}|${settings.preferWordSynced}|$chosen"
         if (cache.containsKey(key)) return cache[key]
+        // A source picked for this song from the player goes first, on its own.
+        if (chosen != null) {
+            withContext(Dispatchers.IO) { ask(chosen, videoId, title, artist, durationMs) }.getOrNull()?.let { picked ->
+                if (durationMs > 0) cache[key] = picked
+                return picked
+            }
+        }
         val enabled = settings.ordered.filter { it.enabled }.map { it.source }
         val target = if (settings.preferWordSynced) WORD_SYNCED else LINE_SYNCED
         // Every source is asked at once, as Echo Music does, and the answers
@@ -116,14 +127,25 @@ object LyricsRepository {
         return result
     }
 
-    private fun rank(lyrics: Lyrics?): Int = when (lyrics) {
+    /**
+     * Every source's answer for one song, as each comes in, for the player's
+     * "Lyrics source" sheet. Sources switched off in Settings are asked too:
+     * this is where to see whether one would help.
+     */
+    fun everySource(videoId: String, title: String, artist: String, durationMs: Long): Flow<Pair<LyricsSource, Result<Lyrics?>>> = channelFlow {
+        LyricsSource.entries.forEach { source ->
+            launch(Dispatchers.IO) { send(source to ask(source, videoId, title, artist, durationMs)) }
+        }
+    }
+
+    internal fun rank(lyrics: Lyrics?): Int = when (lyrics) {
         null -> 0
         is Lyrics.Plain -> 1
         is Lyrics.Synced -> if (lyrics.lines.any { it.wordSynced }) WORD_SYNCED else LINE_SYNCED
     }
 
-    private const val LINE_SYNCED = 2
-    private const val WORD_SYNCED = 3
+    internal const val LINE_SYNCED = 2
+    internal const val WORD_SYNCED = 3
 
     /** Lookups outlive the caller's wait: a source that's still out is dropped, not waited for. */
     private val lookups = CoroutineScope(SupervisorJob() + Dispatchers.IO)

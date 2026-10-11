@@ -5,6 +5,9 @@ import android.content.res.Configuration
 import android.content.ClipboardManager
 import android.widget.Toast
 import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.expandHorizontally
+import androidx.compose.animation.shrinkHorizontally
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.spring
@@ -54,6 +57,7 @@ import androidx.compose.material.icons.rounded.HighQuality
 import androidx.compose.material.icons.rounded.Lyrics
 import androidx.compose.material.icons.rounded.MoreHoriz
 import androidx.compose.material.icons.rounded.Tune
+import androidx.compose.material.icons.rounded.Translate
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.AssistChipDefaults
 import androidx.compose.material3.Icon
@@ -258,6 +262,7 @@ fun PlayerLayout(
     var showMenu by remember { mutableStateOf(false) }
     var showSleep by remember { mutableStateOf(false) }
     var showOffset by remember { mutableStateOf(false) }
+    var showLyricsSource by remember { mutableStateOf(false) }
     var showDetails by remember { mutableStateOf(false) }
     var showSignal by remember { mutableStateOf(false) }
     val context = LocalContext.current
@@ -571,21 +576,35 @@ fun PlayerLayout(
                     }
                 }
 
-                SourceQualityBadge(current.videoId, state.audioFormat, onClick = { showSignal = true })
+                val synced = (state.lyrics as? LyricsState.Found)?.lyrics as? com.opentune.data.lyrics.Lyrics.Synced
+                // Lyrics are timed against the song shifted by the offset; the bar is the song's own time.
+                val choruses = remember(synced, offsetMs) { synced?.let { com.opentune.data.lyrics.SongParts.choruses(it).map { ms -> ms - offsetMs } }.orEmpty() }
+                val marks = remember(synced, offsetMs) { synced?.let { com.opentune.data.lyrics.SongParts.marks(it).map { ms -> ms - offsetMs } }.orEmpty() }
+                val nextChorus by androidx.compose.runtime.produceState<Long?>(null, choruses) {
+                    while (true) {
+                        value = com.opentune.data.lyrics.SongParts.nextChorus(choruses, position())
+                        kotlinx.coroutines.delay(500)
+                    }
+                }
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                    SourceQualityBadge(current.videoId, state.audioFormat, onClick = { showSignal = true }, modifier = Modifier.weight(1f, fill = false))
+                    AnimatedVisibility(nextChorus != null, enter = fadeIn() + expandHorizontally(), exit = fadeOut() + shrinkHorizontally()) {
+                        SkipToChorus { nextChorus?.let { actions.seekTo((it - 250).coerceAtLeast(0)) } }
+                    }
+                }
                 if (pane != Pane.LYRICS && state.ui.syncedLyrics && !minimal && !(pane == Pane.COVER && style == PlayerStyle.LYRICS_FIRST)) {
                     LyricPreview(state.lyrics, lyricsPosition, onOpen = { paneName = Pane.LYRICS.name }, Modifier.padding(top = 4.dp))
                 }
                 Spacer(Modifier.height(8.dp))
                 // The line at a point of the song, for the bubble shown while the bar is dragged.
-                val synced = (state.lyrics as? LyricsState.Found)?.lyrics as? com.opentune.data.lyrics.Lyrics.Synced
                 val lyricAt: ((Long) -> String?)? = if (state.ui.lyricScrubPreview && synced != null) {
                     { ms -> synced.lines.lastOrNull { it.startMs <= ms + offsetMs }?.text?.takeIf { it.isNotBlank() } }
                 } else null
                 if (state.ui.waveformSeekbar) {
                     val (wave, waveVersion) = rememberWaveform(current.videoId, position, state.durationMs, state.isPlaying)
-                    SeekBar(position, buffered, state.durationMs, onSeek = actions.seekTo, playing = state.isPlaying, waveform = wave, waveVersion = { waveVersion.value }, lyricAt = lyricAt)
+                    SeekBar(position, buffered, state.durationMs, onSeek = actions.seekTo, playing = state.isPlaying, waveform = wave, waveVersion = { waveVersion.value }, lyricAt = lyricAt, marks = marks)
                 } else {
-                    SeekBar(position, buffered, state.durationMs, onSeek = actions.seekTo, wavy = state.ui.wavySeekbar && !state.ui.reduceAnimation, playing = state.isPlaying, lyricAt = lyricAt)
+                    SeekBar(position, buffered, state.durationMs, onSeek = actions.seekTo, wavy = state.ui.wavySeekbar && !state.ui.reduceAnimation, playing = state.isPlaying, lyricAt = lyricAt, marks = marks)
                 }
                 if (state.ui.statsForNerds) {
                     Box(Modifier.clickable { showSignal = true }) { NerdStatsLine(state.audioFormat) }
@@ -653,6 +672,13 @@ fun PlayerLayout(
                     MenuRow(Icons.Rounded.Groups, "Listen together") { close(); actions.openTogether() }
                     MenuRow(Icons.Rounded.Bedtime, sleepLabel ?: "Sleep timer") { close(); showSleep = true }
                     MenuRow(Icons.Rounded.Tune, "Lyrics offset") { close(); showOffset = true }
+                    MenuRow(Icons.Rounded.Lyrics, "Lyrics source") { close(); showLyricsSource = true }
+                    if (com.opentune.data.lyrics.Romanizer.available) {
+                        MenuRow(Icons.Rounded.Translate, if (lyricsSettings.romanize) "Hide romanized lyrics" else "Show romanized lyrics") {
+                            close()
+                            AppSettings.updateLyrics { it.copy(romanize = !it.romanize) }
+                        }
+                    }
                     MenuRow(Icons.Rounded.GraphicEq, "Remix") { close(); showRemix = true }
                 },
                 end = { close ->
@@ -668,6 +694,7 @@ fun PlayerLayout(
             )
         }
         if (showOffset) LyricsOffsetDialog(current.videoId, onDismiss = { showOffset = false })
+        if (showLyricsSource) LyricsSourceDialog(current, state.durationMs, onDismiss = { showLyricsSource = false })
         if (showDetails) TrackDetailsDialog(current, state.durationMs, onDismiss = { showDetails = false })
         if (showSignal) SignalPathDialog(state.audioFormat, onDismiss = { showSignal = false })
     }

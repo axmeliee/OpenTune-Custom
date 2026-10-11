@@ -5,6 +5,9 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.Icon
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.FastForward
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.shape.CircleShape
@@ -23,7 +26,7 @@ import com.opentune.playback.AudioFormatInfo
 import java.util.Locale
 
 @Composable
-internal fun SourceQualityBadge(mediaId: String, format: AudioFormatInfo?, onClick: () -> Unit) {
+internal fun SourceQualityBadge(mediaId: String, format: AudioFormatInfo?, onClick: () -> Unit, modifier: Modifier = Modifier) {
     val reported by NerdStats.playbackSource.collectAsState()
     // Never show the previous song's provider while a new item is resolving.
     val source = reported?.takeIf { it.mediaId == mediaId }
@@ -31,7 +34,7 @@ internal fun SourceQualityBadge(mediaId: String, format: AudioFormatInfo?, onCli
     val colors = MaterialTheme.colorScheme
     TextButton(
         onClick = onClick,
-        modifier = Modifier.heightIn(min = 40.dp).semantics {
+        modifier = modifier.heightIn(min = 40.dp).semantics {
             contentDescription = "$label. Open signal path"
         },
         shape = CircleShape,
@@ -63,4 +66,25 @@ internal fun sourceQualityLabel(source: NerdStats.Source?, format: AudioFormatIn
         listOfNotNull("FLAC", bits?.let { "$it-bit" }, rate?.let { "${String.format(Locale.ROOT, "%.1f", it / 1000.0).removeSuffix(".0")} kHz" }).joinToString(" · ")
     } else listOfNotNull(codec, (format?.bitrateKbps ?: source.kbps)?.let { "$it kbps" }).joinToString(" · ")
     return "$provider · ${quality.ifEmpty { "quality pending" }}"
+}
+
+/** Jumps to the next chorus; shown beside the source pill while one is still to come. */
+@Composable
+internal fun SkipToChorus(onClick: () -> Unit) {
+    val colors = MaterialTheme.colorScheme
+    TextButton(
+        onClick = onClick,
+        modifier = Modifier.heightIn(min = 40.dp),
+        shape = CircleShape,
+        colors = ButtonDefaults.textButtonColors(
+            containerColor = colors.surfaceContainerHigh.copy(alpha = 0.9f),
+            contentColor = colors.onSurface,
+        ),
+        border = BorderStroke(1.dp, colors.outlineVariant.copy(alpha = 0.6f)),
+        contentPadding = PaddingValues(horizontal = 14.dp, vertical = 8.dp),
+    ) {
+        Icon(Icons.Rounded.FastForward, null, Modifier.size(16.dp))
+        Spacer(Modifier.width(6.dp))
+        Text("Skip to chorus", style = MaterialTheme.typography.labelMedium, maxLines = 1)
+    }
 }
