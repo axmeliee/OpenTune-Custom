@@ -1,19 +1,19 @@
 # The iOS app: the core package's tests on Linux, then an unsigned build on
 # macOS packed as an .ipa for sideloading (AltStore, SideStore, Sideloadly
-# re-sign it with the installer's own Apple ID). On main, the .ipa is also
-# attached to the release for the current versionName once that exists.
+# re-sign it with the installer's own Apple ID). The .ipa stays in the run's
+# artifacts; it isn't attached to releases.
 name: iOS
 
 on:
   push:
     branches: ["**"]
-    paths: ["ios/**", ".github/workflows/ios.yml", "app/build.gradle.kts"]
+    paths: ["ios/**", ".github/workflows/ios.yml"]
   pull_request:
     paths: ["ios/**", ".github/workflows/ios.yml"]
   workflow_dispatch:
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
   core:
@@ -83,19 +83,3 @@ jobs:
         with:
           name: OpenTune-iOS-unsigned
           path: ${{ steps.ipa.outputs.file }}
-
-      # The Android release workflow makes the release; wait for it, then add the .ipa.
-      - name: Attach to the release
-        if: github.ref == 'refs/heads/main'
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          tag="v${{ steps.version.outputs.name }}"
-          for i in $(seq 1 30); do
-            if gh release view "$tag" > /dev/null 2>&1; then
-              gh release upload "$tag" "${{ steps.ipa.outputs.file }}" --clobber
-              exit 0
-            fi
-            sleep 30
-          done
-          echo "No release $tag yet; the .ipa is in this run's artifacts."

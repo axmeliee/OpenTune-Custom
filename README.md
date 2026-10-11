@@ -71,8 +71,10 @@ equalizer and the other Android extras aren't in it yet.
 It isn't on the App Store, and Apple doesn't allow apps like it there, so
 it's installed the way other open-source iOS apps are:
 
-1. Download `OpenTune-iOS-v…-unsigned.ipa` from the
-   [latest release](https://github.com/justshivv/Opentune/releases/latest).
+1. Download `OpenTune-iOS-unsigned` from the newest successful
+   [iOS build](https://github.com/justshivv/Opentune/actions/workflows/ios.yml)
+   (you need to be signed in to GitHub) and unzip it to get the `.ipa`.
+   The iOS app isn't attached to releases while it's this early.
 2. Install it with [AltStore](https://altstore.io) or
    [SideStore](https://sidestore.io) (on the phone), or
    [Sideloadly](https://sideloadly.io) (from a computer). They sign it with
