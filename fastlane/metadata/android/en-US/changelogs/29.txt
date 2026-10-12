@@ -1,0 +1,2 @@
+• New lyrics defaults: every source on, word-by-word lyrics first, and romanized lines under other scripts (settings you changed stay as they were)
+• By default, removing OpenTune from your recent apps stops the music

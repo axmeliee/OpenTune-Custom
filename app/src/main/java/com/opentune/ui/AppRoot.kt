@@ -160,7 +160,7 @@ fun AppRoot(vm: PlayerViewModel) {
     var whatsNew by remember { mutableStateOf<List<Pair<String, List<com.opentune.ui.components.WhatsNew.Note>>>>(emptyList()) }
     LaunchedEffect(Unit) { whatsNew = com.opentune.ui.components.WhatsNew.due(appContext, com.opentune.BuildConfig.VERSION_NAME) }
     if (whatsNew.isNotEmpty() && update == null) {
-        com.opentune.ui.components.WhatsNewSheet(whatsNew, onDismiss = { whatsNew = emptyList() })
+        com.opentune.ui.components.WhatsNewSheet(whatsNew, com.opentune.BuildConfig.VERSION_NAME, onDismiss = { whatsNew = emptyList() })
     }
     update?.let { r ->
         com.opentune.ui.settings.UpdateDialog(

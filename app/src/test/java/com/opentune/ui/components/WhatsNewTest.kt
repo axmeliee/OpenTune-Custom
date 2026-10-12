@@ -5,6 +5,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
+import androidx.compose.ui.test.onNodeWithText
 import java.io.File
 import org.junit.Assert.assertEquals
 import org.junit.Rule
@@ -31,11 +32,25 @@ class WhatsNewTest {
         assertEquals(0, WhatsNew.compare("0.3", "0.3.0"))
     }
 
+    /** A version released without notes is still the one named; the notes shown carry their own number. */
+    @Test fun aVersionWithoutNotesIsNamedInTheTitle() {
+        compose.setContent {
+            MaterialTheme(darkColorScheme(primary = Color(0xFFFF8A65))) {
+                WhatsNewSheet(WhatsNew.since("0.3.5", "0.3.10"), "0.3.10", onDismiss = {})
+            }
+        }
+        compose.mainClock.advanceTimeBy(3_000)
+        compose.waitForIdle()
+        compose.onNodeWithText("What's new in 0.3.10").assertExists()
+        compose.onNodeWithText("In 0.3.9").assertExists()
+        compose.onNodeWithText("In 0.3.8").assertExists()
+    }
+
     @Test fun sheet() {
         compose.mainClock.autoAdvance = false
         compose.setContent {
             MaterialTheme(darkColorScheme(primary = Color(0xFFFF8A65))) {
-                WhatsNewSheet(WhatsNew.since("0.3.5", "0.3.7"), onDismiss = {})
+                WhatsNewSheet(WhatsNew.since("0.3.5", "0.3.7"), "0.3.7", onDismiss = {})
             }
         }
         compose.mainClock.advanceTimeBy(3_000)

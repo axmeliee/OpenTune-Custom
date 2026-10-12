@@ -62,6 +62,13 @@ object WhatsNew {
 
     /** Newest first. Add the coming version's notes at the top when releasing. */
     val NOTES: List<Pair<String, List<Note>>> = listOf(
+        "0.4.7" to listOf(
+            Note(Icons.Rounded.Lyrics, "The best lyrics, from the start", "New defaults: every lyrics source on, word-by-word lyrics first, and romanized lines under other scripts. Settings you changed yourself stay as they were."),
+            Note(Icons.Rounded.NewReleases, "Swipe away to stop", "By default, removing OpenTune from your recent apps stops the music."),
+        ),
+        "0.4.6" to listOf(
+            Note(Icons.Rounded.Lyrics, "Lyrics settings that fit", "Settings › Lyrics sources scrolls, so every switch keeps its label."),
+        ),
         "0.4.5" to listOf(
             Note(Icons.Rounded.Lyrics, "Lyrics, faster and word by word", "Every lyrics source is asked at once, and LyricsPlus joins them with word-by-word timing for many songs."),
             Note(Icons.Rounded.Groups, "Duets and backing vocals", "A second singer's lines sit on the other side, and backing vocals show smaller under their line."),
@@ -142,18 +149,21 @@ object WhatsNew {
 
 /** The sheet itself: each note slides in a moment after the one above it. */
 @Composable
-fun WhatsNewSheet(notes: List<Pair<String, List<WhatsNew.Note>>>, onDismiss: () -> Unit) {
+fun WhatsNewSheet(notes: List<Pair<String, List<WhatsNew.Note>>>, version: String, onDismiss: () -> Unit) {
+    // Titled with the version installed. A version released without notes of its own
+    // shows the latest ones there are, each under its own number.
+    val ownNotes = notes.first().first == version
     FloatingCard(
         onDismiss = onDismiss,
-        title = "What's new in ${notes.first().first}",
+        title = "What's new in $version",
         icon = Icons.Rounded.NewReleases,
     ) {
         Column(Modifier.verticalScroll(rememberScrollState()).padding(horizontal = 6.dp, vertical = 4.dp)) {
             var index = 0
             notes.forEachIndexed { v, (version, list) ->
-                if (v > 0) {
+                if (v > 0 || !ownNotes) {
                     Text(
-                        "Also in $version",
+                        if (ownNotes) "Also in $version" else "In $version",
                         style = MaterialTheme.typography.labelLarge,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.padding(start = 4.dp, top = 12.dp, bottom = 4.dp),
