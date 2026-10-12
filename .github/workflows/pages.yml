@@ -6,6 +6,14 @@ on:
   push:
     branches: [main]
     paths: ["site/**", ".github/workflows/pages.yml"]
+  # After every release, so the download buttons name the new build without the
+  # page being edited. A release made by the Release workflow's own token doesn't
+  # send a release event, hence workflow_run as well.
+  workflow_run:
+    workflows: ["Release"]
+    types: [completed]
+  release:
+    types: [published]
   workflow_dispatch:
 
 permissions:
@@ -25,6 +33,28 @@ jobs:
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Latest releases
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh api "repos/${{ github.repository }}/releases?per_page=6" \
+            --jq '[.[] | select((.draft or .prerelease) | not) | {tag_name, name, published_at, html_url, assets: [.assets[] | {name, size, browser_download_url}]}]' > releases.raw.json
+          # Each release's own changelog lines, read from the tag it was built from.
+          echo '{}' > notes.json
+          for tag in $(jq -r '.[].tag_name' releases.raw.json); do
+            code="$(git show "$tag:app/build.gradle.kts" 2>/dev/null | sed -n 's/.*versionCode = \([0-9]*\).*/\1/p' | head -n 1)"
+            file="fastlane/metadata/android/en-US/changelogs/$code.txt"
+            if [ -n "$code" ] && git cat-file -e "$tag:$file" 2>/dev/null; then
+              git show "$tag:$file" | sed -E 's/^(• |[-*] )//' | grep -v '^[[:space:]]*$' | head -n 4 \
+                | jq -R . | jq -s --arg t "$tag" '{($t): .}' > one.json
+              jq -s '.[0] * .[1]' notes.json one.json > merged.json && mv merged.json notes.json
+            fi
+          done
+          jq --slurpfile n notes.json '[.[] | . + (if $n[0][.tag_name] then {highlights: $n[0][.tag_name]} else {} end)]' releases.raw.json > site/releases.json
+          rm -f releases.raw.json notes.json one.json
+          jq -c '.[0] | {tag_name, highlights, apks: [.assets[].name]}' site/releases.json
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
         with:

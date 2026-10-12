@@ -470,7 +470,7 @@ footer .about p { color: var(--dim); font-size: 13.5px; max-width: 46ch; margin-
     </nav>
     <div class="nav-right">
       <a class="btn btn-ghost btn-small gh" href="https://github.com/justshivv/Opentune" target="_blank" rel="noopener"><svg class="line-ico"><use href="#i-star"/></svg>Star<span class="sub" id="stars-nav" hidden></span></a>
-      <a class="btn btn-primary btn-small" href="https://github.com/justshivv/Opentune/releases/latest" target="_blank" rel="noopener"><svg class="line-ico"><use href="#i-download"/></svg>Get APK</a>
+      <a data-latest-apk class="btn btn-primary btn-small" href="https://github.com/justshivv/Opentune/releases/latest" target="_blank" rel="noopener"><svg class="line-ico"><use href="#i-download"/></svg>Get APK</a>
     </div>
   </div>
   <i class="readline" id="readline" aria-hidden="true"></i>
@@ -480,11 +480,11 @@ footer .about p { color: var(--dim); font-size: 13.5px; max-width: 46ch; margin-
   <section class="hero">
     <div class="wrap hero-grid">
       <div class="hero-copy">
-        <a class="badge rise" href="#releases"><b id="ver-badge">v0.4.0</b><span id="ver-note">Latest release: 3D sound all around you, explicit songs marked</span></a>
+        <a class="badge rise" href="#releases"><b id="ver-badge">Latest</b><span id="ver-note">See what's new in the latest release</span></a>
         <h1 class="rise d1"><span class="hl">Every song.</span><span class="hl two">No ads.</span><span class="hl three">No account.</span></h1>
         <p class="lede rise d2">OpenTune is a free, open-source music player for Android. It plays the YouTube Music catalogue with word-synced lyrics, live radio, podcasts and rooms where friends listen in step.</p>
         <div class="ctas rise d3">
-          <a class="btn btn-tint" id="dl-hero" href="https://github.com/justshivv/Opentune/releases/latest" target="_blank" rel="noopener"><svg class="line-ico"><use href="#i-download"/></svg>Download for Android<span class="sub" id="dl-size">9.8 MB</span></a>
+          <a data-latest-apk class="btn btn-tint" id="dl-hero" href="https://github.com/justshivv/Opentune/releases/latest" target="_blank" rel="noopener"><svg class="line-ico"><use href="#i-download"/></svg>Download for Android<span class="sub" id="dl-size" hidden></span></a>
           <a class="btn btn-ghost" href="https://github.com/justshivv/Opentune" target="_blank" rel="noopener"><svg class="line-ico"><use href="#i-code"/></svg>Source on GitHub</a>
         </div>
         <div class="fine rise d4"><span>Android 8.0+</span><span>No ads</span><span>No account needed</span><span>GPL-3.0</span></div>
@@ -725,7 +725,7 @@ footer .about p { color: var(--dim); font-size: 13.5px; max-width: 46ch; margin-
       <div class="word" id="word" aria-label="OpenTune"></div>
       <p>Free, open source, and yours to keep.</p>
       <div class="ctas">
-        <a class="btn btn-tint" href="https://github.com/justshivv/Opentune/releases/latest" target="_blank" rel="noopener"><svg class="line-ico"><use href="#i-download"/></svg>Download for Android</a>
+        <a data-latest-apk class="btn btn-tint" href="https://github.com/justshivv/Opentune/releases/latest" target="_blank" rel="noopener"><svg class="line-ico"><use href="#i-download"/></svg>Download for Android</a>
         <a class="btn btn-ghost" href="https://github.com/justshivv/Opentune" target="_blank" rel="noopener"><svg class="line-ico"><use href="#i-star"/></svg>Star on GitHub</a>
       </div>
     </div>
@@ -1080,7 +1080,13 @@ footer .about p { color: var(--dim); font-size: 13.5px; max-width: 46ch; margin-
   /* ===== closing word ===== */
   const letters = [..."OpenTune"].map((ch) => { const s = document.createElement("span"); s.textContent = ch; s.setAttribute("aria-hidden", "true"); $("word").appendChild(s); return s; });
 
-  /* ===== releases: live from GitHub, with a built-in copy ===== */
+  /* ===== releases ===== */
+  // releases.json is written next to this page each time it's deployed, and the site is
+  // redeployed after every release, so it always names the newest build without the page
+  // being edited. GitHub's API is asked as well, for download counts; it allows 60 lookups
+  // an hour per network, so it can't be relied on alone. The copy below only fills in
+  // notes for v0.2.0.
+  const LATEST_PAGE = "https://github.com/justshivv/Opentune/releases/latest";
   const FALLBACK = [{
     tag_name: "v0.2.0", name: "OpenTune v0.2.0", published_at: "2026-10-06T17:43:48Z", html_url: "https://github.com/justshivv/Opentune/releases/tag/v0.2.0",
     assets: [{ name: "OpenTune-v0.2.0-arm64-v8a.apk", size: 9779415, download_count: null, browser_download_url: "https://github.com/justshivv/Opentune/releases/download/v0.2.0/OpenTune-v0.2.0-arm64-v8a.apk" }],
@@ -1098,7 +1104,8 @@ footer .about p { color: var(--dim); font-size: 13.5px; max-width: 46ch; margin-
   function renderReleases(list, live) {
     const box = $("rel-list"); box.innerHTML = "";
     list.slice(0, 4).forEach((rel, i) => {
-      const apk = (rel.assets || []).find((a) => /arm64.*\.apk$/.test(a.name)) || (rel.assets || []).find((a) => /\.apk$/.test(a.name));
+      // The universal APK runs on every phone.
+      const apk = (rel.assets || []).find((a) => /universal\.apk$/.test(a.name)) || (rel.assets || []).find((a) => /\.apk$/.test(a.name));
       const downloads = (rel.assets || []).filter((a) => /\.apk$/.test(a.name)).reduce((n, a) => n + (a.download_count || 0), 0);
       const notes = notesOf(rel);
       const row = document.createElement("article"); row.className = "rel";
@@ -1109,21 +1116,36 @@ footer .about p { color: var(--dim); font-size: 13.5px; max-width: 46ch; margin-
       box.appendChild(row);
       if (i === 0) {
         $("ver-badge").textContent = rel.tag_name;
-        if (apk) {
-          $("dl-size").textContent = (apk.size / 1048576).toFixed(1) + " MB";
-          // Main download buttons must request an APK too, so browser/release deduplication
-          // covers them. Keep GitHub's release page as the fallback if the live lookup fails.
-          if (live) document.querySelectorAll('a[href="https://github.com/justshivv/Opentune/releases/latest"]')
-            .forEach((link) => { link.href = apk.browser_download_url; });
-        }
+        if (notes.length) $("ver-note").textContent = "Latest release: " + notes[0];
+        // Main download buttons point straight at the newest universal APK, so browser/release
+        // deduplication covers them. Without a current list they keep GitHub's latest-release page.
+        document.querySelectorAll("[data-latest-apk]").forEach((link) => {
+          link.href = apk ? apk.browser_download_url : LATEST_PAGE;
+        });
+        const size = $("dl-size");
+        size.hidden = !apk;
+        if (apk) size.textContent = (apk.size / 1048576).toFixed(1) + " MB";
       }
     });
     $("rel-intro").textContent = list.length + (list.length === 1 ? " published build" : " published builds") + ", straight from GitHub Releases.";
-    $("rel-source").textContent = live ? "Read live from the GitHub Releases API." : "Showing the copy built into this page; the live list is on GitHub.";
+    $("rel-source").textContent = live ? "Read live from the GitHub Releases API." : "As of this site's last update, which follows every release.";
   }
-  renderReleases(FALLBACK, false);
-  fetch("https://api.github.com/repos/justshivv/Opentune/releases?per_page=6").then((r) => r.ok ? r.json() : Promise.reject(r.status))
-    .then((list) => { if (Array.isArray(list) && list.length) renderReleases(list, true); }).catch(() => {});
+  const published = (list) => Array.isArray(list) ? list.filter((r) => !r.draft && !r.prerelease) : [];
+  const getJson = (url, opts) => fetch(url, opts).then((r) => r.ok ? r.json() : Promise.reject(r.status));
+  let releasesShown = false;
+  getJson("releases.json", { cache: "no-cache" }).then(published)
+    .then((list) => { if (list.length) { renderReleases(list, false); releasesShown = true; } })
+    .catch(() => {})
+    .then(() => getJson("https://api.github.com/repos/justshivv/Opentune/releases?per_page=6"))
+    .then(published)
+    .then((list) => { if (list.length) { renderReleases(list, true); releasesShown = true; } })
+    .catch(() => {})
+    .then(() => {
+      if (releasesShown) return;
+      // Nothing current to show: an old copy here would pass for the latest, so just point to GitHub.
+      $("rel-intro").textContent = "Every build, straight from GitHub Releases.";
+      $("rel-source").innerHTML = 'Couldn\'t load the list just now. <a href="https://github.com/justshivv/Opentune/releases" target="_blank" rel="noopener">See all releases on GitHub</a>.';
+    });
   fetch("https://api.github.com/repos/justshivv/Opentune").then((r) => r.ok ? r.json() : Promise.reject(r.status))
     .then((repo) => { if (repo.stargazers_count > 0) { const s = $("stars-nav"); s.textContent = repo.stargazers_count.toLocaleString("en-US"); s.hidden = false; } }).catch(() => {});
 
