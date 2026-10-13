@@ -77,7 +77,40 @@ sealed interface Msg {
 
     @Serializable @SerialName("chat") data class Chat(val text: String) : Msg
 
+    // ---- The lobby: sealed with the room code, so anyone with the code can knock. ----
+
+    /** The host telling a guest who knocked to wait to be let in. */
+    @Serializable @SerialName("pending") data class Pending(val to: String, val host: String) : Msg
+
+    /** The host letting [to] in: the room key, sealed for [to] alone (see [RoomKey.wrapFor]). */
+    @Serializable @SerialName("admit") data class Admit(val to: String, val key: String, val epoch: Int, val host: String) : Msg
+
+    /** The host turning [to] away, or, with [removed], putting them out of the room. */
+    @Serializable @SerialName("deny") data class Deny(val to: String, val removed: Boolean = false, val host: String = "") : Msg
+
+    // ---- In the room, sealed with the room key. ----
+
+    /**
+     * Part of a voice clip: [data] is AAC frames (see [VoiceFrames]), about a
+     * second's worth, numbered from 0 by [seq]. The first carries the codec's
+     * setup in [cfg]. A [live] clip is talk, played as it arrives; otherwise
+     * it's a voice note, shown in the chat once [last] is in.
+     */
+    @Serializable @SerialName("voice")
+    data class Voice(
+        val id: String,
+        val seq: Int,
+        val data: String,
+        val last: Boolean = false,
+        val live: Boolean = false,
+        val cfg: String? = null,
+        /** Length of the clip so far, in ms. */
+        val ms: Long = 0,
+    ) : Msg
+
     companion object {
+        /** Whether [m] travels in the lobby, under the room code, rather than under the room key. */
+        fun inLobby(m: Msg) = m is Hello || m is Bye || m is Pending || m is Admit || m is Deny || m is End
         val json = Json { classDiscriminator = "t"; ignoreUnknownKeys = true; encodeDefaults = false }
         fun encode(m: Msg) = json.encodeToString(serializer(), m)
         fun decode(s: String): Msg? = runCatching { json.decodeFromString(serializer(), s) }.getOrNull()

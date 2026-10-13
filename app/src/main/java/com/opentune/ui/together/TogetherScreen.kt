@@ -32,6 +32,14 @@ import androidx.compose.material.icons.automirrored.rounded.Send
 import androidx.compose.material.icons.rounded.ContentCopy
 import androidx.compose.material.icons.rounded.Groups
 import androidx.compose.material.icons.rounded.Lock
+import androidx.compose.runtime.remember
+import androidx.compose.foundation.clickable
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.material3.LocalContentColor
+import androidx.compose.material.icons.rounded.PlayArrow
+import androidx.compose.material.icons.rounded.Stop
+import androidx.compose.material.icons.rounded.Mic
 import androidx.compose.material.icons.rounded.Share
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
@@ -147,8 +155,9 @@ internal fun StartRoom(code: String?, onBack: () -> Unit) {
                     Icon(Icons.Rounded.Lock, null, Modifier.size(18.dp).padding(top = 2.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
                     Spacer(Modifier.width(10.dp))
                     Text(
-                        "Rooms run over public Nostr relays. Everything said in a room is encrypted with its code, " +
-                            "so relays only pass it along, and they don't keep it. Each phone plays the music itself.",
+                        "Rooms run over public Nostr relays, which only pass messages along and don't keep them. " +
+                            "The code lets someone knock; the host lets them in, and only then does their phone get the key the room's music, chat and voice are encrypted with. " +
+                            "Each phone plays the music itself.",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
@@ -204,6 +213,23 @@ internal fun RoomView(r: Together.Room, onBack: () -> Unit) {
                         Switch(r.open, { Together.setOpen(it) })
                     }
                 }
+                item {
+                    Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Column(Modifier.weight(1f)) {
+                            Text("Ask before letting people in", style = MaterialTheme.typography.titleMedium)
+                            Text(
+                                if (r.askToJoin) "People with the code wait until you let them in" else "Anyone with the code comes straight in",
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                        Switch(r.askToJoin, { Together.setAskToJoin(it) })
+                    }
+                }
+                if (r.requests.isNotEmpty()) {
+                    item { SectionHeader("Asking to join", subtitle = "${r.requests.size} waiting") }
+                    items(r.requests.size, key = { "req:" + r.requests[it].id }) { i -> RequestRow(r.requests[i]) }
+                }
             } else {
                 item {
                     val playNow by Together.picksPlayNow.collectAsState()
@@ -225,7 +251,8 @@ internal fun RoomView(r: Together.Room, onBack: () -> Unit) {
                 }
             }
             item { SectionHeader("Listening", subtitle = "${r.members.size} in the room") }
-            item { Members(r.members, r.myId) }
+            item { Members(r.members, r.myId, canRemove = r.hosting) }
+            if (r.phase == Together.Phase.Live) item { TalkPanel() }
             item { SectionHeader("Chat") }
             if (r.chat.isEmpty()) {
                 item { Text("Say hi.", Modifier.padding(horizontal = 16.dp), color = MaterialTheme.colorScheme.onSurfaceVariant) }
@@ -252,8 +279,18 @@ internal fun RoomView(r: Together.Room, onBack: () -> Unit) {
                     keyboardActions = KeyboardActions(onSend = { Together.say(message); message = "" }),
                     modifier = Modifier.weight(1f),
                 )
-                IconButton(onClick = { Together.say(message); message = "" }, enabled = message.isNotBlank()) {
-                    Icon(Icons.AutoMirrored.Rounded.Send, "Send")
+                if (message.isNotBlank()) {
+                    IconButton(onClick = { Together.say(message); message = "" }) {
+                        Icon(Icons.AutoMirrored.Rounded.Send, "Send")
+                    }
+                } else if (r.phase == Together.Phase.Live) {
+                    HoldToRecord(live = false, Modifier.size(48.dp)) { recording ->
+                        Icon(
+                            Icons.Rounded.Mic, "Hold to record a voice note",
+                            Modifier.size(26.dp),
+                            tint = if (recording) MaterialTheme.colorScheme.error else LocalContentColor.current,
+                        )
+                    }
                 }
             }
         }
@@ -289,6 +326,7 @@ private fun Status(r: Together.Room) {
     val (text, busy) = when (r.phase) {
         Together.Phase.Connecting -> "Connecting…" to true
         Together.Phase.FindingHost -> "Looking for the host…" to true
+        Together.Phase.Waiting -> "Waiting for ${r.hostName ?: "the host"} to let you in…" to true
         Together.Phase.Live -> (if (r.hosting) "Live · ${r.members.size - 1} joined" else "In step with ${r.hostName ?: "the host"}") to false
         Together.Phase.LostHost -> "Lost touch with the host. Still trying…" to true
         Together.Phase.Ended -> (r.endedReason ?: "The room has ended") to false
@@ -344,14 +382,17 @@ private fun NowInRoom(r: Together.Room) {
 }
 
 @Composable
-private fun Members(members: List<Member>, myId: String?) {
+private fun Members(members: List<Member>, myId: String?, canRemove: Boolean) {
+    var removing by remember { mutableStateOf<Member?>(null) }
     LazyRow(contentPadding = PaddingValues(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(14.dp)) {
         items(members, key = { it.id }) { m ->
-            Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.widthIn(max = 76.dp)) {
-                Box(
-                    Modifier.size(56.dp).background(avatarColor(m.name), CircleShape),
-                    contentAlignment = Alignment.Center,
-                ) { Text(m.name.take(1).uppercase(), fontSize = 22.sp, fontWeight = FontWeight.Bold, color = Color(0xFF0B0B10)) }
+            Column(
+                horizontalAlignment = Alignment.CenterHorizontally,
+                modifier = Modifier.widthIn(max = 76.dp).then(
+                    if (canRemove && !m.host) Modifier.clickable { removing = m } else Modifier,
+                ),
+            ) {
+                Avatar(m.name, 56.dp)
                 Spacer(Modifier.height(6.dp))
                 Text(m.name, style = MaterialTheme.typography.bodySmall, maxLines = 1, overflow = TextOverflow.Ellipsis, textAlign = TextAlign.Center)
                 when {
@@ -362,6 +403,109 @@ private fun Members(members: List<Member>, myId: String?) {
             }
         }
     }
+    removing?.let { m ->
+        com.opentune.ui.components.FloatingDialog(
+            onDismissRequest = { removing = null },
+            title = { Text("Remove ${m.name}?") },
+            text = { Text("They leave the room, and the room moves to a new key, so their phone can't follow along or read the chat any more.") },
+            confirmButton = { com.opentune.ui.components.SheetButton("Remove", tone = com.opentune.ui.components.SheetTone.Danger, onClick = { Together.remove(m.id); removing = null }) },
+            dismissButton = { com.opentune.ui.components.SheetButton("Cancel", onClick = { removing = null }, closes = true) },
+        )
+    }
+}
+
+@Composable
+private fun Avatar(name: String, size: androidx.compose.ui.unit.Dp) {
+    Box(
+        Modifier.size(size).background(avatarColor(name), CircleShape),
+        contentAlignment = Alignment.Center,
+    ) { Text(name.take(1).uppercase(), fontSize = (size.value * 0.4f).sp, fontWeight = FontWeight.Bold, color = Color(0xFF0B0B10)) }
+}
+
+/** Someone who knocked: let them in or turn them away. */
+@Composable
+private fun RequestRow(m: Member) {
+    Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+        Avatar(m.name, 40.dp)
+        Spacer(Modifier.width(12.dp))
+        Text(m.name, Modifier.weight(1f), style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        OutlinedButton(onClick = { Together.reject(m.id) }) { Text("Reject") }
+        Spacer(Modifier.width(8.dp))
+        Button(onClick = { Together.approve(m.id) }) { Text("Let in") }
+    }
+}
+
+/**
+ * Push-to-talk: hold the button and everyone hears you a second or two
+ * later, the music dipping under it. Talk can be turned off for yourself.
+ */
+@Composable
+private fun TalkPanel() {
+    val muted by Together.talkMuted.collectAsState()
+    val recording by Together.recording.collectAsState()
+    Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp)
+        .background(MaterialTheme.colorScheme.surfaceContainerHigh, RoundedCornerShape(24.dp)).padding(16.dp)) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Column(Modifier.weight(1f)) {
+                Text("Talk", style = MaterialTheme.typography.titleMedium)
+                Text(
+                    if (recording == true) "Everyone hears you. Let go to stop." else "Hold to talk. Everyone hears you a moment later.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            Text("Hear talk", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Spacer(Modifier.width(6.dp))
+            Switch(!muted, { Together.setTalkMuted(!it) })
+        }
+        Spacer(Modifier.height(12.dp))
+        HoldToRecord(
+            live = true,
+            Modifier.fillMaxWidth().height(56.dp).background(
+                if (recording == true) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary,
+                RoundedCornerShape(28.dp),
+            ),
+        ) { talking ->
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(Icons.Rounded.Mic, null, tint = if (talking) MaterialTheme.colorScheme.onError else MaterialTheme.colorScheme.onPrimary)
+                Spacer(Modifier.width(8.dp))
+                Text(
+                    if (talking) "Talking…" else "Hold to talk",
+                    style = MaterialTheme.typography.titleMedium,
+                    color = if (talking) MaterialTheme.colorScheme.onError else MaterialTheme.colorScheme.onPrimary,
+                )
+            }
+        }
+    }
+}
+
+/**
+ * Records while held: [live] talk, or a voice note sent when let go. Asks
+ * for the microphone the first time.
+ */
+@Composable
+private fun HoldToRecord(live: Boolean, modifier: Modifier, content: @Composable (recording: Boolean) -> Unit) {
+    val context = LocalContext.current
+    val recording by Together.recording.collectAsState()
+    val haptics = com.opentune.ui.components.rememberHaptics()
+    val ask = androidx.activity.compose.rememberLauncherForActivityResult(androidx.activity.result.contract.ActivityResultContracts.RequestPermission()) { granted ->
+        if (granted) Toast.makeText(context, "Now hold to record", Toast.LENGTH_SHORT).show()
+    }
+    Box(
+        modifier.pointerInput(live) {
+            detectTapGestures(onPress = {
+                val granted = androidx.core.content.ContextCompat.checkSelfPermission(context, android.Manifest.permission.RECORD_AUDIO) ==
+                    android.content.pm.PackageManager.PERMISSION_GRANTED
+                if (!granted) { ask.launch(android.Manifest.permission.RECORD_AUDIO); return@detectTapGestures }
+                if (!Together.startVoice(live)) return@detectTapGestures
+                haptics.press()
+                tryAwaitRelease()
+                Together.stopVoice()
+                haptics.tick()
+            })
+        },
+        contentAlignment = Alignment.Center,
+    ) { content(recording == live) }
 }
 
 private val AVATARS = listOf(0xFFFF8A65, 0xFF4FC3F7, 0xFF9CCC65, 0xFFFFD54F, 0xFFBA68C8, 0xFF4DB6AC, 0xFFF06292, 0xFF7986CB)
@@ -379,10 +523,13 @@ private fun ChatBubble(line: Together.ChatLine) {
         )
         return
     }
+    val time = remember(line.at) { java.text.DateFormat.getTimeInstance(java.text.DateFormat.SHORT).format(java.util.Date(line.at)) }
     Row(
         Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 3.dp),
         horizontalArrangement = if (line.mine) Arrangement.End else Arrangement.Start,
+        verticalAlignment = Alignment.Bottom,
     ) {
+        if (!line.mine) { Avatar(line.name, 28.dp); Spacer(Modifier.width(8.dp)) }
         Column(
             Modifier.widthIn(max = 290.dp)
                 .background(
@@ -392,7 +539,38 @@ private fun ChatBubble(line: Together.ChatLine) {
                 .padding(horizontal = 14.dp, vertical = 9.dp),
         ) {
             if (!line.mine) Text(line.name, style = MaterialTheme.typography.labelMedium, color = avatarColor(line.name))
-            Text(line.text, style = MaterialTheme.typography.bodyLarge)
+            val clip = line.voice
+            if (clip != null) VoiceBubble(clip) else Text(line.text, style = MaterialTheme.typography.bodyLarge)
+            Text(
+                time,
+                Modifier.align(Alignment.End),
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.8f),
+            )
+        }
+    }
+}
+
+/** A voice note or a piece of talk: play or stop, and how long it is. */
+@Composable
+private fun VoiceBubble(clip: Together.VoiceClip) {
+    val playing by Together.playingClip.collectAsState()
+    val isPlaying = playing == clip.id
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        IconButton(onClick = { Together.playClip(clip) }, enabled = clip.cfg != null && clip.frames.isNotEmpty()) {
+            Icon(if (isPlaying) Icons.Rounded.Stop else Icons.Rounded.PlayArrow, if (isPlaying) "Stop" else "Play")
+        }
+        Column {
+            Text(
+                when {
+                    clip.live && !clip.complete -> "Talking…"
+                    clip.live -> "Talk"
+                    else -> "Voice note"
+                },
+                style = MaterialTheme.typography.bodyLarge,
+            )
+            val sec = clip.ms / 1000
+            Text("%d:%02d".format(sec / 60, sec % 60), style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
     }
 }

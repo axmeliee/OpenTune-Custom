@@ -179,6 +179,20 @@ object Schnorr {
         return rx + bytes32(k.add(e.multiply(d)).mod(N))
     }
 
+    /**
+     * The x coordinate of [privateKey] times the point whose x is [publicKey]
+     * (ECDH on secp256k1). Both sides of a pair get the same 32 bytes, whichever
+     * y each key's point really has: the two choices differ only in sign.
+     */
+    fun sharedSecret(privateKey: ByteArray, publicKey: ByteArray): ByteArray? {
+        if (publicKey.size != 32) return null
+        val pt = liftX(int(publicKey)) ?: return null
+        val d = int(privateKey)
+        if (d.signum() <= 0 || d >= N) return null
+        val shared = affine(mul(Jac(pt.x, pt.y, BigInteger.ONE), d)) ?: return null
+        return bytes32(shared.x)
+    }
+
     fun verify(message: ByteArray, publicKey: ByteArray, signature: ByteArray): Boolean {
         if (message.size != 32 || publicKey.size != 32 || signature.size != 64) return false
         val pt = liftX(int(publicKey)) ?: return false

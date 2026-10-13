@@ -8,6 +8,7 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.asCoroutineDispatcher
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
@@ -16,6 +17,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withContext
 import org.junit.After
+import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -122,7 +124,7 @@ class RoomSessionTest {
         lateinit var guest: RoomSession
         onThread {
             hostPlayer.playAll(listOf(a, b), 0, false, null, 30_000)
-            host = RoomSession(code, "Asha", true, hostPlayer, hub.transport(), hostState, {}, scope).also { it.start() }
+            host = RoomSession(code, "Asha", true, hostPlayer, hub.transport(), hostState, {}, scope, askToJoin = false).also { it.start() }
             guest = RoomSession(code, "Ravi", false, guestPlayer, hub.transport(), guestState, { notices += it }, scope).also { it.start() }
         }
 
@@ -194,7 +196,7 @@ class RoomSessionTest {
         lateinit var guest: RoomSession
         onThread {
             hostPlayer.playAll(listOf(a, b, c), 0, false, null, 30_000)
-            host = RoomSession(code, "Asha", true, hostPlayer, hub.transport(), MutableStateFlow(Together.Room(code, true, "Asha")), {}, scope).also { it.start() }
+            host = RoomSession(code, "Asha", true, hostPlayer, hub.transport(), MutableStateFlow(Together.Room(code, true, "Asha")), {}, scope, askToJoin = false).also { it.start() }
             guest = RoomSession(code, "Ravi", false, guestPlayer, hub.transport(), MutableStateFlow(Together.Room(code, false, "Ravi")), {}, scope).also { it.start() }
         }
         waitFor("in step") {
@@ -243,7 +245,7 @@ class RoomSessionTest {
         lateinit var guest: RoomSession
         onThread {
             hostPlayer.playAll(listOf(a), 0, false, null, 0)
-            RoomSession(code, "Asha", true, hostPlayer, hub.transport(), hostState, {}, scope).start()
+            RoomSession(code, "Asha", true, hostPlayer, hub.transport(), hostState, {}, scope, askToJoin = false).start()
             guest = RoomSession(code, "Ravi", false, FakePlayer(), hub.transport(), guestState, {}, scope).also { it.start() }
         }
         waitFor("joined") { hostState.value!!.members.size == 2 }
@@ -283,7 +285,7 @@ class RoomSessionTest {
         }
         onThread {
             hostPlayer.playAll(listOf(a), 0, false, null, 0)
-            RoomSession(code, "Asha", true, hostPlayer, hub.transport(), hostState, {}, scope).start()
+            RoomSession(code, "Asha", true, hostPlayer, hub.transport(), hostState, {}, scope, askToJoin = false).start()
             RoomSession(code, "Ravi", false, FakePlayer(), lossy, guestState, {}, scope).start()
         }
         // On the guest's own phone it's listed as soon as it hears the host.
@@ -301,5 +303,135 @@ class RoomSessionTest {
         waitFor("guest followed") { guestPlayer.currentSong.value?.videoId == c.videoId }
         // What was next before is still after it.
         assertTrue(onThread { hostPlayer.queue.value.any { it.videoId == b.videoId } })
+    }
+
+    @Test fun theHostLetsAGuestInOrTurnsThemAway() = runBlocking {
+        val hub = Hub()
+        val code = RoomCode.generate()
+        val hostPlayer = FakePlayer()
+        val hostState = MutableStateFlow<Together.Room?>(Together.Room(code, true, "Asha"))
+        val raviState = MutableStateFlow<Together.Room?>(Together.Room(code, false, "Ravi"))
+        val malState = MutableStateFlow<Together.Room?>(Together.Room(code, false, "Mal"))
+        val raviPlayer = FakePlayer()
+        val malPlayer = FakePlayer()
+        lateinit var host: RoomSession
+        onThread {
+            hostPlayer.playAll(listOf(a, b), 0, false, null, 10_000)
+            host = RoomSession(code, "Asha", true, hostPlayer, hub.transport(), hostState, {}, scope).also { it.start() }
+            RoomSession(code, "Ravi", false, raviPlayer, hub.transport(), raviState, {}, scope).start()
+            RoomSession(code, "Mal", false, malPlayer, hub.transport(), malState, {}, scope).start()
+        }
+        // Both knock and wait; neither plays along yet.
+        waitFor("both asking") { hostState.value!!.requests.map { it.name }.toSet() == setOf("Ravi", "Mal") }
+        waitFor("both waiting") { raviState.value!!.phase == Together.Phase.Waiting && malState.value!!.phase == Together.Phase.Waiting }
+        assertEquals("Asha", raviState.value!!.hostName)
+        assertTrue(onThread { raviPlayer.currentSong.value == null && malPlayer.currentSong.value == null })
+
+        val ravi = hostState.value!!.requests.first { it.name == "Ravi" }.id
+        val mal = hostState.value!!.requests.first { it.name == "Mal" }.id
+        onThread { host.approve(ravi); host.reject(mal) }
+        waitFor("Ravi in and playing") { raviState.value!!.phase == Together.Phase.Live && raviPlayer.currentSong.value?.videoId == a.videoId }
+        waitFor("Mal turned away") { malState.value!!.phase == Together.Phase.Ended }
+        assertTrue(malState.value!!.endedReason!!.contains("didn't let you in"))
+        assertEquals(2, hostState.value!!.members.size)
+        assertTrue(hostState.value!!.requests.isEmpty())
+        delay(1_000)
+        assertTrue("turned away, nothing plays", onThread { malPlayer.currentSong.value == null })
+    }
+
+    /** Someone with only the code sees knocking in the lobby, never what's playing or what's said. */
+    @Test fun theCodeAloneOpensOnlyTheLobby() = runBlocking {
+        val hub = Hub()
+        val code = RoomCode.generate()
+        val seen = java.util.Collections.synchronizedList(mutableListOf<Msg>())
+        val spy = scope.launch { hub.flow.collect { e -> code.open(e.content)?.let(Msg::decode)?.let(seen::add) } }
+        val hostPlayer = FakePlayer()
+        val hostState = MutableStateFlow<Together.Room?>(Together.Room(code, true, "Asha"))
+        val guestState = MutableStateFlow<Together.Room?>(Together.Room(code, false, "Ravi"))
+        lateinit var host: RoomSession
+        lateinit var guest: RoomSession
+        onThread {
+            hostPlayer.playAll(listOf(a), 0, false, null, 0)
+            host = RoomSession(code, "Asha", true, hostPlayer, hub.transport(), hostState, {}, scope).also { it.start() }
+            guest = RoomSession(code, "Ravi", false, FakePlayer(), hub.transport(), guestState, {}, scope).also { it.start() }
+        }
+        waitFor("asking") { hostState.value!!.requests.isNotEmpty() }
+        onThread { host.approve(hostState.value!!.requests.first().id) }
+        waitFor("in") { guestState.value!!.phase == Together.Phase.Live }
+        onThread { guest.say("only for the room") }
+        waitFor("host got it") { hostState.value!!.chat.any { it.text == "only for the room" } }
+        delay(2_500) // a heartbeat or two of state
+        spy.cancel()
+        assertTrue(seen.isNotEmpty())
+        assertTrue("only lobby messages open with the code: ${seen.map { it::class.simpleName }}", seen.all(Msg::inLobby))
+        assertFalse(seen.any { it is Msg.State || it is Msg.Chat })
+    }
+
+    @Test fun aRemovedGuestIsLockedOutAndTheRestPlayOn() = runBlocking {
+        val hub = Hub()
+        val code = RoomCode.generate()
+        val hostPlayer = FakePlayer()
+        val raviPlayer = FakePlayer()
+        val malPlayer = FakePlayer()
+        val hostState = MutableStateFlow<Together.Room?>(Together.Room(code, true, "Asha"))
+        val raviState = MutableStateFlow<Together.Room?>(Together.Room(code, false, "Ravi"))
+        val malState = MutableStateFlow<Together.Room?>(Together.Room(code, false, "Mal"))
+        lateinit var host: RoomSession
+        onThread {
+            hostPlayer.playAll(listOf(a, b, c), 0, false, null, 0)
+            host = RoomSession(code, "Asha", true, hostPlayer, hub.transport(), hostState, {}, scope, askToJoin = false).also { it.start() }
+            RoomSession(code, "Ravi", false, raviPlayer, hub.transport(), raviState, {}, scope).start()
+            RoomSession(code, "Mal", false, malPlayer, hub.transport(), malState, {}, scope).start()
+        }
+        waitFor("three in the room") { hostState.value!!.members.size == 3 && raviState.value!!.phase == Together.Phase.Live && malState.value!!.phase == Together.Phase.Live }
+        val mal = hostState.value!!.members.first { it.name == "Mal" }.id
+        onThread { host.remove(mal) }
+        waitFor("Mal put out") { malState.value!!.phase == Together.Phase.Ended }
+        assertTrue(malState.value!!.endedReason!!.contains("removed you"))
+        // Under the new key, Ravi still follows the host.
+        onThread { hostPlayer.skipNext() }
+        waitFor("Ravi on song B") { raviPlayer.currentSong.value?.videoId == b.videoId }
+        assertEquals(listOf("Asha", "Ravi"), hostState.value!!.members.map { it.name })
+    }
+
+    @Test fun voiceNotesAndTalkReachTheRoom() = runBlocking {
+        val hub = Hub()
+        val code = RoomCode.generate()
+        val heard = java.util.Collections.synchronizedList(mutableListOf<Pair<String, Int>>())
+        val hostState = MutableStateFlow<Together.Room?>(Together.Room(code, true, "Asha"))
+        val guestState = MutableStateFlow<Together.Room?>(Together.Room(code, false, "Ravi"))
+        lateinit var guest: RoomSession
+        val hostPlayer = FakePlayer()
+        onThread {
+            hostPlayer.playAll(listOf(a), 0, false, null, 0)
+            RoomSession(code, "Asha", true, hostPlayer, hub.transport(), hostState, {}, scope, askToJoin = false,
+                talkSink = { id, _, _, frames, _ -> heard += id to frames.size }).start()
+            guest = RoomSession(code, "Ravi", false, FakePlayer(), hub.transport(), guestState, {}, scope).also { it.start() }
+        }
+        waitFor("in") { guestState.value!!.phase == Together.Phase.Live }
+        val cfg = byteArrayOf(0x14, 0x08)
+        val f1 = listOf(ByteArray(40) { 1 }, ByteArray(50) { 2 })
+        val f2 = listOf(ByteArray(30) { 3 })
+        // A voice note, its two pieces arriving in the wrong order.
+        onThread {
+            guest.sendVoice("note1", 1, null, f2, 1_000, last = true, live = false, allFrames = f1 + f2, allCfg = cfg)
+            guest.sendVoice("note1", 0, cfg, f1, 640, last = false, live = false, allFrames = f1, allCfg = cfg)
+        }
+        waitFor("host has the note") { hostState.value!!.chat.any { it.voice?.complete == true && !it.voice!!.live } }
+        val note = hostState.value!!.chat.first { it.voice != null }.voice!!
+        assertEquals(3, note.frames.size)
+        assertArrayEquals(f1[0], note.frames[0])
+        assertArrayEquals(cfg, note.cfg)
+        assertEquals("Ravi", hostState.value!!.chat.first { it.voice != null }.name)
+        assertTrue("a note isn't played aloud", heard.isEmpty())
+        // Talk is heard as it comes, in order.
+        onThread {
+            guest.sendVoice("talk1", 0, cfg, f1, 640, last = false, live = true, allFrames = f1, allCfg = cfg)
+            guest.sendVoice("talk1", 1, null, f2, 1_000, last = true, live = true, allFrames = f1 + f2, allCfg = cfg)
+        }
+        waitFor("talk heard") { heard.size == 2 }
+        assertEquals(listOf(2, 1), heard.map { it.second })
+        // The guest sees its own note in its chat too.
+        assertTrue(guestState.value!!.chat.any { it.mine && it.voice?.id?.endsWith("/note1") == true })
     }
 }

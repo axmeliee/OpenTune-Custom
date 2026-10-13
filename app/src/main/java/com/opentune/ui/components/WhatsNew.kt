@@ -31,6 +31,8 @@ import androidx.compose.material.icons.rounded.Favorite
 import androidx.compose.material.icons.rounded.GraphicEq
 import androidx.compose.material.icons.rounded.Image
 import androidx.compose.material.icons.rounded.Lyrics
+import androidx.compose.material.icons.rounded.Mic
+import androidx.compose.material.icons.rounded.Lock
 import androidx.compose.material.icons.rounded.Download
 import androidx.compose.material.icons.rounded.Translate
 import androidx.compose.material.icons.rounded.FastForward
@@ -64,6 +66,8 @@ object WhatsNew {
     /** Newest first. Add the coming version's notes at the top when releasing. */
     val NOTES: List<Pair<String, List<Note>>> = listOf(
         "0.4.9" to listOf(
+            Note(Icons.Rounded.Lock, "Rooms you let people into", "People with the code knock; you let them in or turn them away. Only those you let in can hear what's playing or read the chat, and removing someone locks them out."),
+            Note(Icons.Rounded.Mic, "Voice notes and talk", "Hold the mic in a room's chat to send a voice note, or hold Talk and everyone hears you a moment later, the music dipping under you."),
             Note(Icons.Rounded.Groups, "Listen together, fixed and handier", "Joining a room lists you straight away, marked You. As a guest you can choose for a song you pick to play now for everyone, when the host allows it."),
             Note(Icons.Rounded.Download, "Faster downloads", "Songs download in pieces, several at once, instead of trickling in at playback speed. A playlist downloads three songs at a time."),
             Note(Icons.Rounded.Waves, "A cleaner seek bar", "Where the song's parts begin now shows as small dots ahead of the playhead, not as breaks in the played line."),

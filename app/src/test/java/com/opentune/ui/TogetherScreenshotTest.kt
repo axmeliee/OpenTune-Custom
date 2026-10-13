@@ -64,4 +64,27 @@ class TogetherScreenshotTest {
         )
         shoot("together-room") { RoomView(room, onBack = {}) }
     }
+
+    /** The whole room on one tall screen: someone knocking, talk, and voice notes in the chat. */
+    @Test @Config(sdk = [35], qualifiers = "w411dp-h2000dp-xxhdpi", application = android.app.Application::class)
+    fun roomWithRequestsAndVoice() {
+        val code = RoomCode.parse("K7QX-M2PA-9DTE")!!
+        val note = Together.VoiceClip("b/n1", byteArrayOf(0x14, 0x08), listOf(ByteArray(10)), 12_000, complete = true, live = false)
+        val talk = Together.VoiceClip("c/t1", byteArrayOf(0x14, 0x08), listOf(ByteArray(10)), 4_000, complete = true, live = true)
+        val room = Together.Room(
+            code = code, hosting = true, myName = "Asha", phase = Together.Phase.Live, relays = 6, myId = "a",
+            members = listOf(Member("a", "Asha", host = true), Member("b", "Ravi"), Member("c", "Meera")),
+            requests = listOf(Member("d", "Kabir")),
+            hostName = "Asha", open = true,
+            track = Track("4NRXx6U8ABQ", "Blinding Lights", "The Weeknd"),
+            chat = listOf(
+                Together.ChatLine("", "Ravi joined", system = true, at = 1_760_000_000_000),
+                Together.ChatLine("Ravi", "this one's a classic", at = 1_760_000_060_000),
+                Together.ChatLine("Ravi", "", voice = note, at = 1_760_000_090_000),
+                Together.ChatLine("Asha", "turn it up", mine = true, at = 1_760_000_120_000),
+                Together.ChatLine("Meera", "", voice = talk, at = 1_760_000_150_000),
+            ),
+        )
+        shoot("together-room-full") { RoomView(room, onBack = {}) }
+    }
 }

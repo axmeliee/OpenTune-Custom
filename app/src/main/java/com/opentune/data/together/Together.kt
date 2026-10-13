@@ -13,6 +13,7 @@ import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.launch
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
@@ -43,9 +44,21 @@ object Together {
         "wss://offchain.pub",
     )
 
-    enum class Phase { Connecting, FindingHost, Live, LostHost, Ended }
+    enum class Phase { Connecting, FindingHost, Waiting, Live, LostHost, Ended }
 
-    data class ChatLine(val name: String, val text: String, val mine: Boolean = false, val system: Boolean = false)
+    data class ChatLine(
+        val name: String,
+        val text: String,
+        val mine: Boolean = false,
+        val system: Boolean = false,
+        val at: Long = System.currentTimeMillis(),
+        val fromId: String? = null,
+        /** A voice note or a piece of talk, instead of text. */
+        val voice: VoiceClip? = null,
+    )
+
+    /** A voice clip as it arrives: AAC frames with the codec's setup, see [VoiceFrames]. */
+    class VoiceClip(val id: String, val cfg: ByteArray?, val frames: List<ByteArray>, val ms: Long, val complete: Boolean, val live: Boolean)
 
     data class Room(
         val code: RoomCode,
@@ -64,6 +77,10 @@ object Together {
         val endedReason: String? = null,
         /** This phone's id in [members]. */
         val myId: String? = null,
+        /** For the host: people who knocked, waiting to be let in or turned away. */
+        val requests: List<Member> = emptyList(),
+        /** For the host: knocking needs approval; off lets anyone with the code straight in. */
+        val askToJoin: Boolean = true,
     ) {
         val following get() = !hosting && phase == Phase.Live
     }
@@ -88,9 +105,84 @@ object Together {
     private var session: RoomSession? = null
     private var prefs: android.content.SharedPreferences? = null
 
+    private var appContext: Context? = null
+
     fun init(context: Context) {
+        appContext = context.applicationContext
         prefs = context.getSharedPreferences("together", Context.MODE_PRIVATE)
         _picksPlayNow.value = prefs?.getBoolean("picks_play_now", false) ?: false
+        _talkMuted.value = prefs?.getBoolean("talk_muted", false) ?: false
+    }
+
+    /** Whether people who knock wait for approval in rooms this phone hosts. */
+    val askToJoin: Boolean
+        get() = prefs?.getBoolean("ask_to_join", true) ?: true
+
+    fun approve(id: String) = session?.approve(id)
+    fun reject(id: String) = session?.reject(id)
+    fun remove(id: String) = session?.remove(id)
+    fun setAskToJoin(on: Boolean) {
+        prefs?.edit { putBoolean("ask_to_join", on) }
+        session?.setAskToJoin(on)
+    }
+
+    // ---- voice ----
+
+    private val voicePlayer by lazy { appContext?.let { VoicePlayer(it).apply { onPlaying = { id -> _playingClip.value = id } } } }
+    private val _playingClip = MutableStateFlow<String?>(null)
+    /** The voice clip being heard now, by its chat id. */
+    val playingClip: StateFlow<String?> = _playingClip.asStateFlow()
+
+    private val _talkMuted = MutableStateFlow(false)
+    /** Talk from others isn't played as it arrives (it still shows in the chat). */
+    val talkMuted: StateFlow<Boolean> = _talkMuted.asStateFlow()
+
+    fun setTalkMuted(on: Boolean) {
+        _talkMuted.value = on
+        prefs?.edit { putBoolean("talk_muted", on) }
+        if (on) voicePlayer?.stop()
+    }
+
+    private val _recording = MutableStateFlow<Boolean?>(null)
+    /** Recording now: true for talk, false for a voice note, null when not. */
+    val recording: StateFlow<Boolean?> = _recording.asStateFlow()
+    private var recorder: VoiceRecorder? = null
+
+    /**
+     * Starts recording: [live] talk, heard by everyone as it's said, or a
+     * voice note sent when it's done. The caller has the microphone permission.
+     */
+    fun startVoice(live: Boolean): Boolean {
+        val s = session ?: return false
+        val context = appContext ?: return false
+        if (recorder?.isRecording == true) return false
+        val id = java.util.UUID.randomUUID().toString().take(12)
+        var seq = 0
+        val all = mutableListOf<ByteArray>()
+        var cfg: ByteArray? = null
+        val r = VoiceRecorder(context, if (live) 30_000 else 60_000) { pieceCfg, frames, ms, last ->
+            main.launch {
+                if (pieceCfg != null) cfg = pieceCfg
+                all += frames
+                s.sendVoice(id, seq++, pieceCfg, frames, ms, last, live, all.toList(), cfg)
+                if (last) _recording.value = null
+            }
+        }
+        if (!r.start()) { notice("Couldn't use the microphone"); return false }
+        recorder = r
+        _recording.value = live
+        return true
+    }
+
+    fun stopVoice() {
+        recorder?.stop()
+        recorder = null
+    }
+
+    /** Plays a clip from the chat, or stops it if it's the one playing. */
+    fun playClip(clip: VoiceClip) {
+        val cfg = clip.cfg ?: return
+        voicePlayer?.play(clip.id, cfg, clip.frames)
     }
 
     private val _picksPlayNow = MutableStateFlow(false)
@@ -140,10 +232,13 @@ object Together {
             put("#t", JsonArray(listOf(JsonPrimitive(code.tag))))
             put("since", System.currentTimeMillis() / 1000 - 10)
         }
-        session = RoomSession(code, clean, hosting, p, RelayPool(RELAYS, filter), _room, ::notice, main).also { it.start() }
+        val talk = TalkSink { id, _, cfg, frames, done -> if (!_talkMuted.value) voicePlayer?.talk(id, cfg, frames, done) }
+        session = RoomSession(code, clean, hosting, p, RelayPool(RELAYS, filter), _room, ::notice, main, askToJoin, talk).also { it.start() }
     }
 
     fun leave() {
+        stopVoice()
+        voicePlayer?.stop()
         session?.stop(saying = true)
         session = null
         _room.value = null

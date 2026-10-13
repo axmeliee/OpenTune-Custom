@@ -28,23 +28,10 @@ class RoomCode private constructor(val raw: String) {
     }
 
     /** Encrypts [plain] as base64(iv || ciphertext), bound to this room's tag. */
-    fun seal(plain: String): String {
-        val iv = ByteArray(12).also(random::nextBytes)
-        val c = Cipher.getInstance("AES/GCM/NoPadding")
-        c.init(Cipher.ENCRYPT_MODE, key, GCMParameterSpec(128, iv))
-        c.updateAAD(tag.toByteArray())
-        return java.util.Base64.getEncoder().encodeToString(iv + c.doFinal(plain.toByteArray()))
-    }
+    fun seal(plain: String): String = gcmSeal(key, tag, plain)
 
     /** The plain text of a [seal]ed message, or null if it isn't one of this room's. */
-    fun open(sealed: String): String? = runCatching {
-        val all = java.util.Base64.getDecoder().decode(sealed)
-        if (all.size < 12 + 16) return null
-        val c = Cipher.getInstance("AES/GCM/NoPadding")
-        c.init(Cipher.DECRYPT_MODE, key, GCMParameterSpec(128, all, 0, 12))
-        c.updateAAD(tag.toByteArray())
-        String(c.doFinal(all, 12, all.size - 12))
-    }.getOrNull()
+    fun open(sealed: String): String? = gcmOpen(key, tag, sealed)
 
     /** A link that opens the room in OpenTune. */
     val link: String get() = "opentune://together/$raw"
@@ -81,6 +68,59 @@ class RoomCode private constructor(val raw: String) {
         internal fun sha256(s: String): ByteArray = MessageDigest.getInstance("SHA-256").digest(s.toByteArray())
     }
 }
+
+/**
+ * The key a room's own messages travel under once someone is let in: random,
+ * made by the host, and handed only to the people it approves (see
+ * [wrapFor]). The code alone opens just the lobby, where people knock.
+ */
+class RoomKey(internal val bytes: ByteArray, private val tag: String) {
+    private val spec = SecretKeySpec(bytes, "AES")
+    fun seal(plain: String): String = gcmSeal(spec, tag, plain)
+    fun open(sealed: String): String? = gcmOpen(spec, tag, sealed)
+
+    /** This key, sealed so only the holder of the private key matching [theirPublic] can open it. */
+    fun wrapFor(myPrivate: ByteArray, theirPublic: ByteArray): String? {
+        val shared = Schnorr.sharedSecret(myPrivate, theirPublic) ?: return null
+        return gcmSeal(admitKey(shared), tag, java.util.Base64.getEncoder().encodeToString(bytes))
+    }
+
+    companion object {
+        private val rng = SecureRandom()
+        fun random(tag: String) = RoomKey(ByteArray(32).also(rng::nextBytes), tag)
+
+        /** A key [wrapFor] sealed for us, from the host whose public key is [theirPublic]. */
+        fun unwrap(wrapped: String, myPrivate: ByteArray, theirPublic: ByteArray, tag: String): RoomKey? {
+            val shared = Schnorr.sharedSecret(myPrivate, theirPublic) ?: return null
+            val plain = gcmOpen(admitKey(shared), tag, wrapped) ?: return null
+            val bytes = runCatching { java.util.Base64.getDecoder().decode(plain) }.getOrNull()?.takeIf { it.size == 32 } ?: return null
+            return RoomKey(bytes, tag)
+        }
+
+        private fun admitKey(shared: ByteArray) =
+            SecretKeySpec(MessageDigest.getInstance("SHA-256").digest("opentune/together/admit".toByteArray() + shared), "AES")
+    }
+}
+
+private val gcmRandom = SecureRandom()
+
+/** AES-GCM: base64(iv || ciphertext), with [tag] as associated data. */
+internal fun gcmSeal(key: SecretKeySpec, tag: String, plain: String): String {
+    val iv = ByteArray(12).also(gcmRandom::nextBytes)
+    val c = Cipher.getInstance("AES/GCM/NoPadding")
+    c.init(Cipher.ENCRYPT_MODE, key, GCMParameterSpec(128, iv))
+    c.updateAAD(tag.toByteArray())
+    return java.util.Base64.getEncoder().encodeToString(iv + c.doFinal(plain.toByteArray()))
+}
+
+internal fun gcmOpen(key: SecretKeySpec, tag: String, sealed: String): String? = runCatching {
+    val all = java.util.Base64.getDecoder().decode(sealed)
+    if (all.size < 12 + 16) return null
+    val c = Cipher.getInstance("AES/GCM/NoPadding")
+    c.init(Cipher.DECRYPT_MODE, key, GCMParameterSpec(128, all, 0, 12))
+    c.updateAAD(tag.toByteArray())
+    String(c.doFinal(all, 12, all.size - 12))
+}.getOrNull()
 
 internal fun ByteArray.toHex(): String = joinToString("") { "%02x".format(it) }
 internal fun String.hexToBytes(): ByteArray = chunked(2).map { it.toInt(16).toByte() }.toByteArray()

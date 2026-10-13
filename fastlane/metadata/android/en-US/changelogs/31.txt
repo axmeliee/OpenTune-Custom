@@ -1,3 +1,5 @@
-• Faster downloads: songs come down in pieces, several at once, and a playlist downloads three songs at a time
-• Where the song's parts begin shows as small dots ahead of the playhead, not as breaks in the played line of the seek bar
-• Listen together: joining a room lists you straight away, and a guest can choose for a picked song to play now for everyone (when the host allows it)
+• Rooms: people with the code ask to join; you let them in or turn them away, and only they can hear or read the room
+• Voice notes in room chat, and push-to-talk
+• A guest's picked song can play now for everyone, and joining lists you straight away
+• Faster downloads: songs come in pieces, three songs at a time
+• The seek bar marks song parts with small dots

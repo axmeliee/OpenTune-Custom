@@ -89,7 +89,15 @@ internal interface RoomTransport {
     fun close()
 }
 
+/** Where a room's voice clips go to be heard as they arrive. */
+internal fun interface TalkSink {
+    /** More of clip [id], in order; [cfg] is the codec setup, [done] the clip's end. */
+    fun talk(id: String, from: String, cfg: ByteArray, frames: List<ByteArray>, done: Boolean)
+}
+
 private const val HEARTBEAT_MS = 2_000L
+/** A knock not repeated for this long is someone who gave up waiting. */
+private const val REQUEST_TIMEOUT_MS = 30_000L
 private const val HERE_MS = 20_000L
 private const val MEMBER_TIMEOUT_MS = 50_000L
 private const val HOST_TIMEOUT_MS = 25_000L
@@ -127,9 +135,22 @@ internal class RoomSession(
     private val state: MutableStateFlow<Room?>,
     private val notice: (String) -> Unit,
     private val main: CoroutineScope,
+    /** Whether people who knock wait for the host to let them in. */
+    askToJoin: Boolean = true,
+    private val talkSink: TalkSink = TalkSink { _, _, _, _, _ -> },
 ) {
     private val key = Schnorr.newPrivateKey()
     private val me = Schnorr.publicKey(key).toHex()
+    /**
+     * The key the room's own messages travel under. The host makes it; a
+     * guest gets it only when the host lets them in. The code opens just the
+     * lobby, so someone with only the code can knock but can't listen in.
+     */
+    @Volatile private var roomKey: RoomKey? = if (hosting) RoomKey.random(code.tag) else null
+    /** Goes up each time the host changes the key, after putting someone out. */
+    private var epoch = 0
+    private var askToJoin = askToJoin
+    private val requests = linkedMapOf<String, Member0>()
     private val outbox = Channel<Msg>(Channel.BUFFERED)
     private val jobs = mutableListOf<Job>()
     private val members = linkedMapOf<String, Member0>()
@@ -166,7 +187,14 @@ internal class RoomSession(
         jobs += main.launch {
             pool.events.collect { event ->
                 if (event.pubkey == me) return@collect
-                val msg = withContext(Dispatchers.Default) { code.open(event.content)?.let(Msg::decode) } ?: return@collect
+                val opened = withContext(Dispatchers.Default) {
+                    roomKey?.open(event.content)?.let { Msg.decode(it)?.to(true) }
+                        ?: code.open(event.content)?.let { Msg.decode(it)?.to(false) }
+                } ?: return@collect
+                val (msg, inRoom) = opened
+                // Only knocking and the host's answers travel under the code; anything
+                // else sealed that way is from someone who wasn't let in.
+                if (!inRoom && !Msg.inLobby(msg)) return@collect
                 if (hosting) hostHandle(event.pubkey, msg) else guestHandle(event.pubkey, msg)
             }
         }
@@ -177,7 +205,9 @@ internal class RoomSession(
             Schnorr.warmUp()
             code.seal("")
             for (m in outbox) {
-                val content = code.seal(Msg.encode(m))
+                val text = Msg.encode(m)
+                // A guest not yet let in has no room key, and nothing to say in the room.
+                val content = if (Msg.inLobby(m)) code.seal(text) else roomKey?.seal(text) ?: continue
                 val event = NostrEvent.signed(key, Together.KIND, listOf(listOf("t", code.tag)), content)
                 if (!pool.publish(event)) Log.w(TAG, "no relay connected for ${m::class.simpleName}")
             }
@@ -216,7 +246,7 @@ internal class RoomSession(
     // ---------------- host ----------------
 
     private fun startHost() {
-        update { it.copy(hostName = myName, members = memberList(), phase = if (pool.connected.value > 0) Phase.Live else Phase.Connecting) }
+        update { it.copy(hostName = myName, members = memberList(), askToJoin = askToJoin, phase = if (pool.connected.value > 0) Phase.Live else Phase.Connecting) }
         addChat(ChatLine("", "Room open. Share the code so friends can join.", system = true))
         val p = player
         jobs += main.launch {
@@ -243,6 +273,7 @@ internal class RoomSession(
                 val jumped = sent != null && sent.track != null &&
                     kotlin.math.abs(pos - targetPosition(sent, now, 0)) > 2_000
                 if (jumped || now - lastSentLocal > HEARTBEAT_MS) sendState()
+                if (requests.values.removeAll { now - it.lastSeen > REQUEST_TIMEOUT_MS }) update { it.copy(requests = requestList()) }
                 val gone = members.filterValues { now - it.lastSeen > MEMBER_TIMEOUT_MS }
                 if (gone.isNotEmpty()) {
                     gone.keys.forEach(members::remove)
@@ -254,6 +285,59 @@ internal class RoomSession(
     }
 
     private fun memberList() = listOf(Member(me, myName, host = true)) + members.map { (id, m) -> Member(id, m.name) }
+    private fun requestList() = requests.map { (id, m) -> Member(id, m.name) }
+
+    /** Hands [id] the room key, sealed so only their phone can open it. */
+    private fun admit(id: String) {
+        val wrapped = runCatching { roomKey?.wrapFor(key, id.hexToBytes()) }.getOrNull() ?: return
+        send(Msg.Admit(id, wrapped, epoch, myName))
+    }
+
+    private fun letIn(id: String, name: String, now: Long) {
+        requests.remove(id)
+        members[id] = Member0(name, now)
+        admit(id)
+        addChat(ChatLine("", "$name joined", system = true))
+        update { it.copy(members = memberList(), requests = requestList()) }
+        sendState()
+    }
+
+    fun approve(id: String) {
+        if (!hosting) return
+        val r = requests[id] ?: return
+        letIn(id, r.name, System.currentTimeMillis())
+    }
+
+    fun reject(id: String) {
+        if (!hosting) return
+        requests.remove(id) ?: return
+        send(Msg.Deny(id, host = myName))
+        update { it.copy(requests = requestList()) }
+    }
+
+    /**
+     * Puts [id] out of the room. The room moves to a new key, handed to
+     * everyone else, so the old one they hold opens nothing from now on.
+     */
+    fun remove(id: String) {
+        if (!hosting) return
+        val m = members.remove(id) ?: return
+        roomKey = RoomKey.random(code.tag)
+        epoch++
+        send(Msg.Deny(id, removed = true, host = myName))
+        members.keys.forEach(::admit)
+        addChat(ChatLine("", "${m.name} was removed", system = true))
+        update { it.copy(members = memberList()) }
+        sendState()
+    }
+
+    fun setAskToJoin(on: Boolean) {
+        if (!hosting) return
+        askToJoin = on
+        update { it.copy(askToJoin = on) }
+        // Nobody needs to wait any more: everyone knocking comes in.
+        if (!on) requests.entries.toList().forEach { (id, r) -> letIn(id, r.name, System.currentTimeMillis()) }
+    }
 
     private fun sendState() {
         val p = player
@@ -281,18 +365,30 @@ internal class RoomSession(
     private fun hostHandle(from: String, msg: Msg) {
         val now = System.currentTimeMillis()
         val p = player
+        // Inside the room, only people let in are listened to.
+        if (!Msg.inLobby(msg) && from !in members) return
         when (msg) {
-            is Msg.Hello, is Msg.Here -> {
-                val name = ((msg as? Msg.Hello)?.name ?: (msg as Msg.Here).name).take(30)
-                val known = members[from]
-                if (known == null) {
-                    members[from] = Member0(name, now)
-                    addChat(ChatLine("", "$name joined", system = true))
-                    update { it.copy(members = memberList()) }
-                } else known.lastSeen = now
-                if (msg is Msg.Hello) sendState()
+            is Msg.Hello -> {
+                val name = msg.name.take(30)
+                val member = members[from]
+                when {
+                    // In already, and knocking again: it missed the key or the state.
+                    member != null -> { member.lastSeen = now; admit(from); sendState() }
+                    !askToJoin -> letIn(from, name, now)
+                    else -> {
+                        val known = requests[from]
+                        if (known == null) {
+                            requests[from] = Member0(name, now)
+                            update { it.copy(requests = requestList()) }
+                            notice("$name wants to join")
+                        } else known.lastSeen = now
+                        send(Msg.Pending(from, myName))
+                    }
+                }
             }
-            Msg.Bye -> members.remove(from)?.let { m ->
+            is Msg.Here -> members[from]?.lastSeen = now
+            // A goodbye is signed by whoever leaves, so it can't be faked for someone else.
+            Msg.Bye -> if (requests.remove(from) != null) update { it.copy(requests = requestList()) } else members.remove(from)?.let { m ->
                 addChat(ChatLine("", "${m.name} left", system = true))
                 update { it.copy(members = memberList()) }
                 sendState()
@@ -325,7 +421,8 @@ internal class RoomSession(
                     "prev" -> p.skipPrevious()
                 }
             }
-            is Msg.Chat -> addChat(ChatLine(members[from]?.name ?: "Someone", msg.text.take(300)))
+            is Msg.Chat -> addChat(ChatLine(members[from]?.name ?: "Someone", msg.text.take(300), fromId = from))
+            is Msg.Voice -> voiceIn(from, msg)
             else -> Unit
         }
     }
@@ -345,7 +442,7 @@ internal class RoomSession(
             // Knock until the host lists this phone among the members, then
             // check in now and then. Hearing from the host isn't enough: the
             // host's state can arrive before the host has heard our hello.
-            while (isActive && last?.members?.any { it.id == me } != true) {
+            while (isActive && (roomKey == null || last?.members?.any { it.id == me } != true)) {
                 if (pool.connected.value > 0) send(Msg.Hello(myName))
                 delay(2_000)
             }
@@ -384,11 +481,28 @@ internal class RoomSession(
     private fun guestHandle(from: String, msg: Msg) {
         val now = System.currentTimeMillis()
         when (msg) {
+            is Msg.Pending -> if (msg.to == me && roomKey == null && (hostKey == null || from == hostKey)) {
+                hostKey = from
+                update { it.copy(phase = Phase.Waiting, hostName = msg.host) }
+            }
+            is Msg.Admit -> if (msg.to == me && (hostKey == null || from == hostKey) && msg.epoch >= epoch) {
+                val k = runCatching { RoomKey.unwrap(msg.key, key, from.hexToBytes(), code.tag) }.getOrNull() ?: return
+                hostKey = from
+                roomKey = k
+                epoch = msg.epoch
+                update { if (it.phase == Phase.Waiting || it.phase == Phase.Connecting) it.copy(phase = Phase.FindingHost, hostName = msg.host) else it }
+            }
+            is Msg.Deny -> if (msg.to == me && (hostKey == null || from == hostKey)) {
+                val host = msg.host.ifBlank { state.value?.hostName ?: "The host" }
+                update { it.copy(phase = Phase.Ended, endedReason = if (msg.removed) "$host removed you from the room" else "$host didn't let you in") }
+                stop(saying = false)
+            }
             is Msg.State -> {
                 if (hostKey == null) hostKey = from
                 if (from != hostKey) return
                 if ((last?.seq ?: -1) >= msg.seq) return
                 val first = last == null
+                val before = last?.members?.map { it.id }?.toSet()
                 last = msg
                 lastAt = now
                 update {
@@ -398,6 +512,12 @@ internal class RoomSession(
                     )
                 }
                 if (first) addChat(ChatLine("", "You joined ${msg.host}'s room", system = true))
+                else if (before != null) {
+                    // Comings and goings, from the host's list of who's in.
+                    msg.members.filter { it.id !in before && it.id != me }.forEach { addChat(ChatLine("", "${it.name} joined", system = true)) }
+                    val now2 = msg.members.map { it.id }.toSet()
+                    state.value?.members?.filter { it.id in before && it.id !in now2 && it.id != me }?.forEach { addChat(ChatLine("", "${it.name} left", system = true)) }
+                }
                 follow(msg, fresh = true)
             }
             Msg.End -> if (from == hostKey) {
@@ -411,12 +531,8 @@ internal class RoomSession(
                     offset = clockOffset(msg.c, msg.h, now)
                 }
             }
-            is Msg.Hello -> if (from != hostKey && state.value?.members?.none { it.id == from } == true) addChat(ChatLine("", "${msg.name.take(30)} joined", system = true))
-            Msg.Bye -> state.value?.members?.firstOrNull { it.id == from }?.let { addChat(ChatLine("", "${it.name} left", system = true)) }
-            is Msg.Chat -> {
-                val name = state.value?.members?.firstOrNull { it.id == from }?.name ?: "Someone"
-                addChat(ChatLine(name, msg.text.take(300)))
-            }
+            is Msg.Chat -> addChat(ChatLine(nameOf(from), msg.text.take(300), fromId = from))
+            is Msg.Voice -> voiceIn(from, msg)
             else -> Unit
         }
     }
@@ -577,7 +693,70 @@ internal class RoomSession(
     fun say(text: String) {
         val t = text.trim().take(300)
         if (t.isEmpty()) return
+        if (roomKey == null) { notice("You can chat once you're let in"); return }
         send(Msg.Chat(t))
-        addChat(ChatLine(myName, t, mine = true))
+        addChat(ChatLine(myName, t, mine = true, fromId = me))
+    }
+
+    private fun nameOf(id: String): String =
+        if (hosting) members[id]?.name ?: "Someone" else state.value?.members?.firstOrNull { it.id == id }?.name ?: "Someone"
+
+    // ---------------- voice ----------------
+
+    /** A clip coming in, piece by piece; pieces can arrive out of order. */
+    private class Incoming(val live: Boolean) {
+        var cfg: ByteArray? = null
+        val parts = java.util.TreeMap<Int, List<ByteArray>>()
+        var lastSeq: Int? = null
+        var ms = 0L
+        /** For talk: the next piece to hand on to be heard. */
+        var played = 0
+        val complete get() = lastSeq != null && parts.size == lastSeq!! + 1
+        fun frames() = parts.values.flatten()
+    }
+
+    private val incoming = mutableMapOf<String, Incoming>()
+
+    private fun voiceIn(from: String, v: Msg.Voice) {
+        val frames = runCatching { VoiceFrames.unpack(java.util.Base64.getDecoder().decode(v.data)) }.getOrNull() ?: return
+        val clipId = "$from/${v.id}"
+        if (incoming.size > 32) incoming.keys.take(incoming.size - 32).forEach(incoming::remove)
+        val c = incoming.getOrPut(clipId) { Incoming(v.live) }
+        if (v.seq in c.parts) return
+        v.cfg?.let { c.cfg = runCatching { java.util.Base64.getDecoder().decode(it) }.getOrNull() }
+        c.parts[v.seq] = frames
+        if (v.last) c.lastSeq = v.seq
+        c.ms = maxOf(c.ms, v.ms)
+        val cfg = c.cfg
+        if (c.live && cfg != null) {
+            // Talk is heard as it comes, in order.
+            while (c.parts.containsKey(c.played)) {
+                val done = c.lastSeq == c.played
+                talkSink.talk(clipId, from, cfg, c.parts.getValue(c.played), done)
+                c.played++
+            }
+        }
+        // Talk shows in the chat as it's said; a voice note once it's all in.
+        if (c.live || c.complete) showClip(clipId, nameOf(from), from, c.cfg, c.frames(), c.ms, c.complete, c.live, mine = false)
+    }
+
+    private fun showClip(id: String, name: String, from: String, cfg: ByteArray?, frames: List<ByteArray>, ms: Long, complete: Boolean, live: Boolean, mine: Boolean) {
+        val clip = Together.VoiceClip(id, cfg, frames, ms, complete, live)
+        update { r ->
+            val i = r.chat.indexOfFirst { it.voice?.id == id }
+            val line = ChatLine(name, "", mine = mine, fromId = from, voice = clip)
+            r.copy(chat = if (i >= 0) r.chat.toMutableList().also { it[i] = line.copy(at = r.chat[i].at) } else (r.chat + line).takeLast(MAX_CHAT))
+        }
+    }
+
+    /**
+     * Sends a piece of this phone's voice clip [id]: [frames] in order,
+     * [cfg] with the first piece. Shows in this phone's chat as well.
+     */
+    fun sendVoice(id: String, seq: Int, cfg: ByteArray?, frames: List<ByteArray>, ms: Long, last: Boolean, live: Boolean, allFrames: List<ByteArray>, allCfg: ByteArray?) {
+        if (roomKey == null) return
+        send(Msg.Voice(id, seq, java.util.Base64.getEncoder().encodeToString(VoiceFrames.pack(frames)), last, live,
+            cfg?.let { java.util.Base64.getEncoder().encodeToString(it) }, ms))
+        if (live || last) showClip("$me/$id", myName, me, allCfg, allFrames, ms, last, live, mine = true)
     }
 }
