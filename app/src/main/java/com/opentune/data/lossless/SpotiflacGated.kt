@@ -23,23 +23,37 @@ object SpotiflacSession {
     private var prefs: SharedPreferences? = null
     private val _connected = MutableStateFlow(false)
     val connected = _connected.asStateFlow()
+    private val _needsVerification = MutableStateFlow(false)
+    val needsVerification = _needsVerification.asStateFlow()
+    private val _revision = MutableStateFlow(0L)
+    val revision = _revision.asStateFlow()
 
     fun init(context: Context) {
         prefs = context.getSharedPreferences("spotiflac", Context.MODE_PRIVATE)
+        _needsVerification.value = prefs?.getBoolean("needs_verification", false) == true
         _connected.value = current() != null
     }
 
     internal fun current(): Session? {
         val json = prefs?.getString("session", null) ?: return null
+        if (prefs?.getInt("issuer_protocol", 0) != 2) {
+            invalidate()
+            return null
+        }
         val session = parse(json)
-        if (session == null) clear()
+        if (session == null) invalidate()
         return session
     }
 
-    fun save(json: String): Boolean {
+    fun save(json: String, issuer: String): Boolean {
         if (parse(json) == null || prefs == null) return false
-        prefs?.edit()?.putString("session", json)?.apply()
+        if (httpsUrl(issuer) == null) return false
+        prefs?.edit()?.putString("session", json)?.putString("issuer", issuer)
+            ?.putInt("issuer_protocol", 2)?.putBoolean("needs_verification", false)?.apply()
+        _needsVerification.value = false
         _connected.value = true
+        ExternalStreams.retryLookups()
+        _revision.value += 1
         return true
     }
 
@@ -58,8 +72,18 @@ object SpotiflacSession {
         }
 
     fun clear() {
-        prefs?.edit()?.clear()?.apply()
+        // Keep the install identity that the provider binds grants to.
+        prefs?.edit()?.remove("session")?.remove("issuer")?.remove("issuer_protocol")
+            ?.putBoolean("needs_verification", false)?.apply()
         _connected.value = false
+        _needsVerification.value = false
+    }
+
+    internal fun invalidate(expected: Session? = null) {
+        if (expected != null && prefs?.getString("session", null)?.let { parse(it) } != expected) return
+        clear()
+        prefs?.edit()?.putBoolean("needs_verification", true)?.apply()
+        _needsVerification.value = true
     }
 }
 
@@ -80,8 +104,14 @@ internal object SpotiflacGated {
         val request = Request.Builder().url(url)
             .post(body.toRequestBody("application/json".toMediaType()))
             .header("User-Agent", "SpotiFLAC-Mobile/$APP_VERSION")
+            .header("Accept", "application/json")
             .apply { headers.forEach { (name, value) -> header(name, value) } }.build()
-        return LosslessSource.tidalUrl(JSONObject(String(LosslessHttp.bytes(request, 1_048_576), Charsets.UTF_8)))
+        return try {
+            LosslessSource.tidalUrl(JSONObject(String(LosslessHttp.bytes(request, 1_048_576, timeoutMs = 12_000), Charsets.UTF_8)))
+        } catch (e: LosslessHttp.HttpFailure) {
+            if (e.code == 401) SpotiflacSession.invalidate(session)
+            throw e
+        }
     }
 
     internal fun signHeaders(id: String, secret: String, path: String, body: ByteArray, now: Instant, nonce: String): Map<String, String> {
@@ -101,3 +131,4 @@ internal object SpotiflacGated {
     )
     private fun ByteArray.hex(): String = joinToString("") { "%02x".format(it.toInt() and 0xff) }
 }
+

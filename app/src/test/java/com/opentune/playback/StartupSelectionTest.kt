@@ -20,6 +20,11 @@ import java.io.IOException
 @Config(sdk = [35], application = android.app.Application::class)
 @androidx.annotation.OptIn(androidx.media3.common.util.UnstableApi::class)
 class StartupSelectionTest {
+    @Test fun explicitRetryCanSearchAfterMaximumStartupMiss() {
+        assertFalse(shouldRetryExternal(checkedMaximum = true, force = false))
+        assertTrue(shouldRetryExternal(checkedMaximum = true, force = true))
+        assertTrue(shouldRetryExternal(checkedMaximum = false, force = false))
+    }
     @Test fun playerRetainsTheSourceFactorySelectionToken() {
         val context = org.robolectric.RuntimeEnvironment.getApplication()
         val delegate = androidx.media3.exoplayer.source.DefaultMediaSourceFactory(context)
@@ -103,3 +108,4 @@ class StartupSelectionTest {
         assertEquals(fallback, withoutStartup(tagged))
     }
 }
+

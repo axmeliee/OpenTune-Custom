@@ -1,29 +1,31 @@
 package com.opentune.data.lossless
 
+import android.net.Uri
 import okhttp3.HttpUrl.Companion.toHttpUrl
 import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
 import org.json.JSONObject
-import org.json.JSONTokener
 
-/** The provider owns the challenge widget and its server-issued Turnstile binding. */
+/** User-operated provider challenge, with an attempt-bound callback and a pinned issuer. */
 internal object SpotiflacVerificationApi {
-    suspend fun bootstrap(installId: String): JSONObject {
-        val url = "${LosslessRegistry.SESSION_BASE}/bootstrap".toHttpUrl().newBuilder()
+    private const val CALLBACK = "spotiflac://session-grant"
+
+    suspend fun bootstrap(base: String, installId: String): JSONObject {
+        val url = "$base/bootstrap".toHttpUrl().newBuilder()
             .addQueryParameter("install_id", installId)
-            .addQueryParameter("app_version", SpotiflacGated.APP_VERSION).build()
-        return JSONObject(LosslessHttp.text(url.toString()))
+            .addQueryParameter("app_version", SpotiflacGated.APP_VERSION)
+            .addQueryParameter("platform", "android").build()
+        return JSONObject(LosslessHttp.text(url.toString(), timeoutMs = 12_000))
     }
 
-    fun challengeUrl(data: JSONObject): String? {
-        val id = data.optString("challenge_id")
-        if (!Regex("[A-Za-z0-9_-]{1,256}").matches(id)) return null
-        // No callback scheme: the provider's popup flow exposes zarzGrant in
-        // this page. Read only that top-level variable; no native JS bridge.
-        return "${LosslessRegistry.SESSION_BASE}/challenge".toHttpUrl().newBuilder()
-            .addQueryParameter("id", id).build().toString()
+    fun challengeUrl(data: JSONObject, base: String, state: String): String? {
+        val issuer = base.toHttpUrlOrNull() ?: return null
+        val page = httpsUrl(data.optString("challenge_url"))?.toHttpUrl() ?: return null
+        if (page.host != issuer.host || page.port != issuer.port || page.encodedPath != issuer.encodedPath.trimEnd('/') + "/challenge") return null
+        if (!Regex("[a-f0-9]{32}").matches(state)) return null
+        return page.newBuilder().setQueryParameter("cb", "$CALLBACK?state=$state").build().toString()
     }
 
     fun isChallengePage(actual: String?, expected: String): Boolean {
@@ -32,20 +34,23 @@ internal object SpotiflacVerificationApi {
         return url.newBuilder().fragment(null).build() == pinned
     }
 
-    fun grantFromJavascript(result: String?): String? = runCatching {
-        result ?: return null
-        if (result.length > 16_384 || !result.startsWith('"') || !result.endsWith('"')) return null
-        (JSONTokener(result).nextValue() as? String)?.takeIf {
+    fun isCallback(uri: Uri): Boolean = uri.scheme == "spotiflac" && uri.host == "session-grant" &&
+        uri.port == -1 && uri.userInfo == null && uri.path.isNullOrEmpty() && uri.fragment == null
+
+    fun grantFromCallback(uri: Uri, state: String): String? {
+        if (!isCallback(uri) || uri.getQueryParameters("state") != listOf(state)) return null
+        return uri.getQueryParameters("grant").singleOrNull()?.takeIf {
             it.isNotBlank() && it.length <= 8_192 && it.none(Char::isISOControl)
         }
-    }.getOrNull()
+    }
 
-    suspend fun exchange(installId: String, grant: String): String {
+    suspend fun exchange(base: String, installId: String, grant: String): String {
         val body = JSONObject().put("grant", grant).put("install_id", installId)
             .put("app_version", SpotiflacGated.APP_VERSION).put("platform", "android")
-        val request = Request.Builder().url("${LosslessRegistry.SESSION_BASE}/session/exchange")
+        val request = Request.Builder().url("$base/session/exchange")
             .post(body.toString().toRequestBody("application/json".toMediaType()))
             .header("Accept", "application/json").build()
-        return LosslessHttp.bytes(request, 1_048_576).toString(Charsets.UTF_8)
+        return LosslessHttp.bytes(request, 1_048_576, timeoutMs = 12_000).toString(Charsets.UTF_8)
     }
 }
+

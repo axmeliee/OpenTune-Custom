@@ -13,23 +13,26 @@ import kotlin.coroutines.resumeWithException
 
 /** A cancelled lookup closes its socket, including a stalled response body. */
 internal object LosslessHttp {
+    class HttpFailure(val code: Int) : IOException("Lossless HTTP $code")
     data class Data(val bytes: ByteArray, val totalBytes: Long?)
     private val client by lazy {
         Http.client.newBuilder().callTimeout(5, TimeUnit.SECONDS)
             .connectTimeout(3, TimeUnit.SECONDS).readTimeout(5, TimeUnit.SECONDS).build()
     }
 
-    suspend fun text(url: String, headers: Map<String, String> = emptyMap()): String =
+    suspend fun text(url: String, headers: Map<String, String> = emptyMap(), timeoutMs: Long = 5_000): String =
         bytes(Request.Builder().url(url).apply {
             headers.forEach { (name, value) -> header(name, value) }
-        }.build(), 1_048_576).toString(Charsets.UTF_8)
+        }.build(), 1_048_576, timeoutMs = timeoutMs).toString(Charsets.UTF_8)
 
-    suspend fun bytes(request: Request, limit: Int, prefixOnly: Boolean = false): ByteArray =
-        read(request, limit, prefixOnly).bytes
+    suspend fun bytes(request: Request, limit: Int, prefixOnly: Boolean = false, timeoutMs: Long = 5_000): ByteArray =
+        read(request, limit, prefixOnly, timeoutMs).bytes
 
-    suspend fun read(request: Request, limit: Int, prefixOnly: Boolean = false): Data =
+    suspend fun read(request: Request, limit: Int, prefixOnly: Boolean = false, timeoutMs: Long = 5_000): Data =
         suspendCancellableCoroutine { continuation ->
-            val call = client.newCall(request)
+            val selected = if (timeoutMs == 5_000L) client else client.newBuilder()
+                .callTimeout(timeoutMs, TimeUnit.MILLISECONDS).readTimeout(timeoutMs, TimeUnit.MILLISECONDS).build()
+            val call = selected.newCall(request)
             continuation.invokeOnCancellation { call.cancel() }
             call.enqueue(object : Callback {
                 override fun onFailure(call: Call, e: IOException) {
@@ -39,7 +42,7 @@ internal object LosslessHttp {
                 override fun onResponse(call: Call, response: Response) {
                     try {
                         val bytes = response.use {
-                            if (!it.isSuccessful) throw IOException("Lossless HTTP ${it.code}")
+                            if (!it.isSuccessful) throw HttpFailure(it.code)
                             val source = it.body?.source() ?: throw IOException("Empty lossless response")
                             source.request(limit.toLong() + if (prefixOnly) 0 else 1)
                             if (!prefixOnly && source.buffer.size > limit) throw IOException("Lossless response too large")
@@ -55,3 +58,4 @@ internal object LosslessHttp {
             })
         }
 }
+

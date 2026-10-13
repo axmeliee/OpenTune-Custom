@@ -1,0 +1,4 @@
+• Fixed SpotiFLAC verification using a session issuer that the download provider no longer accepts. Verify once again in Audio settings after updating.
+• Verified FLAC lookup now searches the track catalog directly and runs alongside other providers, so a mapping outage or a slow source cannot block it.
+• Renewing verification or retrying a better source now clears earlier lookup misses, including after a Max-quality search.
+• Source details explain expired sessions, unavailable providers and unmatched recordings. FLAC headers and track duration are still verified before playback switches.

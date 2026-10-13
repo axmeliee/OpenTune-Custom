@@ -1,7 +1,6 @@
 package com.opentune.ui.settings
 
 import android.annotation.SuppressLint
-import android.os.SystemClock
 import android.webkit.CookieManager
 import android.webkit.WebResourceRequest
 import android.webkit.WebSettings
@@ -30,13 +29,11 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
+import com.opentune.data.lossless.LosslessRegistry
 import com.opentune.data.lossless.SpotiflacSession
 import com.opentune.data.lossless.SpotiflacVerificationApi
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.delay
-import kotlinx.coroutines.suspendCancellableCoroutine
-import kotlinx.coroutines.withTimeoutOrNull
-import kotlin.coroutines.resume
 
 @Composable
 internal fun SpotiflacVerification(onDismiss: () -> Unit) {
@@ -53,6 +50,10 @@ internal fun SpotiflacVerification(onDismiss: () -> Unit) {
 @Composable
 private fun VerificationAttempt(onDismiss: () -> Unit, onRetry: () -> Unit) {
     val installId = remember { SpotiflacSession.installId() }
+    val state = remember { java.util.UUID.randomUUID().toString().replace("-", "") }
+    var issuer by remember { mutableStateOf<String?>(null) }
+    var grant by remember { mutableStateOf<String?>(null) }
+    var grantConsumed by remember { mutableStateOf(false) }
     var challenge by remember { mutableStateOf<String?>(null) }
     var webView by remember { mutableStateOf<WebView?>(null) }
     var status by remember { mutableStateOf("Connecting to SpotiFLAC…") }
@@ -62,9 +63,11 @@ private fun VerificationAttempt(onDismiss: () -> Unit, onRetry: () -> Unit) {
     }
     LaunchedEffect(Unit) {
         try {
-            val data = SpotiflacVerificationApi.bootstrap(installId)
-            if (SpotiflacSession.save(data.toString())) { onDismiss(); return@LaunchedEffect }
-            challenge = SpotiflacVerificationApi.challengeUrl(data)
+            val base = LosslessRegistry.verificationBase(LosslessRegistry.snapshot())
+            issuer = base
+            val data = SpotiflacVerificationApi.bootstrap(base, installId)
+            if (SpotiflacSession.save(data.toString(), base)) { onDismiss(); return@LaunchedEffect }
+            challenge = SpotiflacVerificationApi.challengeUrl(data, base, state)
             status = if (challenge != null) "Complete the check on the provider's page below."
                 else "The provider did not return a supported verification page. Other audio sources remain available."
         } catch (e: CancellationException) {
@@ -73,36 +76,29 @@ private fun VerificationAttempt(onDismiss: () -> Unit, onRetry: () -> Unit) {
             status = "Could not connect to the verification provider. Other audio sources remain available."
         } finally { busy = false }
     }
-    LaunchedEffect(webView, challenge) {
-        val view = webView ?: return@LaunchedEffect
-        val page = challenge ?: return@LaunchedEffect
-        // A fresh challenge expires after five minutes. Never loop indefinitely.
-        val deadline = SystemClock.elapsedRealtime() + 5 * 60_000
-        while (SystemClock.elapsedRealtime() < deadline) {
-            delay(500)
-            if (!SpotiflacVerificationApi.isChallengePage(view.url, page)) continue
-            val result = withTimeoutOrNull(2_000) {
-                suspendCancellableCoroutine<String?> { continuation ->
-                    view.evaluateJavascript("window.zarzGrant || null") {
-                        if (continuation.isActive) continuation.resume(it)
-                    }
-                }
+    LaunchedEffect(challenge) {
+        if (challenge != null) {
+            delay(5 * 60_000L)
+            if (!grantConsumed) {
+                grantConsumed = true
+                status = "Verification timed out. Start a new check or close this to continue listening."
             }
-            val grant = SpotiflacVerificationApi.grantFromJavascript(result) ?: continue
-            busy = true
-            status = "Check completed. Connecting your provider session…"
-            try {
-                val session = SpotiflacVerificationApi.exchange(installId, grant)
-                if (SpotiflacSession.save(session)) { onDismiss(); return@LaunchedEffect }
-                status = "The provider returned no valid session. Other audio sources remain available."
-            } catch (e: CancellationException) {
-                throw e
-            } catch (_: Exception) {
-                status = "The check completed, but the provider refused or could not issue a session. You can close this and continue listening."
-            } finally { busy = false }
-            return@LaunchedEffect // A grant is single-use; do not exchange it repeatedly.
         }
-        status = "Verification timed out. Start a new check or close this to continue listening."
+    }
+    LaunchedEffect(grant) {
+        val token = grant ?: return@LaunchedEffect
+        val base = issuer ?: return@LaunchedEffect
+        busy = true
+        status = "Check completed. Connecting your provider session…"
+        try {
+            val session = SpotiflacVerificationApi.exchange(base, installId, token)
+            if (SpotiflacSession.save(session, base)) { onDismiss(); return@LaunchedEffect }
+            status = "The provider returned no valid session. Start a new check to try again."
+        } catch (e: CancellationException) {
+            throw e
+        } catch (_: Exception) {
+            status = "The check completed, but the provider could not issue a session. Start a new check to try again."
+        } finally { busy = false }
     }
     Column(Modifier.padding(16.dp)) {
         Text("Verify SpotiFLAC", style = MaterialTheme.typography.titleLarge)
@@ -120,8 +116,20 @@ private fun VerificationAttempt(onDismiss: () -> Unit, onRetry: () -> Unit) {
                         settings.mixedContentMode = WebSettings.MIXED_CONTENT_NEVER_ALLOW
                         CookieManager.getInstance().setAcceptThirdPartyCookies(this, true)
                         webViewClient = object : WebViewClient() {
-                            override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean =
-                                request.isForMainFrame && !SpotiflacVerificationApi.isChallengePage(request.url.toString(), page)
+                            override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean {
+                                if (!request.isForMainFrame) return false
+                                if (SpotiflacVerificationApi.isCallback(request.url)) {
+                                    if (!grantConsumed) {
+                                        val accepted = SpotiflacVerificationApi.grantFromCallback(request.url, state)
+                                        if (accepted != null) {
+                                            grantConsumed = true
+                                            grant = accepted
+                                        } else status = "Verification callback was rejected. Start a new check."
+                                    }
+                                    return true
+                                }
+                                return !SpotiflacVerificationApi.isChallengePage(request.url.toString(), page)
+                            }
                         }
                         loadUrl(page)
                         webView = this
@@ -135,3 +143,4 @@ private fun VerificationAttempt(onDismiss: () -> Unit, onRetry: () -> Unit) {
         }
     }
 }
+

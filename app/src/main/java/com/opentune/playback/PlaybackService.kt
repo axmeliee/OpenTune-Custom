@@ -284,6 +284,11 @@ class PlaybackService : MediaLibraryService() {
                 if (r != null) castMirror?.attach(r) else castMirror?.detach()
             }
         }
+        scope.launch {
+            com.opentune.data.lossless.SpotiflacSession.revision.collect { revision ->
+                if (revision > 0 && com.opentune.data.lossless.SpotiflacSession.connected.value) scheduleUpgrade(force = true)
+            }
+        }
         scope.launch { PlaybackRequests.upgrade.collect { scheduleUpgrade(force = true) } }
 
         audioManager = getSystemService(AudioManager::class.java)?.also { am ->
@@ -945,22 +950,34 @@ class PlaybackService : MediaLibraryService() {
         val item = player.currentMediaItem ?: return
         val uri = item.localConfiguration?.uri ?: return
         val id = videoIdOf(uri) ?: return
-        if (externalStreamKeyOf(selectedUri(uri)) != null) return
+        fun alreadyExternal(): Boolean {
+            val key = externalStreamKeyOf(selectedUri(uri)) ?: return false
+            return !force || ExternalStreams.get(id, key)?.lossless != false
+        }
+        if (alreadyExternal()) return
         upgradeJob = scope.launch {
             if (!force) delay(UPGRADE_DELAY_MS)
             val startup = startupToken(uri)?.let { startupSelections[it] }
-            if (startupToken(uri) != null && startup?.selected == null) return@launch
-            if (externalStreamKeyOf(selectedUri(uri)) != null) return@launch
+            if (startup != null && startup.selected == null) {
+                if (kotlinx.coroutines.withTimeoutOrNull(30_000) {
+                    while (startup.selected == null) delay(100)
+                    true
+                } != true) return@launch
+            }
+            if (alreadyExternal()) return@launch
             val duration = player.duration.takeIf { it > 0 } ?: item.toSong().durationMillis()
-            val lossless = if (Podcasts.isEpisode(id) || startup?.checkedMaximum == true) null else ExternalStreams.find(item.toSong(), duration)
+            val lossless = if (Podcasts.isEpisode(id) || !shouldRetryExternal(startup?.checkedMaximum == true, force)) null else ExternalStreams.find(item.toSong(), duration, force = force,
+                losslessOnly = externalStreamKeyOf(selectedUri(uri)) != null)
             kotlinx.coroutines.currentCoroutineContext().ensureActive()
             if (player.currentMediaItem?.localConfiguration?.uri != uri) return@launch
+            updateExternalStats()
             if (lossless != null && ExternalStreams.allowed(lossless.lossless)) {
                 val left = player.duration - player.currentPosition
                 if (player.duration > 0 && left < UPGRADE_MIN_REMAINING_MS) return@launch
                 swapToUpgrade(player, id, externalStreamUri(id, lossless.key))
                 return@launch
             }
+            if (externalStreamKeyOf(selectedUri(uri)) != null) return@launch
             if (isUpgradedUri(uri) || (!force && !AppSettings.playback.value.qualityUpgrade)) return@launch
             val found = withContext(Dispatchers.IO) { runCatching { StreamResolver.findUpgrade(id, force) }.getOrDefault(false) }
             if (!found || player.currentMediaItem?.mediaId != id) return@launch
@@ -1488,3 +1505,4 @@ internal fun loudnessGainDb(loudnessDb: Double, level: com.opentune.data.setting
     val target = (-loudnessDb + level.offsetDb).coerceAtMost(level.maxGainDb.toDouble())
     return if (speakerHold) target.coerceAtLeast(0.0) else target
 }
+

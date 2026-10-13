@@ -4,6 +4,7 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import org.json.JSONObject
+import okhttp3.HttpUrl.Companion.toHttpUrl
 import java.security.MessageDigest
 import java.util.Base64
 import javax.crypto.Cipher
@@ -13,11 +14,19 @@ import javax.crypto.spec.SecretKeySpec
 /** Adapted from Spotui's GPLv3 lossless registry; see THIRD_PARTY_NOTICES.md. */
 internal object LosslessRegistry {
     const val API_KEY = "ak_8e3f1a7c2b5d9e4f0a6c3b8d1e5f2a9c7b4d0e6f" // Published community key.
-    const val SESSION_BASE = "https://api.zarz.moe/v2"
+    const val DEFAULT_VERIFY_BASE = "https://verify.spotbye.qzz.io"
     private const val GIST = "https://gist.githubusercontent.com/BartolomeoRusso9/ef9fdbbc894818aea89d25a8d99f8c77/raw"
     private val lock = Mutex()
     private var cached: JSONObject? = null
     private var nextRefresh = 0L
+
+    // The issuer must be the one used by the community download servers.
+    // Sessions from the old api.zarz.moe issuer are not accepted there.
+    fun verificationBase(registry: JSONObject?): String =
+        httpsUrl(registry?.optJSONObject("community")?.optString("verify").orEmpty())
+            ?.toHttpUrl()
+            ?.takeIf { it.encodedQuery == null && it.fragment == null }
+            ?.toString()?.trimEnd('/') ?: DEFAULT_VERIFY_BASE
 
     suspend fun snapshot(): JSONObject? = lock.withLock {
         val now = System.nanoTime() / 1_000_000
@@ -54,3 +63,4 @@ internal object LosslessRegistry {
         return JSONObject(String(cipher.doFinal(bytes.copyOfRange(12, bytes.size)), Charsets.UTF_8))
     }
 }
+

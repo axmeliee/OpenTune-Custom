@@ -50,3 +50,7 @@ internal fun withoutStartup(uri: Uri): Uri = uri.buildUpon().clearQuery().apply 
     }
 }.build()
 internal fun youtubeFallbackUri(id: String, upgraded: Boolean = false): Uri = streamUri(id, upgraded).buildUpon().appendQueryParameter("fallback", "youtube").build()
+
+
+/** A user retry or a newly verified session supersedes an earlier startup miss. */
+internal fun shouldRetryExternal(checkedMaximum: Boolean, force: Boolean): Boolean = force || !checkedMaximum

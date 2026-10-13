@@ -9,6 +9,8 @@ import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.joinAll
 import java.util.concurrent.atomic.AtomicReference
 import okhttp3.HttpUrl.Companion.toHttpUrl
 import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
@@ -26,43 +28,87 @@ object LosslessSource {
     data class Track(val url: String, val provider: String, val bits: Int, val sampleRate: Int)
     internal data class FlacInfo(val bits: Int, val sampleRate: Int, val durationMs: Long)
     private val keyHeader = mapOf("X-API-Key" to LosslessRegistry.API_KEY)
-    @Volatile private var mappingRetryAt = 0L
+    suspend fun resolve(song: Song, durationMs: Long, preferHiRes: Boolean = false, bestAvailable: Boolean = false,
+        report: (String) -> Unit = {}): Track? = withContext(Dispatchers.IO) {
+        if (!isYouTubeId(song.videoId)) return@withContext null
+        val identity = CatalogIdentity(song.title, song.artist, song.albumName, durationMs)
+        searchSources(bestAvailable, providers = listOf(
+            { record -> resolveCommunity(identity, report)?.let(record) },
+            { record -> QobuzCatalog.resolve(identity, preferHiRes || bestAvailable,
+                AppSettings.playback.value.qobuzRelayUrl, bestAvailable = bestAvailable, onCandidate = record) },
+            { record -> resolveMapped(song.videoId, durationMs, preferHiRes || bestAvailable,
+                bestAvailable = bestAvailable, onCandidate = record, report = report) },
+        ))
+    }
 
-    suspend fun resolve(song: Song, durationMs: Long, preferHiRes: Boolean = false, bestAvailable: Boolean = false): Track? =
-        withContext(Dispatchers.IO) {
-            if (!isYouTubeId(song.videoId)) return@withContext null
-            val identity = CatalogIdentity(song.title, song.artist, song.albumName, durationMs)
-            if (!bestAvailable) return@withContext withTimeoutOrNull(20_000) {
-                QobuzCatalog.resolve(identity, preferHiRes, AppSettings.playback.value.qobuzRelayUrl)
-                    ?: resolveMapped(song.videoId, durationMs, preferHiRes)
-            }
-            val best = AtomicReference<Track?>(null)
-            val record: (Track) -> Unit = { candidate -> best.updateAndGet { better(it, candidate) } }
-            // Keep an already verified candidate even if another provider exhausts the budget.
-            withTimeoutOrNull(12_000) {
-                coroutineScope {
-                    launch { QobuzCatalog.resolve(identity, true, AppSettings.playback.value.qobuzRelayUrl, bestAvailable = true, onCandidate = record) }
-                    launch { resolveMapped(song.videoId, durationMs, true, bestAvailable = true, onCandidate = record) }
+    /** All routes get a chance; one slow route cannot discard a verified candidate. */
+    internal suspend fun searchSources(bestAvailable: Boolean, timeoutMs: Long = 20_000,
+        providers: List<suspend ((Track) -> Unit) -> Unit>): Track? {
+        val best = AtomicReference<Track?>(null)
+        withTimeoutOrNull(timeoutMs) {
+            coroutineScope {
+                val first = CompletableDeferred<Unit>()
+                val record: (Track) -> Unit = { candidate ->
+                    best.updateAndGet { better(it, candidate) }
+                    first.complete(Unit)
+                }
+                val jobs = providers.map { provider -> launch {
+                    try { provider(record) }
+                    catch (e: CancellationException) { throw e }
+                    catch (_: Exception) { /* An unavailable route does not cancel the others. */ }
+                } }
+                if (bestAvailable) jobs.joinAll() else {
+                    val completion = launch { jobs.joinAll(); first.complete(Unit) }
+                    first.await()
+                    jobs.forEach { it.cancel() }
+                    completion.join()
                 }
             }
-            best.get()
         }
+        return best.get()
+    }
+
+    private suspend fun resolveCommunity(identity: CatalogIdentity, report: (String) -> Unit): Track? {
+        if (SpotiflacSession.current() == null) {
+            report(if (SpotiflacSession.needsVerification.value) "SpotiFLAC: verify again in Audio settings; the provider session needs renewing"
+                else "SpotiFLAC: no verified provider session")
+            return null
+        }
+        val registry = LosslessRegistry.snapshot()
+        val endpoint = httpsUrl(registry?.optJSONObject("tidal")?.optString("community").orEmpty())
+        if (endpoint == null) { report("SpotiFLAC: community endpoint unavailable"); return null }
+        val id = TidalCatalog.find(identity, registry, report)
+        if (id == null) { report("SpotiFLAC: no exact catalog match for this recording"); return null }
+        return try {
+            val track = verify(SpotiflacGated.tidalUrl(endpoint, id), "SpotiFLAC", identity.durationMs)
+            if (track == null) report("SpotiFLAC: response was not a full matching FLAC stream")
+            track
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: LosslessHttp.HttpFailure) {
+            report(if (e.code == 401) "SpotiFLAC: session rejected; verify again in Audio settings" else "SpotiFLAC: provider returned HTTP ${e.code}")
+            null
+        } catch (_: Exception) {
+            report("SpotiFLAC: provider request failed or timed out")
+            null
+        }
+    }
 
     internal fun better(current: Track?, candidate: Track): Track =
         if (current == null || compareValuesBy(candidate, current, { it.bits }, { it.sampleRate }) > 0) candidate else current
 
     private suspend fun resolveMapped(videoId: String, durationMs: Long, preferHiRes: Boolean,
-        bestAvailable: Boolean = false, onCandidate: (Track) -> Unit = {}): Track? =
+        bestAvailable: Boolean = false, onCandidate: (Track) -> Unit = {}, report: (String) -> Unit = {}): Track? =
         withContext(Dispatchers.IO) {
             if (!isYouTubeId(videoId)) return@withContext null
             withTimeoutOrNull(20_000) {
                 val link = "https://api.song.link/v1-alpha.1/links".toHttpUrl().newBuilder()
                     .addQueryParameter("url", "https://music.youtube.com/watch?v=$videoId").build()
-                val ids = if (System.nanoTime() / 1_000_000 < mappingRetryAt) emptyMap() else {
-                    attempt { providerIds(JSONObject(LosslessHttp.text(link.toString()))) }
-                        ?: emptyMap<String, String>().also { mappingRetryAt = System.nanoTime() / 1_000_000 + 30 * 60_000 }
+                val ids = attempt { providerIds(JSONObject(LosslessHttp.text(link.toString()))) }.orEmpty()
+                if (ids.isEmpty()) {
+                    report("Linked providers: song mapping unavailable; direct catalog searches still attempted")
+                    return@withTimeoutOrNull null
                 }
-                if (ids.isEmpty()) return@withTimeoutOrNull null
                 val registry = LosslessRegistry.snapshot()
                 suspend fun verified(url: String?, provider: String): Track? {
                     val track = verify(url, provider, durationMs) ?: return null
@@ -70,11 +116,6 @@ object LosslessSource {
                     return track.takeUnless { bestAvailable }
                 }
                 ids["tidal"]?.let { id ->
-                    val gated = httpsUrl(registry?.optJSONObject("tidal")?.optString("community").orEmpty())
-                    if (gated != null) {
-                        val url = attempt { SpotiflacGated.tidalUrl(gated, id) }
-                        verified(url, "SpotiFLAC")?.let { return@withTimeoutOrNull it }
-                    }
                     for (endpoint in LosslessRegistry.endpoints(registry, "tidal")) {
                         val url = attempt {
                             tidalUrl(JSONObject(LosslessHttp.text("$endpoint/track/?id=$id&quality=LOSSLESS", keyHeader)))
@@ -175,3 +216,4 @@ object LosslessSource {
 
 internal fun httpsUrl(value: String): String? = value.toHttpUrlOrNull()
     ?.takeIf { it.isHttps && it.username.isEmpty() && it.password.isEmpty() }?.toString()
+

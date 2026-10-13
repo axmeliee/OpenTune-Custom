@@ -1,5 +1,7 @@
 package com.opentune.data.lossless
 
+import android.net.Uri
+import okhttp3.HttpUrl.Companion.toHttpUrl
 import org.json.JSONObject
 import org.junit.Assert.*
 import org.junit.Test
@@ -11,40 +13,69 @@ import org.robolectric.annotation.Config
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [35], application = android.app.Application::class)
 class SpotiflacVerificationApiTest {
-    private val page = "https://api.zarz.moe/v2/challenge?id=chl_example"
+    private val base = LosslessRegistry.DEFAULT_VERIFY_BASE
+    private val state = "0123456789abcdef0123456789abcdef"
+    private val session = """{"session_id":"id","session_secret":"secret","expires_at":"2099-01-01T00:00:00Z"}"""
 
-    @Test fun loadsTheProviderPageForTheIssuedChallengeInsteadOfConstructingAWidget() {
-        assertEquals(page, SpotiflacVerificationApi.challengeUrl(JSONObject("""{"challenge_id":"chl_example","server_nonce":"nonce","turnstile_site_key":"key"}""")))
-        assertNull(SpotiflacVerificationApi.challengeUrl(JSONObject("{}")))
-        assertNull(SpotiflacVerificationApi.challengeUrl(JSONObject().put("challenge_id", "a&cb=https://elsewhere.example")))
+    @Test fun usesCommunityIssuerAndTheProviderIssuedChallenge() {
+        assertEquals("https://verify.example", LosslessRegistry.verificationBase(JSONObject("""{"community":{"verify":"https://verify.example/"}}""")))
+        assertEquals(base, LosslessRegistry.verificationBase(JSONObject("""{"community":{"verify":"http://unsafe.example"}}""")))
+        val page = "$base/challenge?id=issued"
+        val result = SpotiflacVerificationApi.challengeUrl(JSONObject().put("challenge_url", page), base, state)!!
+        assertEquals("issued", result.toHttpUrl().queryParameter("id"))
+        assertEquals("spotiflac://session-grant?state=$state", result.toHttpUrl().queryParameter("cb"))
+        assertNull(SpotiflacVerificationApi.challengeUrl(JSONObject("""{"challenge_id":"obsolete"}"""), base, state))
+        for (url in listOf("https://evil.example/challenge?id=issued", "http://verify.spotbye.qzz.io/challenge", "$base/unrelated")) {
+            assertNull(SpotiflacVerificationApi.challengeUrl(JSONObject().put("challenge_url", url), base, state))
+        }
+        assertTrue(SpotiflacVerificationApi.isChallengePage("$result#help", result))
+        assertFalse(SpotiflacVerificationApi.isChallengePage("$base/challenge?id=other", result))
     }
 
-    @Test fun grantPollingIsRestrictedToTheExactChallengePage() {
-        assertTrue(SpotiflacVerificationApi.isChallengePage(page, page))
-        assertTrue(SpotiflacVerificationApi.isChallengePage("$page#help", page))
-        for (other in listOf(null, "about:blank", "http://api.zarz.moe/v2/challenge?id=chl_example",
-            "https://api.zarz.moe.evil.example/v2/challenge?id=chl_example",
-            "https://api.zarz.moe/v2/challenge?id=another", "https://api.zarz.moe/")) {
-            assertFalse(SpotiflacVerificationApi.isChallengePage(other, page))
+    @Test fun acceptsOnlyTheExactCallbackAndAttemptState() {
+        val callback = "spotiflac://session-grant?state=$state&grant=issued_token"
+        assertEquals("issued_token", SpotiflacVerificationApi.grantFromCallback(Uri.parse(callback), state))
+        for (uri in listOf(callback.replace(state, "wrong"), "$callback&state=$state", "$callback&grant=other",
+            callback.replace("session-grant?", "session-grant.evil?"), callback.replace("session-grant?", "session-grant/path?"),
+            callback.replace("issued_token", ""), callback.replace("issued_token", "line%0Abreak"),
+            callback.replace("spotiflac:", "https:"), "$callback#fragment")) {
+            assertNull(uri, SpotiflacVerificationApi.grantFromCallback(Uri.parse(uri), state))
         }
     }
 
-    @Test fun javascriptResultIsDecodedOnceAndRejectsNonStringOrOversizedResults() {
-        assertEquals("grant_abc-123", SpotiflacVerificationApi.grantFromJavascript("\"grant_abc-123\""))
-        for (invalid in listOf(null, "null", "{}", "42", "\"\"", "unquoted", "\"a\\nb\"", "\"" + "x".repeat(8_193) + "\"")) {
-            assertNull(SpotiflacVerificationApi.grantFromJavascript(invalid))
-        }
-    }
-
-    @Test fun retriesAndRestartsKeepTheSameInstallIdentity() {
+    @Test fun oldIssuerSessionsRequireReverificationWithoutLosingInstallIdentity() {
         val context = RuntimeEnvironment.getApplication()
+        val prefs = context.getSharedPreferences("spotiflac", 0)
+        prefs.edit().clear().putString("install_id", "keep-me").putString("session", session).commit()
         SpotiflacSession.init(context)
-        SpotiflacSession.clear()
-        val id = SpotiflacSession.installId()
-        assertTrue(Regex("[a-f0-9]{32}").matches(id))
-        assertEquals(id, SpotiflacSession.installId())
-        SpotiflacSession.init(context)
-        assertEquals(id, SpotiflacSession.installId())
+        assertNull(SpotiflacSession.current())
         assertFalse(SpotiflacSession.connected.value)
+        assertTrue(SpotiflacSession.needsVerification.value)
+        assertEquals("keep-me", SpotiflacSession.installId())
+        SpotiflacSession.init(context)
+        assertTrue(SpotiflacSession.needsVerification.value)
+        val revision = SpotiflacSession.revision.value
+        assertTrue(SpotiflacSession.save(session, base))
+        assertTrue(SpotiflacSession.connected.value)
+        assertFalse(SpotiflacSession.needsVerification.value)
+        assertTrue(SpotiflacSession.revision.value > revision)
+        SpotiflacSession.init(context)
+        assertNotNull(SpotiflacSession.current())
+        SpotiflacSession.clear()
+        assertEquals("keep-me", SpotiflacSession.installId())
+    }
+
+    @Test fun staleRejectedRequestCannotClearARenewedSession() {
+        SpotiflacSession.init(RuntimeEnvironment.getApplication())
+        assertTrue(SpotiflacSession.save(session, base))
+        val old = SpotiflacSession.current()!!
+        val renewed = JSONObject(session).put("session_secret", "new-secret").toString()
+        assertTrue(SpotiflacSession.save(renewed, base))
+        SpotiflacSession.invalidate(old)
+        assertTrue(SpotiflacSession.connected.value)
+        SpotiflacSession.invalidate(SpotiflacSession.current())
+        assertFalse(SpotiflacSession.connected.value)
+        assertTrue(SpotiflacSession.needsVerification.value)
     }
 }
+

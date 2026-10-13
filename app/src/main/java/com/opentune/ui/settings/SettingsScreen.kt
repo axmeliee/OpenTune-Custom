@@ -386,6 +386,7 @@ private fun settingsSections(
     var qobuzRelayDialog by remember { mutableStateOf(false) }
     if (qobuzRelayDialog) QobuzRelayDialog(pb.qobuzRelayUrl) { qobuzRelayDialog = false }
     val losslessConnected by com.opentune.data.lossless.SpotiflacSession.connected.collectAsState()
+    val losslessNeedsVerification by com.opentune.data.lossless.SpotiflacSession.needsVerification.collectAsState()
     if (verifyLossless) SpotiflacVerification { verifyLossless = false }
     var folderDialog by remember { mutableStateOf(false) }
     var cacheBytes by remember { mutableLongStateOf(0L) }
@@ -652,7 +653,7 @@ private fun settingsSections(
                     ToggleRow("Prefer hi-res lossless", pb.losslessHiRes, { v -> AppSettings.updatePlayback { it.copy(losslessHiRes = v) } }, summary = "Prefer hi-res for background upgrades too. Max always checks hi-res first. Uses more data.", icon = Icons.Rounded.HighQuality)
                 },
                 Entry("SpotiFLAC verification", "lossless session connect verify") {
-                    SettingRow("SpotiFLAC verification", icon = Icons.Rounded.HighQuality, summary = if (losslessConnected) "Connected · tap to renew" else "Optional · public providers work without it", onClick = { verifyLossless = true })
+                    SettingRow("SpotiFLAC verification", icon = Icons.Rounded.HighQuality, summary = if (losslessConnected) "Connected · tap to renew" else if (losslessNeedsVerification) "Verify again · provider session needs renewing" else "Optional · public providers work without it", onClick = { verifyLossless = true })
                 },
                 Entry("Qobuz relay", "lossless custom server endpoint") {
                     SettingRow("Qobuz relay", icon = Icons.Rounded.HighQuality, summary = if (pb.qobuzRelayUrl.isBlank()) "Optional · use your own compatible server" else "Custom server configured", onClick = { qobuzRelayDialog = true })
@@ -1266,3 +1267,4 @@ private fun outputSummary(context: Context, float: Boolean): String {
 }
 
 private fun formatMb(mb: Int): String = if (mb >= 1024) "%.1f GB".format(mb / 1024f) else "$mb MB"
+
