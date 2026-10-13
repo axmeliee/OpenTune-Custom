@@ -485,7 +485,7 @@ fun SeekBar(
     val active = MaterialTheme.colorScheme.onSurface
     val inactive = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.18f)
     val bufferedColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.3f)
-    val markGap = MaterialTheme.colorScheme.surface.copy(alpha = 0.85f)
+    val markDot = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
 
     val seekHaptics = com.opentune.ui.components.rememberHaptics()
     fun fraction(): Float = dragFraction
@@ -599,10 +599,15 @@ fun SeekBar(
             } else {
                 drawRoundRect(active, Offset(0f, y), Size(size.width * f, h), r)
             }
-            // A notch where each part of the song begins.
-            if (durationMs > 0) marks.forEach { ms ->
-                val x = size.width * (ms.toFloat() / durationMs)
-                if (x > h && x < size.width - h) drawRect(markGap, Offset(x - 1.dp.toPx(), y - 1f), Size(2.dp.toPx(), h + 2f))
+            // A small dot where each part of the song still to come begins. Ones already
+            // played aren't drawn: cut into the played line (the wave above all) they read as breaks.
+            if (durationMs > 0) {
+                val played = size.width * f
+                val clear = maxOf(thumbRadius.toPx(), h) + 2.dp.toPx()
+                marks.forEach { ms ->
+                    val x = size.width * (ms.toFloat() / durationMs)
+                    if (x > played + clear && x < size.width - h) drawCircle(markDot, h * 0.32f, Offset(x, size.height / 2))
+                }
             }
             if (thumbRadius > 0.dp) drawCircle(active, thumbRadius.toPx(), Offset(size.width * f, size.height / 2))
         }

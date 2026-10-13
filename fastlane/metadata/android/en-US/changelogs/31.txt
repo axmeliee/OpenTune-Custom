@@ -1,0 +1,1 @@
+• Where the song's parts begin shows as small dots ahead of the playhead, not as breaks in the played line of the seek bar

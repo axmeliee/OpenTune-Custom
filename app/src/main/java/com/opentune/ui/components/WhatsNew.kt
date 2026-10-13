@@ -62,6 +62,9 @@ object WhatsNew {
 
     /** Newest first. Add the coming version's notes at the top when releasing. */
     val NOTES: List<Pair<String, List<Note>>> = listOf(
+        "0.4.9" to listOf(
+            Note(Icons.Rounded.Waves, "A cleaner seek bar", "Where the song's parts begin now shows as small dots ahead of the playhead, not as breaks in the played line."),
+        ),
         "0.4.8" to listOf(
             Note(Icons.Rounded.TouchApp, "Neater player buttons", "Play, pause and skip are a little smaller in every button style, and the cover gets the room."),
             Note(Icons.Rounded.NewReleases, "What's new, named right", "This sheet now names the version you installed, and older notes carry their own number."),
