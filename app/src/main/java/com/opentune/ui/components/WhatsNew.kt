@@ -31,6 +31,7 @@ import androidx.compose.material.icons.rounded.Favorite
 import androidx.compose.material.icons.rounded.GraphicEq
 import androidx.compose.material.icons.rounded.Image
 import androidx.compose.material.icons.rounded.Lyrics
+import androidx.compose.material.icons.rounded.Download
 import androidx.compose.material.icons.rounded.Translate
 import androidx.compose.material.icons.rounded.FastForward
 import androidx.compose.material.icons.rounded.Groups
@@ -63,6 +64,7 @@ object WhatsNew {
     /** Newest first. Add the coming version's notes at the top when releasing. */
     val NOTES: List<Pair<String, List<Note>>> = listOf(
         "0.4.9" to listOf(
+            Note(Icons.Rounded.Download, "Faster downloads", "Songs download in pieces, several at once, instead of trickling in at playback speed. A playlist downloads three songs at a time."),
             Note(Icons.Rounded.Waves, "A cleaner seek bar", "Where the song's parts begin now shows as small dots ahead of the playhead, not as breaks in the played line."),
         ),
         "0.4.8" to listOf(

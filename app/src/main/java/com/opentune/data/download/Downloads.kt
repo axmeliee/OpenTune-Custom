@@ -39,12 +39,22 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.debounce
 import kotlinx.coroutines.flow.drop
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.runInterruptible
+import kotlinx.coroutines.sync.Semaphore
+import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.builtins.MapSerializer
 import kotlinx.serialization.builtins.serializer
 import kotlinx.serialization.json.Json
+import java.io.RandomAccessFile
+import java.util.concurrent.atomic.AtomicInteger
+import java.util.concurrent.atomic.AtomicLong
+import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
+import okhttp3.OkHttpClient
 import okhttp3.Request
 
 @Serializable
@@ -185,11 +195,16 @@ class DownloadWorker(context: Context, params: WorkerParameters) : CoroutineWork
         Downloads.put(id) { (it ?: entry).copy(state = DownloadState.DOWNLOADING, error = null) }
         return try {
             val maxKbps = AppSettings.library.value.downloadQuality.maxKbps
-            val stream = StreamResolver.resolveForDownload(id, maxKbps)
             val dir = Downloads.directory()
-            val target = File(dir, "$id.${stream.downloadExtension}")
-            fetch(stream.url, File(dir, "$id.part"), target, entry.song.title) { p ->
-                Downloads.put(id) { (it ?: entry).copy(progress = p) }
+            // A playlist queues every song at once; a few at a time each get the
+            // bandwidth, and YouTube isn't asked for dozens of streams together.
+            val target = songsAtOnce.withPermit {
+                val stream = StreamResolver.resolveForDownload(id, maxKbps)
+                File(dir, "$id.${stream.downloadExtension}").also { target ->
+                    fetch(stream.url, File(dir, "$id.part"), target, entry.song.title) { p ->
+                        Downloads.put(id) { (it ?: entry).copy(progress = p) }
+                    }
+                }
             }
             val art = runCatching { fetchArt(entry.song.thumbnailUrl.artworkAt(PLAYER_ART_PX), File(dir, "$id.jpg")) }.getOrNull()
             Downloads.put(id) {
@@ -212,37 +227,11 @@ class DownloadWorker(context: Context, params: WorkerParameters) : CoroutineWork
         }
     }
 
-    /** Resumes a partial file with a Range request, then moves it into place. */
-    private suspend fun fetch(url: String, part: File, target: File, title: String, onProgress: (Float) -> Unit) = withContext(Dispatchers.IO) {
-        val have = if (part.exists()) part.length() else 0L
-        val request = Request.Builder().url(url).apply {
-            StreamResolver.mediaHeadersFor(url).forEach { (k, v) -> header(k, v) }
-            if (have > 0) header("Range", "bytes=$have-")
-        }.build()
-        Http.client.newCall(request).execute().use { response ->
-            if (!response.isSuccessful) throw IOException("Server answered ${response.code}")
-            val body = response.body ?: throw IOException("Empty response")
-            val resumed = response.code == 206
-            val total = (if (resumed) have else 0L) + body.contentLength()
-            var done = if (resumed) have else 0L
-            var lastReport = 0L
-            part.outputStream().let { if (resumed) java.io.FileOutputStream(part, true) else it }.use { out ->
-                body.byteStream().use { input ->
-                    val buf = ByteArray(64 * 1024)
-                    while (true) {
-                        val n = input.read(buf)
-                        if (n < 0) break
-                        out.write(buf, 0, n)
-                        done += n
-                        if (total > 0 && done - lastReport > 256 * 1024) {
-                            lastReport = done
-                            val p = done.toFloat() / total
-                            onProgress(p)
-                            runCatching { setForeground(foregroundInfo(title, p)) }
-                        }
-                    }
-                }
-            }
+    /** The audio, in ranges (see [RangedFetch]), then moved into place. */
+    private suspend fun fetch(url: String, part: File, target: File, title: String, onProgress: (Float) -> Unit) {
+        RangedFetch.fetch(Http.client, url, StreamResolver.mediaHeadersFor(url), part) { p ->
+            onProgress(p)
+            runCatching { setForegroundAsync(foregroundInfo(title, p)) }
         }
         if (!part.renameTo(target)) throw IOException("Couldn't save the file")
     }
@@ -287,5 +276,116 @@ class DownloadWorker(context: Context, params: WorkerParameters) : CoroutineWork
         private const val CHANNEL = "downloads"
         private const val NOTIFICATION_ID = 4120
         private const val MAX_ATTEMPTS = 3
+        /** Songs downloading at once, across the whole queue. */
+        private val songsAtOnce = Semaphore(3)
+    }
+}
+
+/**
+ * A file fetched in [CHUNK]-sized ranges, a few at a time. One open-ended
+ * request is slowed by googlevideo to about the speed the song plays at;
+ * ranges the size the player asks for come at the connection's full speed.
+ * Stream URLs are probed with a range this size (see [StreamResolver]), so
+ * they serve them.
+ */
+internal object RangedFetch {
+    /** The range the player fetches with. */
+    const val CHUNK = 2L * 1024 * 1024
+    private const val PARALLEL = 3
+    private const val ATTEMPTS = 3
+
+    suspend fun fetch(
+        client: OkHttpClient,
+        url: String,
+        headers: Map<String, String>,
+        part: File,
+        parallel: Int = PARALLEL,
+        onProgress: (Float) -> Unit,
+    ) = withContext(Dispatchers.IO) {
+        // Ranges land out of order, so a partial file isn't a prefix to resume from.
+        part.delete()
+        val total = url.toHttpUrlOrNull()?.queryParameter("clen")?.toLongOrNull()?.takeIf { it > 0 }
+            ?: sizeFrom(client, url, headers)
+        val done = AtomicLong(0)
+        val reported = AtomicLong(0)
+        RandomAccessFile(part, "rw").use { file ->
+            file.setLength(total)
+            val starts = (0 until total step CHUNK).toList()
+            val next = AtomicInteger(0)
+            coroutineScope {
+                repeat(minOf(parallel, starts.size)) {
+                    launch {
+                        while (true) {
+                            val start = starts.getOrNull(next.getAndIncrement()) ?: break
+                            val end = minOf(start + CHUNK, total) - 1
+                            fetchRange(client, url, headers, start, end, file) { n ->
+                                val now = done.addAndGet(n)
+                                val last = reported.get()
+                                if (now - last > 256 * 1024 && reported.compareAndSet(last, now)) onProgress(now.toFloat() / total)
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        if (part.length() != total) throw IOException("Download came out the wrong size")
+    }
+
+    /** The file's size, from the total in a one-byte range's Content-Range. */
+    private fun sizeFrom(client: OkHttpClient, url: String, headers: Map<String, String>): Long {
+        val request = Request.Builder().url(url).apply {
+            headers.forEach { (k, v) -> header(k, v) }
+            header("Range", "bytes=0-0")
+        }.build()
+        client.newCall(request).execute().use { r ->
+            if (!r.isSuccessful) throw IOException("Server answered ${r.code}")
+            return r.header("Content-Range")?.substringAfterLast('/')?.toLongOrNull()?.takeIf { it > 0 }
+                ?: throw IOException("Server didn't say how big the file is")
+        }
+    }
+
+    /** Bytes [start]..[end] into [file] at their place, tried a few times. */
+    private suspend fun fetchRange(
+        client: OkHttpClient,
+        url: String,
+        headers: Map<String, String>,
+        start: Long,
+        end: Long,
+        file: RandomAccessFile,
+        onBytes: (Long) -> Unit,
+    ) {
+        var attempt = 0
+        while (true) {
+            var got = 0L
+            try {
+                runInterruptible {
+                    val request = Request.Builder().url(url).apply {
+                        headers.forEach { (k, v) -> header(k, v) }
+                        header("Range", "bytes=$start-$end")
+                    }.build()
+                    client.newCall(request).execute().use { response ->
+                        if (response.code != 206) throw IOException("Server answered ${response.code}")
+                        val input = response.body?.byteStream() ?: throw IOException("Empty response")
+                        val buf = ByteArray(64 * 1024)
+                        var at = start
+                        while (true) {
+                            val n = input.read(buf)
+                            if (n < 0) break
+                            synchronized(file) { file.seek(at); file.write(buf, 0, n) }
+                            at += n
+                            got += n
+                            onBytes(n.toLong())
+                        }
+                        if (at != end + 1) throw IOException("Range ended early")
+                    }
+                }
+                return
+            } catch (e: IOException) {
+                // Take back what this try counted, so progress doesn't run past the end.
+                if (got > 0) onBytes(-got)
+                if (++attempt >= ATTEMPTS) throw e
+                delay(500L * attempt)
+            }
+        }
     }
 }
