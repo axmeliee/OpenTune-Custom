@@ -55,6 +55,13 @@ class LosslessLookupTest {
         assertTrue(cancelled.isCompleted)
     }
 
+    @Test fun catalogLookupSurvivesMappingOutagesAndKeepsKnownLinkedIds() = runBlocking {
+        assertEquals("123", TidalCatalog.withLinkedFallback(CompletableDeferred<String?>(value = null)) { "123" })
+        assertEquals("456", TidalCatalog.withLinkedFallback(CompletableDeferred("456")) { error("Unnecessary search") })
+        val linked = CompletableDeferred<String?>()
+        assertEquals("789", TidalCatalog.withLinkedFallback(linked) { linked.complete("789"); null })
+    }
+
     @Test fun directTidalCatalogRequiresTheSameRecordingAndAValidId() {
         val identity = CatalogIdentity("Blinding Lights", "The Weeknd", "After Hours", 200_000)
         fun response(title: String = "Blinding Lights", artist: String = "The Weeknd", duration: Int = 200,

@@ -32,12 +32,17 @@ object LosslessSource {
         report: (String) -> Unit = {}): Track? = withContext(Dispatchers.IO) {
         if (!isYouTubeId(song.videoId)) return@withContext null
         val identity = CatalogIdentity(song.title, song.artist, song.albumName, durationMs)
+        val linkedTidal = CompletableDeferred<String?>()
         searchSources(bestAvailable, providers = listOf(
-            { record -> resolveCommunity(identity, report)?.let(record) },
+            { record -> resolveCommunity(identity, linkedTidal, report)?.let(record) },
             { record -> QobuzCatalog.resolve(identity, preferHiRes || bestAvailable,
                 AppSettings.playback.value.qobuzRelayUrl, bestAvailable = bestAvailable, onCandidate = record) },
-            { record -> resolveMapped(song.videoId, durationMs, preferHiRes || bestAvailable,
-                bestAvailable = bestAvailable, onCandidate = record, report = report) },
+            { record ->
+                try { resolveMapped(song.videoId, durationMs, preferHiRes || bestAvailable,
+                    bestAvailable = bestAvailable, onCandidate = record, report = report,
+                    onTidalId = { linkedTidal.complete(it) }) }
+                finally { linkedTidal.complete(null) }
+            },
         ))
     }
 
@@ -68,7 +73,7 @@ object LosslessSource {
         return best.get()
     }
 
-    private suspend fun resolveCommunity(identity: CatalogIdentity, report: (String) -> Unit): Track? {
+    private suspend fun resolveCommunity(identity: CatalogIdentity, linkedTidal: kotlinx.coroutines.Deferred<String?>, report: (String) -> Unit): Track? {
         if (SpotiflacSession.current() == null) {
             report(if (SpotiflacSession.needsVerification.value) "SpotiFLAC: verify again in Audio settings; the provider session needs renewing"
                 else "SpotiFLAC: no verified provider session")
@@ -77,7 +82,7 @@ object LosslessSource {
         val registry = LosslessRegistry.snapshot()
         val endpoint = httpsUrl(registry?.optJSONObject("tidal")?.optString("community").orEmpty())
         if (endpoint == null) { report("SpotiFLAC: community endpoint unavailable"); return null }
-        val id = TidalCatalog.find(identity, registry, report)
+        val id = TidalCatalog.withLinkedFallback(linkedTidal) { TidalCatalog.find(identity, registry, report) }
         if (id == null) { report("SpotiFLAC: no exact catalog match for this recording"); return null }
         return try {
             val track = verify(SpotiflacGated.tidalUrl(endpoint, id), "SpotiFLAC", identity.durationMs)
@@ -98,13 +103,14 @@ object LosslessSource {
         if (current == null || compareValuesBy(candidate, current, { it.bits }, { it.sampleRate }) > 0) candidate else current
 
     private suspend fun resolveMapped(videoId: String, durationMs: Long, preferHiRes: Boolean,
-        bestAvailable: Boolean = false, onCandidate: (Track) -> Unit = {}, report: (String) -> Unit = {}): Track? =
+        bestAvailable: Boolean = false, onCandidate: (Track) -> Unit = {}, report: (String) -> Unit = {}, onTidalId: (String?) -> Unit = {}): Track? =
         withContext(Dispatchers.IO) {
             if (!isYouTubeId(videoId)) return@withContext null
             withTimeoutOrNull(20_000) {
                 val link = "https://api.song.link/v1-alpha.1/links".toHttpUrl().newBuilder()
                     .addQueryParameter("url", "https://music.youtube.com/watch?v=$videoId").build()
                 val ids = attempt { providerIds(JSONObject(LosslessHttp.text(link.toString()))) }.orEmpty()
+                onTidalId(ids["tidal"])
                 if (ids.isEmpty()) {
                     report("Linked providers: song mapping unavailable; direct catalog searches still attempted")
                     return@withTimeoutOrNull null

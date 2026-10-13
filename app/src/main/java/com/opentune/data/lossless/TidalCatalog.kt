@@ -6,6 +6,11 @@ import org.json.JSONObject
 
 /** Resolve an exact recording without making the verified provider depend on song.link. */
 internal object TidalCatalog {
+    internal suspend fun withLinkedFallback(linked: kotlinx.coroutines.Deferred<String?>, search: suspend () -> String?): String? {
+        if (linked.isCompleted) linked.await()?.let { return it }
+        return search() ?: linked.await()
+    }
+
     suspend fun find(identity: CatalogIdentity, registry: JSONObject?, report: (String) -> Unit): String? {
         for (base in LosslessRegistry.endpoints(registry, "tidal")) {
             try {
