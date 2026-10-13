@@ -87,7 +87,7 @@ object SpotiflacSession {
     }
 }
 
-/** SPOTIFLAC-HMAC-V1 signing adapted from Spotui (GPLv3). No session is fabricated. */
+/** Community SPOTIFLAC-HMAC-V1 requests using a provider-issued session. */
 internal object SpotiflacGated {
     const val APP_VERSION = "4.8.5"
     private val timestamp = DateTimeFormatterBuilder().appendInstant(3).toFormatter()
@@ -117,18 +117,23 @@ internal object SpotiflacGated {
     internal fun signHeaders(id: String, secret: String, path: String, body: ByteArray, now: Instant, nonce: String): Map<String, String> {
         val time = timestamp.format(now)
         val hash = MessageDigest.getInstance("SHA-256").digest(body).hex()
-        val rolling = hmac(secret, "${now.epochSecond / 300}:$id")
+        // The community API uses the raw 32-byte HMAC as its rolling key.
+        // The extension gateway's base64url-text key is a different protocol:
+        // using it here rejects every request, even immediately after verification.
+        // Reference: spotbye/SpotiFLAC backend/community_session.go, signCommunityRequest.
+        val rolling = hmac(secret.toByteArray(Charsets.UTF_8), "${now.epochSecond / 300}:$id")
         val input = "SPOTIFLAC-HMAC-V1\nPOST\n$path\n\n$hash\n$time\n$nonce\n$id\n$APP_VERSION\nandroid"
         return mapOf(
             "X-Sig-Session" to id, "X-Sig-Timestamp" to time, "X-Sig-Nonce" to nonce,
-            "X-Sig-Body-Sha256" to hash, "X-Sig-Signature" to hmac(rolling, input),
+            "X-Sig-Body-Sha256" to hash,
+            "X-Sig-Signature" to Base64.getUrlEncoder().withoutPadding().encodeToString(hmac(rolling, input)),
             "X-Sig-App-Version" to APP_VERSION, "X-Sig-Platform" to "android",
         )
     }
 
-    private fun hmac(key: String, data: String): String = Base64.getUrlEncoder().withoutPadding().encodeToString(
-        Mac.getInstance("HmacSHA256").apply { init(SecretKeySpec(key.toByteArray(), "HmacSHA256")) }.doFinal(data.toByteArray()),
-    )
+    private fun hmac(key: ByteArray, data: String): ByteArray =
+        Mac.getInstance("HmacSHA256").apply { init(SecretKeySpec(key, "HmacSHA256")) }
+            .doFinal(data.toByteArray(Charsets.UTF_8))
     private fun ByteArray.hex(): String = joinToString("") { "%02x".format(it.toInt() and 0xff) }
 }
 

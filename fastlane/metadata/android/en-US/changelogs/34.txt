@@ -1,0 +1,3 @@
+• Fixed SpotiFLAC rejecting freshly verified sessions when playback starts or the song changes. Community requests now use the correct signing key format.
+• Added community-protocol regression checks and consecutive-track request tests to catch the verification loop.
+• If the previous version already cleared your session, verify once after updating. Existing valid sessions are preserved.
