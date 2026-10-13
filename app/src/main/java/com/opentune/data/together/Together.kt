@@ -62,6 +62,8 @@ object Together {
         /** A guest who paused for themselves; the room plays on without them. */
         val holding: Boolean = false,
         val endedReason: String? = null,
+        /** This phone's id in [members]. */
+        val myId: String? = null,
     ) {
         val following get() = !hosting && phase == Phase.Live
     }
@@ -88,6 +90,16 @@ object Together {
 
     fun init(context: Context) {
         prefs = context.getSharedPreferences("together", Context.MODE_PRIVATE)
+        _picksPlayNow.value = prefs?.getBoolean("picks_play_now", false) ?: false
+    }
+
+    private val _picksPlayNow = MutableStateFlow(false)
+    /** As a guest, a song picked starts for everyone (when the host allows it) rather than joining the queue. */
+    val picksPlayNow: StateFlow<Boolean> = _picksPlayNow.asStateFlow()
+
+    fun setPicksPlayNow(on: Boolean) {
+        _picksPlayNow.value = on
+        prefs?.edit { putBoolean("picks_play_now", on) }
     }
 
     fun attach(connection: PlayerConnection) {
@@ -141,8 +153,11 @@ object Together {
 
     fun say(text: String) = session?.say(text)
 
-    /** Adds [song] to the room's queue: straight in for the host, as a request for a guest. */
-    fun suggest(song: Song): Boolean = session?.suggest(song) ?: false
+    /**
+     * Adds [song] to the room's queue: straight in for the host, as a request
+     * for a guest; or, for a guest who chose [picksPlayNow], plays it for everyone.
+     */
+    fun suggest(song: Song): Boolean = session?.suggest(song, now = _picksPlayNow.value) ?: false
 
     /**
      * For a guest following a room, sends [control] to the host instead of

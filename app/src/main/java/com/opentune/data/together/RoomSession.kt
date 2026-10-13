@@ -46,6 +46,8 @@ internal interface RoomPlayer {
     fun playAll(songs: List<Song>, startIndex: Int, shuffle: Boolean, source: String?, startPositionMs: Long)
     fun replaceUpcoming(songs: List<Song>)
     fun addToQueue(song: Song)
+    /** Starts [song] now, keeping the rest of the queue after it. */
+    fun playNow(song: Song)
     fun skipNext()
     fun skipPrevious()
 }
@@ -70,6 +72,10 @@ internal class ConnectionPlayer(private val c: PlayerConnection) : RoomPlayer {
         c.playAll(songs, startIndex, shuffle, source, startPositionMs)
     override fun replaceUpcoming(songs: List<Song>) = c.replaceUpcoming(songs)
     override fun addToQueue(song: Song) = c.addToQueue(song)
+    override fun playNow(song: Song) {
+        c.playNext(song)
+        c.skipNext()
+    }
     override fun skipNext() = c.skipNext()
     override fun skipPrevious() = c.skipPrevious()
 }
@@ -152,6 +158,7 @@ internal class RoomSession(
     private var localUntil = 0L
 
     fun start() {
+        update { it.copy(myId = me) }
         pool.start()
         jobs += main.launch { pool.connected.collect { n -> update { it.copy(relays = n, phase = if (it.phase == Phase.Connecting && n > 0) (if (hosting) Phase.Live else Phase.FindingHost) else it.phase) } } }
         // Opening a message is AES and JSON (and, the first time, the room
@@ -294,11 +301,19 @@ internal class RoomSession(
             is Msg.Ask -> {
                 val who = members[from]?.name ?: "Someone"
                 members[from]?.lastSeen = now
-                if (msg.action == "add") {
+                if (msg.action == "add" || (msg.action == "now" && !open)) {
                     val t = msg.track ?: return
                     t.station?.let(Radio::played)
                     p.addToQueue(t.toSong())
                     addChat(ChatLine("", "$who added ${t.title}", system = true))
+                    return
+                }
+                if (msg.action == "now") {
+                    // Guests may control playback: their pick starts for everyone.
+                    val t = msg.track ?: return
+                    t.station?.let(Radio::played)
+                    p.playNow(t.toSong())
+                    addChat(ChatLine("", "$who played ${t.title}", system = true))
                     return
                 }
                 if (!open) return
@@ -327,8 +342,10 @@ internal class RoomSession(
     private fun startGuest() {
         update { it.copy(phase = Phase.Connecting) }
         jobs += main.launch {
-            // Knock until the host answers, then check in now and then.
-            while (isActive && hostKey == null) {
+            // Knock until the host lists this phone among the members, then
+            // check in now and then. Hearing from the host isn't enough: the
+            // host's state can arrive before the host has heard our hello.
+            while (isActive && last?.members?.any { it.id == me } != true) {
                 if (pool.connected.value > 0) send(Msg.Hello(myName))
                 delay(2_000)
             }
@@ -376,7 +393,7 @@ internal class RoomSession(
                 lastAt = now
                 update {
                     it.copy(
-                        phase = Phase.Live, hostName = msg.host, members = msg.members, open = msg.open,
+                        phase = Phase.Live, hostName = msg.host, members = withMe(msg.members), open = msg.open,
                         track = msg.track, hostPrivate = msg.private,
                     )
                 }
@@ -403,6 +420,10 @@ internal class RoomSession(
             else -> Unit
         }
     }
+
+    /** The host's member list, with this phone in it even before the host has heard it arrive. */
+    private fun withMe(members: List<Member>) =
+        if (members.any { it.id == me }) members else members + Member(me, myName)
 
     /**
      * Brings this phone in line with the host's [s]: the same song, playing
@@ -519,7 +540,12 @@ internal class RoomSession(
         return true
     }
 
-    fun suggest(song: Song): Boolean {
+    /**
+     * A song picked on this phone. A guest's goes into the room's queue, or,
+     * with [now] and the host letting guests control playback, starts for
+     * everyone.
+     */
+    fun suggest(song: Song, now: Boolean = false): Boolean {
         val t = Track.of(song)
         if (t == null) {
             notice("Songs from your phone can't be shared to the room")
@@ -529,9 +555,22 @@ internal class RoomSession(
             player.addToQueue(song)
             return true
         }
-        if (state.value?.phase != Phase.Live) return false
-        send(Msg.Ask("add", track = t))
-        notice("Sent \"${song.title}\" to the room")
+        val r = state.value ?: return false
+        if (r.phase != Phase.Live) return false
+        when {
+            now && r.open -> {
+                send(Msg.Ask("now", track = t))
+                notice("Playing \"${song.title}\" for everyone")
+            }
+            now -> {
+                send(Msg.Ask("add", track = t))
+                notice("Added \"${song.title}\" to the queue. ${r.hostName ?: "The host"} hasn't let guests control playback")
+            }
+            else -> {
+                send(Msg.Ask("add", track = t))
+                notice("Sent \"${song.title}\" to the room")
+            }
+        }
         return true
     }
 

@@ -1,2 +1,3 @@
 • Faster downloads: songs come down in pieces, several at once, and a playlist downloads three songs at a time
 • Where the song's parts begin shows as small dots ahead of the playhead, not as breaks in the played line of the seek bar
+• Listen together: joining a room lists you straight away, and a guest can choose for a picked song to play now for everyone (when the host allows it)

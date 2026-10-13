@@ -204,9 +204,28 @@ internal fun RoomView(r: Together.Room, onBack: () -> Unit) {
                         Switch(r.open, { Together.setOpen(it) })
                     }
                 }
+            } else {
+                item {
+                    val playNow by Together.picksPlayNow.collectAsState()
+                    Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Column(Modifier.weight(1f)) {
+                            Text("Picking a song plays it now", style = MaterialTheme.typography.titleMedium)
+                            Text(
+                                when {
+                                    !playNow -> "Off: songs you pick go into the room's queue"
+                                    r.open -> "On: a song you pick starts for everyone"
+                                    else -> "On, once ${r.hostName ?: "the host"} lets guests control playback. Until then songs go into the queue"
+                                },
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                        Switch(playNow, { Together.setPicksPlayNow(it) })
+                    }
+                }
             }
             item { SectionHeader("Listening", subtitle = "${r.members.size} in the room") }
-            item { Members(r.members) }
+            item { Members(r.members, r.myId) }
             item { SectionHeader("Chat") }
             if (r.chat.isEmpty()) {
                 item { Text("Say hi.", Modifier.padding(horizontal = 16.dp), color = MaterialTheme.colorScheme.onSurfaceVariant) }
@@ -325,7 +344,7 @@ private fun NowInRoom(r: Together.Room) {
 }
 
 @Composable
-private fun Members(members: List<Member>) {
+private fun Members(members: List<Member>, myId: String?) {
     LazyRow(contentPadding = PaddingValues(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(14.dp)) {
         items(members, key = { it.id }) { m ->
             Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.widthIn(max = 76.dp)) {
@@ -335,7 +354,11 @@ private fun Members(members: List<Member>) {
                 ) { Text(m.name.take(1).uppercase(), fontSize = 22.sp, fontWeight = FontWeight.Bold, color = Color(0xFF0B0B10)) }
                 Spacer(Modifier.height(6.dp))
                 Text(m.name, style = MaterialTheme.typography.bodySmall, maxLines = 1, overflow = TextOverflow.Ellipsis, textAlign = TextAlign.Center)
-                if (m.host) Text("Host", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
+                when {
+                    m.host && m.id == myId -> Text("Host · You", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
+                    m.host -> Text("Host", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
+                    m.id == myId -> Text("You", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
             }
         }
     }

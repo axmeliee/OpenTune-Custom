@@ -64,6 +64,7 @@ object WhatsNew {
     /** Newest first. Add the coming version's notes at the top when releasing. */
     val NOTES: List<Pair<String, List<Note>>> = listOf(
         "0.4.9" to listOf(
+            Note(Icons.Rounded.Groups, "Listen together, fixed and handier", "Joining a room lists you straight away, marked You. As a guest you can choose for a song you pick to play now for everyone, when the host allows it."),
             Note(Icons.Rounded.Download, "Faster downloads", "Songs download in pieces, several at once, instead of trickling in at playback speed. A playlist downloads three songs at a time."),
             Note(Icons.Rounded.Waves, "A cleaner seek bar", "Where the song's parts begin now shows as small dots ahead of the playhead, not as breaks in the played line."),
         ),

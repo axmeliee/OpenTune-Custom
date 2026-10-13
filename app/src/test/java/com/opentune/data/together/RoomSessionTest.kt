@@ -91,6 +91,10 @@ class RoomSessionTest {
         }
         override fun replaceUpcoming(songs: List<Song>) { _queue.value = _queue.value.take(_index.value + 1) + songs; refresh() }
         override fun addToQueue(song: Song) { _queue.value = _queue.value + song; refresh() }
+        override fun playNow(song: Song) {
+            _queue.value = _queue.value.take(_index.value + 1) + song + _queue.value.drop(_index.value + 1)
+            seekToItem(_index.value + 1, 0)
+        }
         override fun skipNext() { skips++; if (_index.value + 1 < _queue.value.size) seekToItem(_index.value + 1, 0) }
         override fun skipPrevious() = seekTo(0)
     }
@@ -260,5 +264,42 @@ class RoomSessionTest {
         delay(3_000)
         assertEquals(1, hostState.value!!.members.size)
         assertEquals(Together.Phase.FindingHost, strangerState.value!!.phase)
+    }
+
+    /** The host's states can reach a guest before the host has heard its hello; the guest still ends up listed. */
+    @Test fun aGuestWhoseHelloIsLostStillJoinsTheList() = runBlocking {
+        val hub = Hub()
+        val code = RoomCode.generate()
+        val hostPlayer = FakePlayer()
+        val hostState = MutableStateFlow<Together.Room?>(Together.Room(code, true, "Asha"))
+        val guestState = MutableStateFlow<Together.Room?>(Together.Room(code, false, "Ravi"))
+        // The guest's first hello goes nowhere.
+        var dropped = false
+        val lossy = object : RoomTransport by hub.transport() {
+            override fun publish(event: NostrEvent): Boolean {
+                if (!dropped) { dropped = true; return true }
+                return hub.flow.tryEmit(event)
+            }
+        }
+        onThread {
+            hostPlayer.playAll(listOf(a), 0, false, null, 0)
+            RoomSession(code, "Asha", true, hostPlayer, hub.transport(), hostState, {}, scope).start()
+            RoomSession(code, "Ravi", false, FakePlayer(), lossy, guestState, {}, scope).start()
+        }
+        // On the guest's own phone it's listed as soon as it hears the host.
+        waitFor("guest sees itself") { guestState.value!!.phase == Together.Phase.Live && guestState.value!!.members.any { it.id == guestState.value!!.myId } }
+        // And the host hears a later hello well before the 20 s check-in.
+        waitFor("host lists the guest", 6_000) { hostState.value!!.members.size == 2 }
+        waitFor("guest sees both") { guestState.value!!.members.size == 2 }
+    }
+
+    @Test fun aGuestsPickPlaysNowWhenAllowed() = runBlocking {
+        val (hostPlayer, guestPlayer, guest) = joined()
+        delay(500) // the guest learns it may control
+        onThread { assertTrue(guest.suggest(c, now = true)) }
+        waitFor("host playing the pick") { hostPlayer.currentSong.value?.videoId == c.videoId }
+        waitFor("guest followed") { guestPlayer.currentSong.value?.videoId == c.videoId }
+        // What was next before is still after it.
+        assertTrue(onThread { hostPlayer.queue.value.any { it.videoId == b.videoId } })
     }
 }
