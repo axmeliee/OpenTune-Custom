@@ -328,7 +328,7 @@ data class InterfaceSettings(
     /** Add this phone to the app's anonymous usage counts (see Usage). */
     val countUsage: Boolean = true,
     /** How the glass of the dock, buttons and bars looks. */
-    val glassStyle: GlassStyle = GlassStyle.FROSTED,
+    val glassStyle: GlassStyle = GlassStyle.LIQUID,
     /** Pages blur and fade out as they scroll under the status bar. */
     val frostedTopEdge: Boolean = true,
     /** How the dock's highlight travels between tabs. */

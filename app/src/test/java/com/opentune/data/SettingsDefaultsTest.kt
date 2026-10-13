@@ -22,6 +22,11 @@ class SettingsDefaultsTest {
             assertEquals(LyricsSource.entries.toList(), settings.lyrics.ordered.map { it.source })
             assertTrue(settings.lyrics.ordered.all { it.enabled })
         }
+        // The iOS 26 look: Liquid Glass and the dock that minimizes.
+        val ui = json.decodeFromString<SettingsState>("{}").ui
+        assertTrue(ui.liquidGlass)
+        assertEquals(com.opentune.data.settings.GlassStyle.LIQUID, ui.glassStyle)
+        assertEquals(com.opentune.data.settings.DockMotion.MINIMIZE, ui.dockMotion)
     }
 
     @Test fun anUpdateAndBackupKeepExplicitSavedChoices() {
