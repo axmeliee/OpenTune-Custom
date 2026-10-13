@@ -1,5 +1,5 @@
-• Talk in a room is heard live only and isn't kept in the chat; the Talk button needs a short hold
-• Tapping the mini player grows its cover into the player
-• Going back from Home while music plays shrinks the app up towards the notification
-• Updates offer the newest release; one put off leaves a red dot, and downloaded updates can be deleted
-• Clarity keeps the loudness; rough settings are marked Beta; support by UPI
+• Rooms: a call to talk freely, rings on whoever is speaking, and guests no longer show as gone while still in
+• Tap the mini player and its cover grows into the player; Back from Home shrinks the app away
+• Updates offer the newest release, leave a red dot when put off, and their downloads can be deleted
+• Lossless plays with a glowing beam on the quality pill; words in lyrics no longer jump twice
+• Clarity keeps the loudness; rough settings are marked Beta

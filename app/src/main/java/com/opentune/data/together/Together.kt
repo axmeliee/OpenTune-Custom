@@ -81,7 +81,7 @@ object Together {
         val requests: List<Member> = emptyList(),
         /** For the host: knocking needs approval; off lets anyone with the code straight in. */
         val askToJoin: Boolean = true,
-        /** Names of the people talking right now. */
+        /** Member ids of the people talking right now (others; this phone's own talk is [Together.speaking]). */
         val talking: List<String> = emptyList(),
     ) {
         val following get() = !hosting && phase == Phase.Live
@@ -165,21 +165,79 @@ object Together {
         val r = VoiceRecorder(context, if (live) 30_000 else 60_000) { pieceCfg, frames, ms, last ->
             main.launch {
                 if (pieceCfg != null) cfg = pieceCfg
-                all += frames
+                // Talk is heard and gone; only a note keeps every frame, to show in the chat.
+                if (!live) all += frames
                 s.sendVoice(id, seq++, pieceCfg, frames, ms, last, live, all.toList(), cfg)
-                if (last) _recording.value = null
+                if (last) { _recording.value = null; if (live) _speaking.value = false }
             }
         }
         if (!r.start()) { notice("Couldn't use the microphone"); return false }
         recorder = r
         _recording.value = live
+        if (live) _speaking.value = true
         return true
     }
 
     fun stopVoice() {
+        if (_inCall.value) return
         recorder?.stop()
         recorder = null
     }
+
+    // ---- call: an open mic that sends only while you speak ----
+
+    private val _inCall = MutableStateFlow(false)
+    /** This phone is in the room's call: its mic is open and speech goes out as it's said. */
+    val inCall: StateFlow<Boolean> = _inCall.asStateFlow()
+
+    private val _callMuted = MutableStateFlow(false)
+    val callMuted: StateFlow<Boolean> = _callMuted.asStateFlow()
+
+    private val _speaking = MutableStateFlow(false)
+    /** This phone's own voice is going out right now (talk held, or speech in a call). */
+    val speaking: StateFlow<Boolean> = _speaking.asStateFlow()
+
+    /**
+     * Joins the call. Each stretch of speech goes out as live talk, so
+     * everyone with Hear talk on hears it as it's said; silence sends
+     * nothing. The caller has the microphone permission.
+     */
+    fun startCall(): Boolean {
+        val s = session ?: return false
+        val context = appContext ?: return false
+        if (recorder?.isRecording == true) return false
+        var id = newClipId()
+        var seq = 0
+        _callMuted.value = false
+        val r = VoiceRecorder(
+            context, maxMs = 6L * 60 * 60 * 1000, gate = true, duck = false,
+            onSpeaking = { on -> main.launch { _speaking.value = on } },
+        ) { cfg, frames, ms, last ->
+            val clip = id
+            val n = seq++
+            if (last) { id = newClipId(); seq = 0 }
+            main.launch { s.sendVoice(clip, n, cfg, frames, ms, last, live = true, allFrames = emptyList(), allCfg = null) }
+        }
+        if (!r.start()) { notice("Couldn't use the microphone"); return false }
+        recorder = r
+        _inCall.value = true
+        return true
+    }
+
+    fun setCallMuted(on: Boolean) {
+        _callMuted.value = on
+        recorder?.muted = on
+    }
+
+    fun endCall() {
+        if (!_inCall.value) return
+        _inCall.value = false
+        _speaking.value = false
+        recorder?.stop()
+        recorder = null
+    }
+
+    private fun newClipId() = java.util.UUID.randomUUID().toString().take(12)
 
     /** Plays a clip from the chat, or stops it if it's the one playing. */
     fun playClip(clip: VoiceClip) {
@@ -239,6 +297,7 @@ object Together {
     }
 
     fun leave() {
+        endCall()
         stopVoice()
         voicePlayer?.stop()
         session?.stop(saying = true)

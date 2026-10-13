@@ -40,6 +40,20 @@ import androidx.compose.material3.LocalContentColor
 import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material.icons.rounded.Stop
 import androidx.compose.material.icons.rounded.Mic
+import androidx.compose.material.icons.rounded.MicOff
+import androidx.compose.material.icons.rounded.Call
+import androidx.compose.material.icons.rounded.CallEnd
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.material3.FilledIconButton
+import androidx.compose.material3.FilledTonalIconButton
+import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.material.icons.rounded.Share
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
@@ -251,8 +265,12 @@ internal fun RoomView(r: Together.Room, onBack: () -> Unit) {
                 }
             }
             item { SectionHeader("Listening", subtitle = "${r.members.size} in the room") }
-            item { Members(r.members, r.myId, canRemove = r.hosting) }
-            if (r.phase == Together.Phase.Live) item { TalkPanel(r.talking) }
+            item {
+                val meSpeaking by Together.speaking.collectAsState()
+                val speaking = r.talking.toSet() + listOfNotNull(r.myId.takeIf { meSpeaking })
+                Members(r.members, r.myId, canRemove = r.hosting, speaking = speaking)
+            }
+            if (r.phase == Together.Phase.Live) item { TalkPanel() }
             item { SectionHeader("Chat") }
             if (r.chat.isEmpty()) {
                 item { Text("Say hi.", Modifier.padding(horizontal = 16.dp), color = MaterialTheme.colorScheme.onSurfaceVariant) }
@@ -264,6 +282,9 @@ internal fun RoomView(r: Together.Room, onBack: () -> Unit) {
                 }
             }
         }
+        // Talk and the call sit here, outside the list, so holding Talk can't
+        // scroll the page and nothing above moves while someone speaks.
+        if (r.phase == Together.Phase.Live) TalkBar()
         if (r.phase != Together.Phase.Ended) {
             Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
                 TextField(
@@ -382,9 +403,10 @@ private fun NowInRoom(r: Together.Room) {
 }
 
 @Composable
-private fun Members(members: List<Member>, myId: String?, canRemove: Boolean) {
+private fun Members(members: List<Member>, myId: String?, canRemove: Boolean, speaking: Set<String> = emptySet()) {
     var removing by remember { mutableStateOf<Member?>(null) }
-    LazyRow(contentPadding = PaddingValues(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+    // Room around each avatar for its speaking ring.
+    LazyRow(contentPadding = PaddingValues(horizontal = 16.dp, vertical = 12.dp), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
         items(members, key = { it.id }) { m ->
             Column(
                 horizontalAlignment = Alignment.CenterHorizontally,
@@ -392,8 +414,8 @@ private fun Members(members: List<Member>, myId: String?, canRemove: Boolean) {
                     if (canRemove && !m.host) Modifier.clickable { removing = m } else Modifier,
                 ),
             ) {
-                Avatar(m.name, 56.dp)
-                Spacer(Modifier.height(6.dp))
+                Avatar(m.name, 56.dp, speaking = m.id in speaking)
+                Spacer(Modifier.height(8.dp))
                 Text(m.name, style = MaterialTheme.typography.bodySmall, maxLines = 1, overflow = TextOverflow.Ellipsis, textAlign = TextAlign.Center)
                 when {
                     m.host && m.id == myId -> Text("Host · You", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
@@ -414,13 +436,31 @@ private fun Members(members: List<Member>, myId: String?, canRemove: Boolean) {
     }
 }
 
+/**
+ * A member's initial in their colour. While they're [speaking], a green
+ * ring sits around it, and a second one keeps spreading out from it and
+ * fading, like sound.
+ */
 @Composable
-private fun Avatar(name: String, size: androidx.compose.ui.unit.Dp) {
+private fun Avatar(name: String, size: androidx.compose.ui.unit.Dp, speaking: Boolean = false) {
+    val shown by animateFloatAsState(if (speaking) 1f else 0f, tween(220), label = "speaking")
+    val wave = rememberInfiniteTransition(label = "speakingWave")
+    val spread by wave.animateFloat(0f, 1f, infiniteRepeatable(tween(1_100), RepeatMode.Restart), label = "spread")
     Box(
-        Modifier.size(size).background(avatarColor(name), CircleShape),
+        Modifier.size(size)
+            .drawBehind {
+                if (shown <= 0f) return@drawBehind
+                val ring = SPEAKING
+                val base = this.size.minDimension / 2 + 4.dp.toPx()
+                drawCircle(ring.copy(alpha = shown), radius = base, style = Stroke(3.dp.toPx()))
+                drawCircle(ring.copy(alpha = shown * (1f - spread) * 0.7f), radius = base + spread * 9.dp.toPx(), style = Stroke(2.dp.toPx()))
+            }
+            .background(avatarColor(name), CircleShape),
         contentAlignment = Alignment.Center,
     ) { Text(name.take(1).uppercase(), fontSize = (size.value * 0.4f).sp, fontWeight = FontWeight.Bold, color = Color(0xFF0B0B10)) }
 }
+
+private val SPEAKING = Color(0xFF4CD964)
 
 /** Someone who knocked: let them in or turn them away. */
 @Composable
@@ -435,50 +475,103 @@ private fun RequestRow(m: Member) {
     }
 }
 
+/** What talk and the call are, and whether you hear them; the buttons are in [TalkBar]. */
+@Composable
+private fun TalkPanel() {
+    val muted by Together.talkMuted.collectAsState()
+    Row(
+        Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp)
+            .background(MaterialTheme.colorScheme.surfaceContainerHigh, RoundedCornerShape(24.dp)).padding(16.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Column(Modifier.weight(1f)) {
+            Text("Talk and call", style = MaterialTheme.typography.titleMedium)
+            Text(
+                "Hold Talk to say something, or join the call to talk freely. Nothing is saved. In a call, headphones keep the room from hearing itself.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+        Spacer(Modifier.width(10.dp))
+        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+            Switch(!muted, { Together.setTalkMuted(!it) })
+            Text("Hear talk", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+    }
+}
+
 /**
- * Push-to-talk: hold the button and everyone hears you a second or two
- * later, the music dipping under it. Talk can be turned off for yourself.
+ * Hold to talk, or the call: join it and your speech goes out as you say
+ * it, with mute and hang up. Fixed height, so it never moves the page.
  */
 @Composable
-private fun TalkPanel(talking: List<String>) {
-    val muted by Together.talkMuted.collectAsState()
+private fun TalkBar() {
+    val context = LocalContext.current
+    val inCall by Together.inCall.collectAsState()
+    val callMuted by Together.callMuted.collectAsState()
+    val speaking by Together.speaking.collectAsState()
     val recording by Together.recording.collectAsState()
-    Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp)
-        .background(MaterialTheme.colorScheme.surfaceContainerHigh, RoundedCornerShape(24.dp)).padding(16.dp)) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Column(Modifier.weight(1f)) {
-                Text("Talk", style = MaterialTheme.typography.titleMedium)
+    val haptics = com.opentune.ui.components.rememberHaptics()
+    val ask = androidx.activity.compose.rememberLauncherForActivityResult(androidx.activity.result.contract.ActivityResultContracts.RequestPermission()) { granted ->
+        if (granted && Together.startCall()) haptics.press()
+    }
+    val scheme = MaterialTheme.colorScheme
+    Row(
+        Modifier.fillMaxWidth().padding(start = 12.dp, end = 12.dp, top = 8.dp),
+        horizontalArrangement = Arrangement.spacedBy(10.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        if (inCall) {
+            Row(
+                Modifier.weight(1f).height(52.dp).background(scheme.surfaceContainerHigh, RoundedCornerShape(26.dp)).padding(horizontal = 16.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Box(Modifier.size(10.dp).background(if (speaking && !callMuted) SPEAKING else scheme.outline, CircleShape))
+                Spacer(Modifier.width(10.dp))
                 Text(
                     when {
-                        recording == true -> "Everyone with Hear talk on hears you. Let go to stop."
-                        talking.isNotEmpty() -> talking.joinToString(" and ") + (if (talking.size == 1) " is talking" else " are talking")
-                        else -> "Hold to talk. It isn't saved: whoever has Hear talk on hears it live."
+                        callMuted -> "In the call · muted"
+                        speaking -> "In the call · you're on"
+                        else -> "In the call · just talk"
                     },
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    style = MaterialTheme.typography.titleSmall,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
                 )
             }
-            Text("Hear talk", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            Spacer(Modifier.width(6.dp))
-            Switch(!muted, { Together.setTalkMuted(!it) })
-        }
-        Spacer(Modifier.height(12.dp))
-        HoldToRecord(
-            live = true,
-            Modifier.fillMaxWidth().height(56.dp).background(
-                if (recording == true) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary,
-                RoundedCornerShape(28.dp),
-            ),
-        ) { talking ->
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Icon(Icons.Rounded.Mic, null, tint = if (talking) MaterialTheme.colorScheme.onError else MaterialTheme.colorScheme.onPrimary)
-                Spacer(Modifier.width(8.dp))
-                Text(
-                    if (talking) "Talking…" else "Hold to talk",
-                    style = MaterialTheme.typography.titleMedium,
-                    color = if (talking) MaterialTheme.colorScheme.onError else MaterialTheme.colorScheme.onPrimary,
-                )
+            FilledTonalIconButton(onClick = { haptics.tick(); Together.setCallMuted(!callMuted) }, Modifier.size(52.dp)) {
+                Icon(if (callMuted) Icons.Rounded.MicOff else Icons.Rounded.Mic, if (callMuted) "Unmute" else "Mute")
             }
+            FilledIconButton(
+                onClick = { haptics.tick(); Together.endCall() },
+                modifier = Modifier.size(52.dp),
+                colors = IconButtonDefaults.filledIconButtonColors(containerColor = scheme.error, contentColor = scheme.onError),
+            ) { Icon(Icons.Rounded.CallEnd, "Leave the call") }
+        } else {
+            HoldToRecord(
+                live = true,
+                Modifier.weight(1f).height(52.dp).background(if (recording == true) scheme.error else scheme.primary, RoundedCornerShape(26.dp)),
+            ) { talking ->
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(Icons.Rounded.Mic, null, tint = if (talking) scheme.onError else scheme.onPrimary)
+                    Spacer(Modifier.width(8.dp))
+                    Text(
+                        if (talking) "Talking… let go to stop" else "Hold to talk",
+                        style = MaterialTheme.typography.titleMedium,
+                        color = if (talking) scheme.onError else scheme.onPrimary,
+                        maxLines = 1,
+                    )
+                }
+            }
+            FilledTonalIconButton(
+                onClick = {
+                    val granted = androidx.core.content.ContextCompat.checkSelfPermission(context, android.Manifest.permission.RECORD_AUDIO) ==
+                        android.content.pm.PackageManager.PERMISSION_GRANTED
+                    if (!granted) ask.launch(android.Manifest.permission.RECORD_AUDIO)
+                    else if (Together.startCall()) haptics.press()
+                },
+                modifier = Modifier.size(52.dp),
+            ) { Icon(Icons.Rounded.Call, "Join the call") }
         }
     }
 }

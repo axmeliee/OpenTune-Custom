@@ -187,12 +187,20 @@ fun LyricCardSheet(song: Song, lines: List<String>, startAt: Int, onDismiss: () 
     val scope = rememberCoroutineScope()
     val picked = remember { mutableStateListOf<Int>().apply { if (startAt in lines.indices) add(startAt) } }
     var look by remember { mutableStateOf(LyricCard.Look.BLURRED) }
-    var cover by remember { mutableStateOf<Bitmap?>(null) }
+    // This song's cover, and whether looking for it is over; the card waits
+    // for it, so it never goes out with another song's picture.
+    var cover by remember(song.videoId) { mutableStateOf<Bitmap?>(null) }
+    var coverDone by remember(song.videoId) { mutableStateOf(false) }
     var preview by remember { mutableStateOf<Bitmap?>(null) }
-    LaunchedEffect(song.thumbnailUrl) { cover = runCatching { ShareCard.loadImage(context, song.thumbnailUrl, 720) }.getOrNull() }
+    LaunchedEffect(song.videoId, song.thumbnailUrl) {
+        cover = null
+        coverDone = false
+        cover = kotlinx.coroutines.withTimeoutOrNull(8_000) { runCatching { ShareCard.loadImage(context, song.thumbnailUrl, 720) }.getOrNull() }
+        coverDone = true
+    }
     val chosen = picked.sorted().map { lines[it] }
-    LaunchedEffect(chosen, look, cover) {
-        preview = if (chosen.isEmpty()) null else withContext(Dispatchers.Default) { LyricCard.draw(cover, chosen, song.title, song.artist, look) }
+    LaunchedEffect(chosen, look, cover, coverDone) {
+        preview = if (chosen.isEmpty() || !coverDone) null else withContext(Dispatchers.Default) { LyricCard.draw(cover, chosen, song.title, song.artist, look) }
     }
     val list = rememberLazyListState()
     // Open on the line being sung, a little way down so the lines before it show too.

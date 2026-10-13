@@ -1227,7 +1227,7 @@ private fun settingsSections(
                     )
                 },
                 Entry("Support OpenTune", "donate upi pay money tip support developer") {
-                    NavRow("Support OpenTune", { supportDialog = true }, summary = "Pay any amount with a UPI app, to ${com.opentune.ui.components.Support.UPI_ID}", icon = Icons.Rounded.Favorite)
+                    NavRow("Support OpenTune", { supportDialog = true }, summary = "A small thank-you helps keep OpenTune going", icon = Icons.Rounded.Favorite)
                 },
                 Entry("Star on GitHub", "star github rate like") {
                     NavRow("Star on GitHub", {

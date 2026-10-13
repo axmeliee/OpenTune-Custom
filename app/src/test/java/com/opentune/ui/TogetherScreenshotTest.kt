@@ -76,6 +76,7 @@ class TogetherScreenshotTest {
             members = listOf(Member("a", "Asha", host = true), Member("b", "Ravi"), Member("c", "Meera")),
             requests = listOf(Member("d", "Kabir")),
             hostName = "Asha", open = true,
+            talking = listOf("c"),
             track = Track("4NRXx6U8ABQ", "Blinding Lights", "The Weeknd"),
             chat = listOf(
                 Together.ChatLine("", "Ravi joined", system = true, at = 1_760_000_000_000),

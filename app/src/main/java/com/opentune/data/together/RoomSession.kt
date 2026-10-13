@@ -100,8 +100,10 @@ private const val HEARTBEAT_MS = 2_000L
 private const val REQUEST_TIMEOUT_MS = 30_000L
 /** Talk with no new piece for this long has stopped. */
 private const val TALK_QUIET_MS = 3_000L
-private const val HERE_MS = 20_000L
-private const val MEMBER_TIMEOUT_MS = 50_000L
+/** How often a guest says it's still here. Anything else it sends counts too. */
+private const val HERE_MS = 10_000L
+/** A guest not heard from for this long has gone: several check-ins, all lost. */
+private const val MEMBER_TIMEOUT_MS = 45_000L
 private const val HOST_TIMEOUT_MS = 25_000L
 private const val MAX_CHAT = 100
 private const val TAG = "Together"
@@ -140,6 +142,8 @@ internal class RoomSession(
     /** Whether people who knock wait for the host to let them in. */
     askToJoin: Boolean = true,
     private val talkSink: TalkSink = TalkSink { _, _, _, _, _ -> },
+    private val hereMs: Long = HERE_MS,
+    private val memberTimeoutMs: Long = MEMBER_TIMEOUT_MS,
 ) {
     private val key = Schnorr.newPrivateKey()
     private val me = Schnorr.publicKey(key).toHex()
@@ -156,6 +160,12 @@ internal class RoomSession(
     private val outbox = Channel<Msg>(Channel.BUFFERED)
     private val jobs = mutableListOf<Job>()
     private val members = linkedMapOf<String, Member0>()
+    /**
+     * For the host: guests dropped for not being heard from, by name. They
+     * still hold the room key, so when they turn up again they're simply
+     * back, without knocking and waiting again.
+     */
+    private val dropped = linkedMapOf<String, String>()
 
     // host
     private var seq = 0L
@@ -276,9 +286,10 @@ internal class RoomSession(
                     kotlin.math.abs(pos - targetPosition(sent, now, 0)) > 2_000
                 if (jumped || now - lastSentLocal > HEARTBEAT_MS) sendState()
                 if (requests.values.removeAll { now - it.lastSeen > REQUEST_TIMEOUT_MS }) update { it.copy(requests = requestList()) }
-                val gone = members.filterValues { now - it.lastSeen > MEMBER_TIMEOUT_MS }
+                val gone = members.filterValues { now - it.lastSeen > memberTimeoutMs }
                 if (gone.isNotEmpty()) {
-                    gone.keys.forEach(members::remove)
+                    gone.forEach { (id, m) -> members.remove(id); dropped[id] = m.name }
+                    while (dropped.size > 50) dropped.remove(dropped.keys.first())
                     gone.values.forEach { addChat(ChatLine("", "${it.name} left", system = true)) }
                     update { it.copy(members = memberList()) }
                 }
@@ -300,6 +311,17 @@ internal class RoomSession(
         members[id] = Member0(name, now)
         admit(id)
         addChat(ChatLine("", "$name joined", system = true))
+        update { it.copy(members = memberList(), requests = requestList()) }
+        sendState()
+    }
+
+    /** [id], dropped for silence, turned up again: back in, with the key and the state. */
+    private fun rejoin(id: String, name: String, now: Long) {
+        dropped.remove(id)
+        requests.remove(id)
+        members[id] = Member0(name, now)
+        admit(id)
+        addChat(ChatLine("", "$name is back", system = true))
         update { it.copy(members = memberList(), requests = requestList()) }
         sendState()
     }
@@ -367,8 +389,14 @@ internal class RoomSession(
     private fun hostHandle(from: String, msg: Msg) {
         val now = System.currentTimeMillis()
         val p = player
-        // Inside the room, only people let in are listened to.
-        if (!Msg.inLobby(msg) && from !in members) return
+        // Inside the room, only people let in are listened to. Someone dropped
+        // for silence who still talks in the room never really left.
+        if (!Msg.inLobby(msg) && from !in members) {
+            val name = dropped[from] ?: return
+            rejoin(from, name, now)
+        }
+        // Anything a guest sends shows it's still here, not just its check-ins.
+        members[from]?.lastSeen = now
         when (msg) {
             is Msg.Hello -> {
                 val name = msg.name.take(30)
@@ -376,6 +404,7 @@ internal class RoomSession(
                 when {
                     // In already, and knocking again: it missed the key or the state.
                     member != null -> { member.lastSeen = now; admit(from); sendState() }
+                    from in dropped -> rejoin(from, name, now)
                     !askToJoin -> letIn(from, name, now)
                     else -> {
                         val known = requests[from]
@@ -444,13 +473,18 @@ internal class RoomSession(
             // Knock until the host lists this phone among the members, then
             // check in now and then. Hearing from the host isn't enough: the
             // host's state can arrive before the host has heard our hello.
-            while (isActive && (roomKey == null || last?.members?.any { it.id == me } != true)) {
-                if (pool.connected.value > 0) send(Msg.Hello(myName))
-                delay(2_000)
-            }
+            // Knocking starts again whenever the host's list leaves this phone
+            // out (it stopped hearing us) or the host goes quiet.
+            var lastHere = 0L
             while (isActive) {
-                delay(HERE_MS)
-                send(Msg.Here(myName))
+                val now = System.currentTimeMillis()
+                val listed = roomKey != null && last?.members?.any { it.id == me } == true
+                val lost = state.value?.phase == Phase.LostHost
+                if (pool.connected.value > 0) {
+                    if (!listed || lost) send(Msg.Hello(myName))
+                    else if (now - lastHere >= hereMs) { send(Msg.Here(myName)); lastHere = now }
+                }
+                delay(minOf(2_000L, hereMs))
             }
         }
         jobs += main.launch {
@@ -749,20 +783,19 @@ internal class RoomSession(
 
     private val talkSeen = mutableMapOf<String, Long>()
 
-    /** Who's talking now, for the room screen; a talker gone quiet for a few seconds has stopped. */
+    /** Who's talking now, by member id, for the room screen; a talker gone quiet for a few seconds has stopped. */
     private fun talking(from: String, on: Boolean) {
-        val name = nameOf(from)
         if (on) {
             val at = System.currentTimeMillis()
             talkSeen[from] = at
-            update { if (name in it.talking) it else it.copy(talking = it.talking + name) }
+            update { if (from in it.talking) it else it.copy(talking = it.talking + from) }
             main.launch {
                 delay(TALK_QUIET_MS)
                 if (talkSeen[from] == at) talking(from, false)
             }
         } else {
             talkSeen.remove(from)
-            update { it.copy(talking = it.talking - name) }
+            update { it.copy(talking = it.talking - from) }
         }
     }
 

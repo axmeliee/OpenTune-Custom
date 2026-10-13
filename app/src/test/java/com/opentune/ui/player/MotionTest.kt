@@ -55,4 +55,16 @@ class MotionTest {
         assertEquals("Medium", Haptics.label(0.6f))
         assertEquals("Strong", Haptics.label(1f))
     }
+
+    /** Syllable-timed lyrics split words; each written word moves once, as one. */
+    @Test fun syllablesOfOneWordMoveTogether() {
+        val w = { t: String -> com.opentune.data.lyrics.LyricWord(t, 0, 1) }
+        // "Keep jumping on" timed as "Keep ", "jump", "ing ", "on".
+        org.junit.Assert.assertEquals(listOf(0..0, 1..2, 3..3), wordGroups(listOf(w("Keep "), w("jump"), w("ing "), w("on"))))
+        // Words that each carry their space stay one apiece.
+        org.junit.Assert.assertEquals(listOf(0..0, 1..1, 2..2), wordGroups(listOf(w("a "), w("b "), w("c"))))
+        // A space at the start of the next part also ends a word.
+        org.junit.Assert.assertEquals(listOf(0..0, 1..1), wordGroups(listOf(w("hey"), w(" you"))))
+        org.junit.Assert.assertEquals(emptyList<IntRange>(), wordGroups(emptyList()))
+    }
 }

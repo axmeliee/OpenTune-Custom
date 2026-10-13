@@ -77,6 +77,7 @@ import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.unit.dp
 import com.opentune.data.lyrics.LyricLine
+import com.opentune.data.lyrics.LyricWord
 import com.opentune.data.lyrics.Romanizer
 import com.opentune.data.lyrics.VOICE_SECOND
 import com.opentune.data.lyrics.VOICE_TOGETHER
@@ -116,7 +117,9 @@ fun LyricsView(
     /** The song, for sharing its lines as a lyric card; no share button without it. */
     shareSong: com.opentune.data.model.Song? = null,
 ) {
-    var sharing by remember { mutableStateOf(false) }
+    // The song and its lines as they were when sharing began, so a song
+    // change while the sheet is open can't mix one song's words with another's.
+    var sharing by remember { mutableStateOf<Pair<com.opentune.data.model.Song, List<String>>?>(null) }
     Box(modifier) {
         when (state) {
             is LyricsState.Loading -> Column(Modifier.padding(top = 32.dp), verticalArrangement = Arrangement.spacedBy(18.dp)) {
@@ -158,13 +161,13 @@ fun LyricsView(
                         haptics.tick()
                         val now = position()
                         startAt = if (found is Lyrics.Synced) timed.indexOfLast { it.second <= now } else -1
-                        sharing = true
+                        sharing = shareSong to lines
                     },
                 contentAlignment = Alignment.Center,
             ) {
                 Icon(Icons.Rounded.FormatQuote, "Share lyrics", Modifier.size(20.dp))
             }
-            if (sharing) com.opentune.ui.share.LyricCardSheet(shareSong, lines, startAt = startAt, onDismiss = { sharing = false })
+            sharing?.let { (song, shared) -> com.opentune.ui.share.LyricCardSheet(song, shared, startAt = startAt, onDismiss = { sharing = null }) }
         }
     }
 }
@@ -536,29 +539,58 @@ private fun DrawScope.drawMovingWords(
     bright: Color,
     dim: Color,
 ) {
-    line.words.forEachIndexed { i, word ->
-        val (laid, at) = words.getOrNull(i) ?: return@forEachIndexed
-        val span = (word.endMs - word.startMs).coerceAtLeast(1)
-        val raw = (positionMs - word.startMs).toFloat() / span
-        val t = raw.coerceIn(0f, 1f)
+    // Sources with syllable timing split a word ("jump" + "ing"); it moves as
+    // one word over its whole time, so it lifts once, not once per syllable.
+    for (group in wordGroups(line.words)) {
+        val first = line.words[group.first]
+        val last = line.words[group.last]
+        val raw = (positionMs - first.startMs).toFloat() / (last.endMs - first.startMs).coerceAtLeast(1)
         val pose = wordPose(motion, raw)
-        if (pose.alpha <= 0f) return@forEachIndexed
-        val w = laid.size.width.toFloat()
-        val fill = easeOut(t)
-        val brush = when {
-            t >= 1f || motion == WordMotion.REVEAL -> SolidColor(bright)
-            t <= 0f -> SolidColor(dim)
-            else -> Brush.horizontalGradient(0f to bright, fill to bright, (fill + 0.12f).coerceAtMost(1f) to dim, 1f to dim, startX = 0f, endX = w)
-        }
+        if (pose.alpha <= 0f) continue
+        val parts = group.mapNotNull { i -> words.getOrNull(i)?.let { i to it } }
+        if (parts.isEmpty()) continue
+        val (_, head) = parts.first()
+        val left = parts.minOf { it.second.second.x }
+        val right = parts.maxOf { it.second.second.x + it.second.first.size.width }
+        val pivot = Offset((left + right) / 2f, head.second.y + head.first.size.height / 2f)
         val liftPx = pose.lift.dp.toPx()
-        withTransform({
-            translate(at.x, at.y - liftPx)
-            scale(pose.scale, pose.scale, pivot = Offset(w / 2f, laid.size.height / 2f))
-        }) {
-            if (pose.glow > 0.01f) drawText(laid, color = bright.copy(alpha = 0.5f * pose.glow), shadow = Shadow(bright.copy(alpha = 0.8f * pose.glow), blurRadius = 26f))
-            drawText(laid, brush = brush, alpha = pose.alpha)
+        for ((i, part) in parts) {
+            val (laid, at) = part
+            val word = line.words[i]
+            val t = ((positionMs - word.startMs).toFloat() / (word.endMs - word.startMs).coerceAtLeast(1)).coerceIn(0f, 1f)
+            val w = laid.size.width.toFloat()
+            val fill = easeOut(t)
+            val brush = when {
+                t >= 1f || motion == WordMotion.REVEAL -> SolidColor(bright)
+                t <= 0f -> SolidColor(dim)
+                else -> Brush.horizontalGradient(0f to bright, fill to bright, (fill + 0.12f).coerceAtMost(1f) to dim, 1f to dim, startX = 0f, endX = w)
+            }
+            withTransform({
+                translate(0f, -liftPx)
+                scale(pose.scale, pose.scale, pivot = pivot)
+                translate(at.x, at.y)
+            }) {
+                if (pose.glow > 0.01f) drawText(laid, color = bright.copy(alpha = 0.5f * pose.glow), shadow = Shadow(bright.copy(alpha = 0.8f * pose.glow), blurRadius = 26f))
+                drawText(laid, brush = brush, alpha = pose.alpha)
+            }
         }
     }
+}
+
+/**
+ * [words] in groups that make whole words: a part that neither ends in a
+ * space nor is followed by one that starts with a space runs on into the
+ * next, the way syllable-timed lyrics split "jump" and "ing".
+ */
+internal fun wordGroups(words: List<LyricWord>): List<IntRange> {
+    val out = mutableListOf<IntRange>()
+    var start = 0
+    for (i in words.indices) {
+        val next = words.getOrNull(i + 1)
+        val ends = next == null || words[i].text.lastOrNull()?.isWhitespace() != false || next.text.firstOrNull()?.isWhitespace() != false
+        if (ends) { out += start..i; start = i + 1 }
+    }
+    return out
 }
 
 /** Cuts bright text down to the dim lyric colour's 0.32 alpha. */

@@ -295,6 +295,42 @@ class RoomSessionTest {
         waitFor("guest sees both") { guestState.value!!.members.size == 2 }
     }
 
+    /**
+     * The host stops hearing a guest for a while (its messages lost on the
+     * way) and counts it gone. Once the guest gets through again it's back
+     * in the host's list on its own, without knocking and waiting again.
+     */
+    @Test fun aGuestTheHostStoppedHearingComesBack() = runBlocking {
+        val hub = Hub()
+        val code = RoomCode.generate()
+        val hostPlayer = FakePlayer()
+        val hostState = MutableStateFlow<Together.Room?>(Together.Room(code, true, "Asha"))
+        val guestState = MutableStateFlow<Together.Room?>(Together.Room(code, false, "Ravi"))
+        val muted = java.util.concurrent.atomic.AtomicBoolean(false)
+        val lossy = object : RoomTransport by hub.transport() {
+            override fun publish(event: NostrEvent): Boolean = if (muted.get()) true else hub.flow.tryEmit(event)
+        }
+        lateinit var host: RoomSession
+        onThread {
+            hostPlayer.playAll(listOf(a), 0, false, null, 0)
+            host = RoomSession(code, "Asha", true, hostPlayer, hub.transport(), hostState, {}, scope, askToJoin = true, memberTimeoutMs = 1_500).also { it.start() }
+            RoomSession(code, "Ravi", false, FakePlayer(), lossy, guestState, {}, scope, hereMs = 300).start()
+        }
+        waitFor("knocked") { hostState.value!!.requests.size == 1 }
+        onThread { host.approve(hostState.value!!.requests.first().id) }
+        waitFor("in") { hostState.value!!.members.size == 2 && guestState.value!!.phase == Together.Phase.Live }
+        // Check-ins every 300 ms keep the guest in, well past the 1.5 s timeout.
+        delay(2_500)
+        assertEquals(2, hostState.value!!.members.size)
+
+        muted.set(true)
+        waitFor("dropped") { hostState.value!!.members.size == 1 && hostState.value!!.chat.any { it.text == "Ravi left" } }
+        muted.set(false)
+        waitFor("back") { hostState.value!!.members.size == 2 && hostState.value!!.chat.any { it.text == "Ravi is back" } }
+        assertTrue("no second approval", hostState.value!!.requests.isEmpty())
+        waitFor("guest listed by the host again") { guestState.value!!.members.size == 2 }
+    }
+
     @Test fun aGuestsPickPlaysNowWhenAllowed() = runBlocking {
         val (hostPlayer, guestPlayer, guest) = joined()
         delay(500) // the guest learns it may control
@@ -426,7 +462,7 @@ class RoomSessionTest {
         assertTrue("a note isn't played aloud", heard.isEmpty())
         // Talk is heard as it comes, in order.
         onThread { guest.sendVoice("talk1", 0, cfg, f1, 640, last = false, live = true, allFrames = f1, allCfg = cfg) }
-        waitFor("host sees Ravi talking") { hostState.value!!.talking == listOf("Ravi") }
+        waitFor("host sees Ravi talking") { hostState.value!!.talking == listOf(guestState.value!!.myId) }
         onThread { guest.sendVoice("talk1", 1, null, f2, 1_000, last = true, live = true, allFrames = f1 + f2, allCfg = cfg) }
         waitFor("talk heard") { heard.size == 2 }
         assertEquals(listOf(2, 1), heard.map { it.second })

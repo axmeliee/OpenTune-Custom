@@ -53,9 +53,9 @@ object Support {
     fun pay(context: Context, rupees: Double) {
         val view = Intent(Intent.ACTION_VIEW, upiLink(rupees).toUri())
         try {
-            context.startActivity(Intent.createChooser(view, "Pay with").addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+            context.startActivity(Intent.createChooser(view, "Send with").addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
         } catch (e: android.content.ActivityNotFoundException) {
-            Toast.makeText(context, "No UPI app found. Pay $UPI_ID from any UPI app.", Toast.LENGTH_LONG).show()
+            Toast.makeText(context, "No UPI app on this phone. You can send it to $UPI_ID from another one.", Toast.LENGTH_LONG).show()
         }
     }
 
@@ -94,7 +94,7 @@ object Support {
     }
 }
 
-/** An amount to give, then the phone's UPI apps to pay with. */
+/** A thank-you to the developer: a few suggested sums, or your own, sent from the phone's UPI app. */
 @Composable
 fun SupportDialog(onDismiss: () -> Unit) {
     val context = LocalContext.current
@@ -106,7 +106,7 @@ fun SupportDialog(onDismiss: () -> Unit) {
         title = { Text("Support OpenTune") },
         text = {
             Column {
-                Text("OpenTune is free and has no ads. If it's worth something to you, pick an amount and pay with any UPI app.")
+                Text("OpenTune has no ads and nothing to sell. If it has added a little something to your days, a small thank-you helps keep it going, and every one is truly appreciated.")
                 Row(Modifier.fillMaxWidth().padding(top = 14.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     Support.AMOUNTS.forEach { a ->
                         FilterChip(selected = text == a.toString(), onClick = { text = a.toString() }, label = { Text("₹$a") })
@@ -117,21 +117,25 @@ fun SupportDialog(onDismiss: () -> Unit) {
                     onValueChange = { v -> text = v.filter { it.isDigit() || it == '.' }.take(8) },
                     singleLine = true,
                     prefix = { Text("₹") },
-                    label = { Text("Amount") },
+                    label = { Text("Your thank-you") },
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
                     modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
                 )
                 Text(
-                    "UPI ID: ${Support.UPI_ID}",
+                    "Goes to ${Support.UPI_ID}",
                     style = MaterialTheme.typography.bodySmall,
                     modifier = Modifier.padding(top = 8.dp),
                 )
             }
         },
         confirmButton = {
-            SheetButton("Pay", enabled = rupees != null, onClick = { rupees?.let { Support.pay(context, it) }; onDismiss() })
+            SheetButton(
+                rupees?.let { "Send ₹${if (it % 1.0 == 0.0) it.toLong().toString() else String.format(Locale.ROOT, "%.2f", it)}" } ?: "Send",
+                enabled = rupees != null,
+                onClick = { rupees?.let { Support.pay(context, it) }; onDismiss() },
+            )
         },
-        dismissButton = { SheetButton("Not now", onClick = onDismiss, closes = true) },
+        dismissButton = { SheetButton("Maybe later", onClick = onDismiss, closes = true) },
     )
 }
 
@@ -153,7 +157,7 @@ fun StarPrompt(onDismiss: () -> Unit, onSupport: () -> Unit) {
                     modifier = Modifier.padding(top = 14.dp).clickable { Support.answered(context, never = true); onDismiss() },
                 )
                 Text(
-                    "Or support it with UPI",
+                    "Or send a small thank-you",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.primary,
                     modifier = Modifier.padding(top = 10.dp).clickable { Support.answered(context, never = false); onSupport() },

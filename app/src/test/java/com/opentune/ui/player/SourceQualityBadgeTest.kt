@@ -14,4 +14,12 @@ class SourceQualityBadgeTest {
         assertEquals("Qobuz · FLAC · 24-bit · 96 kHz", sourceQualityLabel(NerdStats.Source("Qobuz",24,96000), null))
         assertEquals("JioSaavn · AAC · 320 kbps", sourceQualityLabel(NerdStats.Source("JioSaavn",kbps=320), AudioFormatInfo("AAC",null,44100,2)))
     }
+
+    @Test fun onlyLosslessCountsAsTheHighestQuality() {
+        org.junit.Assert.assertTrue(isHighestQuality(NerdStats.Source("Qobuz", 24, 96000), null))
+        org.junit.Assert.assertTrue(isHighestQuality(NerdStats.Source("Tidal"), com.opentune.playback.AudioFormatInfo("FLAC", null, 44100, 2, 16)))
+        org.junit.Assert.assertFalse(isHighestQuality(NerdStats.Source("YouTube · InnerTube", kbps = 256), com.opentune.playback.AudioFormatInfo("AAC", 256, 44100, 2)))
+        org.junit.Assert.assertFalse(isHighestQuality(NerdStats.Source("Checking highest quality"), null))
+        org.junit.Assert.assertFalse(isHighestQuality(null, null))
+    }
 }

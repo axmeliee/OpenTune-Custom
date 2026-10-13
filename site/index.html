@@ -69,7 +69,10 @@ p { margin: 0; }
 .line-ico { fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
 
 /* ---------- nav ---------- */
-.nav { position: sticky; top: env(safe-area-inset-top, 0px); z-index: 30; background: rgba(0, 0, 0, .62); backdrop-filter: saturate(1.6) blur(18px); -webkit-backdrop-filter: saturate(1.6) blur(18px); border-bottom: 1px solid rgba(255, 255, 255, .06); }
+/* Fixed rather than sticky, so it holds at the top in every browser; the body makes room for it. */
+body { padding-top: calc(62px + env(safe-area-inset-top, 0px)); }
+[id] { scroll-margin-top: calc(70px + env(safe-area-inset-top, 0px)); }
+.nav { position: fixed; top: 0; left: 0; right: 0; padding-top: env(safe-area-inset-top, 0px); z-index: 30; background: rgba(0, 0, 0, .62); backdrop-filter: saturate(1.6) blur(18px); -webkit-backdrop-filter: saturate(1.6) blur(18px); border-bottom: 1px solid rgba(255, 255, 255, .06); }
 .nav .wrap { display: flex; align-items: center; gap: 26px; height: 62px; }
 .brand { display: flex; align-items: center; gap: 10px; text-decoration: none; font: 700 20px/1 var(--display); letter-spacing: -0.02em; }
 .brand svg { width: 30px; height: 30px; }
@@ -429,6 +432,16 @@ footer .about p { color: var(--dim); font-size: 13.5px; max-width: 46ch; margin-
   .cf-a { left: 0; top: 6%; } .cf-b { right: 0; top: 52%; } .cf-c { left: 0; bottom: 4%; }
   .hz span:nth-child(2n) { visibility: hidden; }
   .nav .gh { display: none; }
+  .nav .ios .sub { display: none; }
+  .nav .wrap { gap: 12px; }
+  .nav-right { gap: 8px; }
+  .nav-right .btn-small { padding: 0 12px; gap: 6px; }
+}
+@media (max-width: 380px) {
+  .brand { font-size: 18px; gap: 8px; }
+  .brand svg { width: 26px; height: 26px; }
+  .nav-right .btn-small svg { display: none; }
+  .nav-right .btn-small { padding: 0 11px; }
 }
 @media (prefers-reduced-motion: reduce) {
   :root { transition: none; }
@@ -470,6 +483,7 @@ footer .about p { color: var(--dim); font-size: 13.5px; max-width: 46ch; margin-
     </nav>
     <div class="nav-right">
       <a class="btn btn-ghost btn-small gh" href="https://github.com/justshivv/Opentune" target="_blank" rel="noopener"><svg class="line-ico"><use href="#i-star"/></svg>Star<span class="sub" id="stars-nav" hidden></span></a>
+      <a class="btn btn-ghost btn-small ios" href="#iphone"><svg class="line-ico"><use href="#i-phone"/></svg>iOS<span class="sub">early</span></a>
       <a data-latest-apk class="btn btn-primary btn-small" href="https://github.com/justshivv/Opentune/releases/latest" target="_blank" rel="noopener"><svg class="line-ico"><use href="#i-download"/></svg>Get APK</a>
     </div>
   </div>
@@ -482,9 +496,10 @@ footer .about p { color: var(--dim); font-size: 13.5px; max-width: 46ch; margin-
       <div class="hero-copy">
         <a class="badge rise" href="#releases"><b id="ver-badge">Latest</b><span id="ver-note">See what's new in the latest release</span></a>
         <h1 class="rise d1"><span class="hl">Every song.</span><span class="hl two">No ads.</span><span class="hl three">No account.</span></h1>
-        <p class="lede rise d2">OpenTune is a free, open-source music player for Android. It plays the YouTube Music catalogue with word-synced lyrics, live radio, podcasts and rooms where friends listen in step.</p>
+        <p class="lede rise d2">OpenTune is a free, open-source music player for Android, with an early version for iPhone. It plays the YouTube Music catalogue with word-synced lyrics, live radio, podcasts and rooms where friends listen in step.</p>
         <div class="ctas rise d3">
           <a data-latest-apk class="btn btn-tint" id="dl-hero" href="https://github.com/justshivv/Opentune/releases/latest" target="_blank" rel="noopener"><svg class="line-ico"><use href="#i-download"/></svg>Download for Android<span class="sub" id="dl-size" hidden></span></a>
+          <a class="btn btn-ghost" href="#iphone"><svg class="line-ico"><use href="#i-phone"/></svg>iPhone and iPad<span class="sub">early</span></a>
           <a class="btn btn-ghost" href="https://github.com/justshivv/Opentune" target="_blank" rel="noopener"><svg class="line-ico"><use href="#i-code"/></svg>Source on GitHub</a>
         </div>
         <div class="fine rise d4"><span>Android 8.0+</span><span>No ads</span><span>No account needed</span><span>GPL-3.0</span></div>
