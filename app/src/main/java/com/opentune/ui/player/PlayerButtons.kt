@@ -100,7 +100,7 @@ fun PlayerControls(
         onTogglePlay()
     }
     Row(
-        modifier.fillMaxWidth().height(90.dp),
+        modifier.fillMaxWidth().height(86.dp),
         // Capsule is a tight cluster; the bare designs spread across the row.
         horizontalArrangement = if (style == ControlStyle.CAPSULE || style == ControlStyle.MORPH) Arrangement.Center else Arrangement.SpaceEvenly,
         verticalAlignment = Alignment.CenterVertically,
@@ -118,9 +118,9 @@ fun PlayerControls(
             }
             ControlStyle.CAPSULE -> {
                 CapsuleSkip(forward = false, previousRolls, enabled = true, animate, back)
-                Spacer(Modifier.width(22.dp))
+                Spacer(Modifier.width(21.dp))
                 CapsulePlay(isPlaying, isBuffering, animate, playPause)
-                Spacer(Modifier.width(22.dp))
+                Spacer(Modifier.width(21.dp))
                 CapsuleSkip(forward = true, nextRolls, hasNext, animate, ahead)
             }
             ControlStyle.ORBIT -> {
@@ -130,9 +130,9 @@ fun PlayerControls(
             }
             ControlStyle.MORPH -> {
                 MorphSkip(forward = false, previousRolls, enabled = true, animate, back)
-                Spacer(Modifier.width(26.dp))
+                Spacer(Modifier.width(25.dp))
                 MorphPlay(isPlaying, isBuffering, animate, playPause)
-                Spacer(Modifier.width(26.dp))
+                Spacer(Modifier.width(25.dp))
                 MorphSkip(forward = true, nextRolls, hasNext, animate, ahead)
             }
         }
@@ -172,7 +172,7 @@ private fun EchoPlay(playing: Boolean, buffering: Boolean, animate: Boolean, onC
     val ink = MaterialTheme.colorScheme.onPrimary
     val path = remember { Path() }
     Box(
-        Modifier.size(86.dp).graphicsLayer { scaleX = 1f - press * 0.05f; scaleY = scaleX }
+        Modifier.size(82.dp).graphicsLayer { scaleX = 1f - press * 0.05f; scaleY = scaleX }
             .drawBehind {
                 wavyCircle(path, size, size.minDimension / 2f, depth, phase.value * 360f)
                 drawPath(path, fill)
@@ -185,7 +185,7 @@ private fun EchoPlay(playing: Boolean, buffering: Boolean, animate: Boolean, onC
             .semantics { if (buffering) stateDescription = "Buffering" },
         contentAlignment = Alignment.Center,
     ) {
-        PlayPauseGlyph(playing, ink, animate, Modifier.size(40.dp))
+        PlayPauseGlyph(playing, ink, animate, Modifier.size(38.dp))
     }
 }
 
@@ -198,10 +198,10 @@ private fun BloomPlay(isPlaying: Boolean, isBuffering: Boolean, animate: Boolean
     val ink = MaterialTheme.colorScheme.onSurface
     val pulse = loadingPulse(isBuffering && animate)
     Box(
-        Modifier.size(86.dp).drawBloom(press, ink, pulse).button(interaction, true, if (isPlaying) "Pause" else "Play", onClick),
+        Modifier.size(82.dp).drawBloom(press, ink, pulse).button(interaction, true, if (isPlaying) "Pause" else "Play", onClick),
         contentAlignment = Alignment.Center,
     ) {
-        PlayPauseGlyph(isPlaying, ink, animate, Modifier.size(60.dp).graphicsLayer { val s = 1f - 0.16f * press; scaleX = s; scaleY = s })
+        PlayPauseGlyph(isPlaying, ink, animate, Modifier.size(57.dp).graphicsLayer { val s = 1f - 0.16f * press; scaleX = s; scaleY = s })
     }
 }
 
@@ -211,10 +211,10 @@ private fun BloomSkip(forward: Boolean, rolls: Int, enabled: Boolean, animate: B
     val press = pressAmount(interaction.collectIsPressedAsState().value, animate)
     val ink = MaterialTheme.colorScheme.onSurface.copy(alpha = if (enabled) 1f else 0.35f)
     Box(
-        Modifier.size(64.dp).drawBloom(press, MaterialTheme.colorScheme.onSurface, 0f).button(interaction, enabled, if (forward) "Next" else "Previous", onClick),
+        Modifier.size(61.dp).drawBloom(press, MaterialTheme.colorScheme.onSurface, 0f).button(interaction, enabled, if (forward) "Next" else "Previous", onClick),
         contentAlignment = Alignment.Center,
     ) {
-        SkipGlyph(forward, rolls, ink, animate, Modifier.size(42.dp).graphicsLayer { val s = 1f - 0.16f * press; scaleX = s; scaleY = s })
+        SkipGlyph(forward, rolls, ink, animate, Modifier.size(40.dp).graphicsLayer { val s = 1f - 0.16f * press; scaleX = s; scaleY = s })
     }
 }
 
@@ -243,11 +243,11 @@ private fun CapsulePlay(isPlaying: Boolean, isBuffering: Boolean, animate: Boole
         label = "capsule",
     )
     val sheen = looping(isBuffering && animate, -0.4f, 1.4f, 1_100, reverse = false)
-    val h = 72.dp
-    val w = h + 44.dp * stretch
+    val h = 68.dp
+    val w = h + 42.dp * stretch
     Box(
         Modifier
-            .size(width = w.coerceAtLeast(52.dp), height = h)
+            .size(width = w.coerceAtLeast(49.dp), height = h)
             .graphicsLayer {
                 // Squashes a little as it stretches, like something soft.
                 val s = 1f - 0.06f * press
@@ -273,7 +273,7 @@ private fun CapsulePlay(isPlaying: Boolean, isBuffering: Boolean, animate: Boole
             .button(interaction, true, if (isPlaying) "Pause" else "Play", onClick),
         contentAlignment = Alignment.Center,
     ) {
-        PlayPauseGlyph(isPlaying, scheme.onPrimary, animate, Modifier.size(34.dp))
+        PlayPauseGlyph(isPlaying, scheme.onPrimary, animate, Modifier.size(32.dp))
     }
 }
 
@@ -293,7 +293,7 @@ private fun CapsuleSkip(forward: Boolean, rolls: Int, enabled: Boolean, animate:
     val alpha = if (enabled) 1f else 0.35f
     Box(
         Modifier
-            .size(54.dp)
+            .size(51.dp)
             .graphicsLayer {
                 val s = 1f - 0.1f * press
                 scaleX = s
@@ -306,7 +306,7 @@ private fun CapsuleSkip(forward: Boolean, rolls: Int, enabled: Boolean, animate:
             .button(interaction, enabled, if (forward) "Next" else "Previous", onClick),
         contentAlignment = Alignment.Center,
     ) {
-        SkipGlyph(forward, rolls, scheme.primary, animate, Modifier.size(28.dp))
+        SkipGlyph(forward, rolls, scheme.primary, animate, Modifier.size(27.dp))
     }
 }
 
@@ -324,7 +324,7 @@ private fun OrbitPlay(isPlaying: Boolean, isBuffering: Boolean, animate: Boolean
     val cometAlpha by animateFloatAsState(if (moving) 1f else 0f, tween(400), label = "cometAlpha")
     Box(
         Modifier
-            .size(88.dp)
+            .size(84.dp)
             .graphicsLayer { val s = 1f - 0.08f * press; scaleX = s; scaleY = s }
             .drawBehindCompat { size ->
                 val stroke = (4.dp.toPx() + 3.dp.toPx() * press)
@@ -354,7 +354,7 @@ private fun OrbitPlay(isPlaying: Boolean, isBuffering: Boolean, animate: Boolean
             .button(interaction, true, if (isPlaying) "Pause" else "Play", onClick),
         contentAlignment = Alignment.Center,
     ) {
-        PlayPauseGlyph(isPlaying, scheme.onSurface, animate, Modifier.size(38.dp))
+        PlayPauseGlyph(isPlaying, scheme.onSurface, animate, Modifier.size(36.dp))
     }
 }
 
@@ -373,7 +373,7 @@ private fun OrbitSkip(forward: Boolean, rolls: Int, enabled: Boolean, animate: B
     val ink = scheme.onSurface.copy(alpha = if (enabled) 1f else 0.35f)
     Box(
         Modifier
-            .size(62.dp)
+            .size(59.dp)
             .graphicsLayer { val s = 1f - 0.12f * press; scaleX = s; scaleY = s }
             .drawBehindCompat { size ->
                 val t = sweep.value
@@ -393,7 +393,7 @@ private fun OrbitSkip(forward: Boolean, rolls: Int, enabled: Boolean, animate: B
             .button(interaction, enabled, if (forward) "Next" else "Previous", onClick),
         contentAlignment = Alignment.Center,
     ) {
-        SkipGlyph(forward, rolls, ink, animate, Modifier.size(34.dp))
+        SkipGlyph(forward, rolls, ink, animate, Modifier.size(32.dp))
     }
 }
 
@@ -418,7 +418,7 @@ private fun MorphPlay(isPlaying: Boolean, isBuffering: Boolean, animate: Boolean
     val path = remember { Path() }
     Box(
         Modifier
-            .size(86.dp)
+            .size(82.dp)
             .graphicsLayer { val s = 1f - 0.08f * press; scaleX = s; scaleY = s }
             .drawBehindCompat { size ->
                 val depth = MORPH_DEPTH * (wave.coerceAtLeast(-0.2f) + 0.35f * pulse)
@@ -428,7 +428,7 @@ private fun MorphPlay(isPlaying: Boolean, isBuffering: Boolean, animate: Boolean
             .button(interaction, true, if (isPlaying) "Pause" else "Play", onClick),
         contentAlignment = Alignment.Center,
     ) {
-        OutlinedPlayPauseGlyph(isPlaying, scheme.surface, animate, Modifier.size(40.dp))
+        OutlinedPlayPauseGlyph(isPlaying, scheme.surface, animate, Modifier.size(38.dp))
     }
 }
 
@@ -448,7 +448,7 @@ private fun MorphSkip(forward: Boolean, rolls: Int, enabled: Boolean, animate: B
     val path = remember { Path() }
     Box(
         Modifier
-            .size(56.dp)
+            .size(53.dp)
             .graphicsLayer { val s = 1f - 0.1f * press; scaleX = s; scaleY = s }
             .drawBehindCompat { size ->
                 val t = ripple.value
@@ -459,7 +459,7 @@ private fun MorphSkip(forward: Boolean, rolls: Int, enabled: Boolean, animate: B
             .button(interaction, enabled, if (forward) "Next" else "Previous", onClick),
         contentAlignment = Alignment.Center,
     ) {
-        SkipGlyph(forward, rolls, ink, animate, Modifier.size(30.dp))
+        SkipGlyph(forward, rolls, ink, animate, Modifier.size(28.dp))
     }
 }
 

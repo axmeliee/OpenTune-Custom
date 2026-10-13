@@ -1,0 +1,2 @@
+• Play, pause and skip are a little smaller in every button style, and the cover gets the room
+• The What's new sheet names the version you installed

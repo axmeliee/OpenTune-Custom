@@ -62,6 +62,10 @@ object WhatsNew {
 
     /** Newest first. Add the coming version's notes at the top when releasing. */
     val NOTES: List<Pair<String, List<Note>>> = listOf(
+        "0.4.8" to listOf(
+            Note(Icons.Rounded.TouchApp, "Neater player buttons", "Play, pause and skip are a little smaller in every button style, and the cover gets the room."),
+            Note(Icons.Rounded.NewReleases, "What's new, named right", "This sheet now names the version you installed, and older notes carry their own number."),
+        ),
         "0.4.7" to listOf(
             Note(Icons.Rounded.Lyrics, "The best lyrics, from the start", "New defaults: every lyrics source on, word-by-word lyrics first, and romanized lines under other scripts. Settings you changed yourself stay as they were."),
             Note(Icons.Rounded.NewReleases, "Swipe away to stop", "By default, removing OpenTune from your recent apps stops the music."),
