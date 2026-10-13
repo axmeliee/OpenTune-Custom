@@ -10,6 +10,7 @@ import android.provider.Settings
 import android.widget.Toast
 import androidx.core.content.IntentCompat
 import androidx.core.net.toUri
+import com.opentune.BuildConfig
 import com.opentune.data.DebugLog as Log
 import java.io.File
 import java.io.IOException
@@ -34,18 +35,57 @@ object Updater {
     fun allowInstallsIntent(context: Context) =
         Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES, "package:${context.packageName}".toUri())
 
-    /** Downloads [release]'s APK into the cache, reporting 0..1 to [onProgress]; checks it and returns the file. */
+    private fun dir(context: Context) = File(context.cacheDir, "updates")
+    private val VERSION_IN_NAME = Regex("""^OpenTune-v([0-9][0-9.]*)-[A-Za-z0-9_\-]+\.apk$""")
+
+    /** The version an update APK's file name carries, like 0.5.0 in OpenTune-v0.5.0-arm64-v8a.apk. */
+    internal fun versionOf(fileName: String): String? = VERSION_IN_NAME.find(fileName)?.groupValues?.get(1)
+
+    /** Update APKs kept from earlier downloads, in bytes. */
+    fun cachedBytes(context: Context): Long =
+        dir(context).listFiles().orEmpty().sumOf { it.length() }
+
+    /** Deletes every downloaded update APK. */
+    fun deleteCached(context: Context): Boolean = dir(context).deleteRecursively()
+
+    /**
+     * Deletes downloads this version no longer needs: the APK of the
+     * version now installed (or an older one), and unfinished downloads.
+     */
+    fun clearInstalled(context: Context) {
+        dir(context).listFiles().orEmpty().forEach { f ->
+            val version = versionOf(f.name)
+            if (version == null || !UpdateCheck.isNewer(version, BuildConfig.VERSION_NAME)) f.delete()
+        }
+    }
+
+    /**
+     * Downloads [release]'s APK into the cache, reporting 0..1 to
+     * [onProgress]; checks it and returns the file. An APK already
+     * downloaded for this release is used again without fetching it.
+     */
     suspend fun download(context: Context, release: UpdateCheck.Release, onProgress: (Float) -> Unit): File = withContext(Dispatchers.IO) {
         val apk = release.apk ?: throw IOException("This release has no APK for this phone")
-        val dir = File(context.cacheDir, "updates").apply { deleteRecursively(); mkdirs() }
+        val dir = dir(context).apply { mkdirs() }
+        // Only this release's APK is worth keeping.
+        dir.listFiles().orEmpty().filter { it.name != apk.name }.forEach { it.delete() }
         val target = File(dir, apk.name)
+        if (target.isFile && target.length() > 0 && (apk.bytes <= 0 || target.length() == apk.bytes)) {
+            val listed = release.sums?.let { listedSum(it, apk.name) }
+            if (listed == null || listed.equals(sha256(target), ignoreCase = true)) {
+                onProgress(1f)
+                return@withContext target
+            }
+            target.delete()
+        }
+        val part = File(dir, apk.name + ".part")
         val digest = MessageDigest.getInstance("SHA-256")
         Http.client.newCall(Request.Builder().url(apk.url).build()).execute().use { r ->
             if (!r.isSuccessful) throw IOException("GitHub answered ${r.code}")
             val body = r.body ?: throw IOException("Empty download")
             val total = body.contentLength().takeIf { it > 0 } ?: apk.bytes
             body.byteStream().use { input ->
-                target.outputStream().use { out ->
+                part.outputStream().use { out ->
                     val buffer = ByteArray(64 * 1024)
                     var done = 0L
                     while (true) {
@@ -60,19 +100,38 @@ object Updater {
                 }
             }
         }
-        val actual = digest.digest().joinToString("") { "%02x".format(it) }
+        val actual = digest.digest().hex()
         release.sums?.let { sums ->
-            val listed = Http.client.newCall(Request.Builder().url(sums.url).build()).execute().use { r ->
-                if (!r.isSuccessful) throw IOException("Couldn't fetch the checksums (${r.code})")
-                expectedSum(r.body?.string().orEmpty(), apk.name)
-            }
+            val listed = listedSum(sums, apk.name)
             if (listed != null && !listed.equals(actual, ignoreCase = true)) {
-                target.delete()
+                part.delete()
                 throw IOException("The download is damaged (checksum mismatch)")
             }
         }
+        if (!part.renameTo(target)) throw IOException("Couldn't save the download")
         target
     }
+
+    private fun listedSum(sums: UpdateCheck.Asset, fileName: String): String? =
+        Http.client.newCall(Request.Builder().url(sums.url).build()).execute().use { r ->
+            if (!r.isSuccessful) throw IOException("Couldn't fetch the checksums (${r.code})")
+            expectedSum(r.body?.string().orEmpty(), fileName)
+        }
+
+    private fun sha256(file: File): String {
+        val digest = MessageDigest.getInstance("SHA-256")
+        file.inputStream().use { input ->
+            val buffer = ByteArray(64 * 1024)
+            while (true) {
+                val n = input.read(buffer)
+                if (n < 0) break
+                digest.update(buffer, 0, n)
+            }
+        }
+        return digest.digest().hex()
+    }
+
+    private fun ByteArray.hex() = joinToString("") { "%02x".format(it) }
 
     /** The hash `sha256sum` lists for [fileName]. */
     internal fun expectedSum(sums: String, fileName: String): String? =

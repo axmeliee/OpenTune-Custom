@@ -102,7 +102,7 @@ internal val SETTINGS_CATEGORIES = listOf(
     SettingsCategory(
         "data", "Storage and data", "Cache, backups and listening history", Icons.Rounded.Storage,
         listOf(
-            "Storage" to listOf("Song cache limit", "Clear song cache", "Clear image cache"),
+            "Storage" to listOf("Song cache limit", "Clear song cache", "Clear image cache", "Delete downloaded updates"),
             "Your data" to listOf("Replay", "Wrapped", "Export data", "Import data", "Clear listening history"),
         ),
     ),
@@ -110,7 +110,7 @@ internal val SETTINGS_CATEGORIES = listOf(
         "about", "About", "Updates, source code and diagnostics", Icons.Rounded.Info,
         listOf(
             "Updates" to listOf("Check for updates", "Check for updates automatically"),
-            "OpenTune" to listOf("Count this phone in usage numbers", "Source code", "Export diagnostics"),
+            "OpenTune" to listOf("Support OpenTune", "Star on GitHub", "Count this phone in usage numbers", "Source code", "Export diagnostics"),
         ),
     ),
 )

@@ -132,10 +132,12 @@ fun HomeScreen(
                         GlassIconButton(Icons.Rounded.GraphicEq, "Name a song playing nearby", onRecognize, size = 52.dp)
                         Spacer(Modifier.width(10.dp))
                     }
-                    GlassIconButton(Icons.Rounded.Person, "Account and settings", onOpenSettings, size = 52.dp) {
-                        val photo = account?.thumbnailUrl
-                        if (photo != null) Artwork(photo, Modifier.size(44.dp), CircleShape)
-                        else Icon(Icons.Rounded.Person, "Account and settings", Modifier.size(26.dp))
+                    com.opentune.ui.components.WithUpdateDot {
+                        GlassIconButton(Icons.Rounded.Person, "Account and settings", onOpenSettings, size = 52.dp) {
+                            val photo = account?.thumbnailUrl
+                            if (photo != null) Artwork(photo, Modifier.size(44.dp), CircleShape)
+                            else Icon(Icons.Rounded.Person, "Account and settings", Modifier.size(26.dp))
+                        }
                     }
                 }
             }

@@ -68,6 +68,7 @@ object WhatsNew {
         "0.5.0" to listOf(
             Note(Icons.Rounded.Mic, "Talk is live only", "Talk in a room is heard as it happens by whoever has Hear talk on, and isn't kept in the chat. The Talk button needs a short hold, so a brush doesn't start it."),
             Note(Icons.Rounded.TouchApp, "Opening and closing the player", "Tap the mini player and its cover grows into the player. Going back from Home while music plays shrinks the app up towards the notification."),
+            Note(Icons.Rounded.Download, "Updates that don't fall behind", "The update offered is always the newest, even when several came out since yours. One you put off leaves a red dot on the account button until it's installed, and Settings › Storage can delete a downloaded update."),
         ),
         "0.4.9" to listOf(
             Note(Icons.Rounded.Lock, "Rooms you let people into", "People with the code knock; you let them in or turn them away. Only those you let in can hear what's playing or read the chat, and removing someone locks them out."),
@@ -147,12 +148,26 @@ object WhatsNew {
             info.firstInstallTime == info.lastUpdateTime
         }.getOrDefault(true)
         if (fresh) return emptyList()
-        return since(seen, version)
+        return since(seen, version, com.opentune.BuildConfig.CHANGELOG)
     }
 
-    /** The notes for versions after [seen] up to [version], at most three versions. */
-    internal fun since(seen: String?, version: String): List<Pair<String, List<Note>>> =
-        NOTES.filter { (v, _) -> compare(v, version) <= 0 && (seen == null || compare(v, seen) > 0) }.take(3)
+    /**
+     * The notes for versions after [seen] up to [version], at most three
+     * versions. When [version] has none of its own (it was released before
+     * they were written), its store [changelog] stands in, so an update
+     * from 0.4.5 to 0.4.7 never opens on 0.4.6's notes.
+     */
+    internal fun since(seen: String?, version: String, changelog: String = ""): List<Pair<String, List<Note>>> {
+        val notes = NOTES.filter { (v, _) -> compare(v, version) <= 0 && (seen == null || compare(v, seen) > 0) }
+        val own = notes.firstOrNull()?.first?.let { compare(it, version) == 0 } == true
+        val stand = if (own) null else fromChangelog(changelog).takeIf { it.isNotEmpty() }?.let { version to it }
+        return (listOfNotNull(stand) + notes).take(3)
+    }
+
+    /** A store changelog's "• line" items as notes. */
+    internal fun fromChangelog(text: String): List<Note> =
+        text.lineSequence().map { it.trim().removePrefix("•").removePrefix("-").trim() }.filter { it.isNotEmpty() }
+            .map { Note(Icons.Rounded.NewReleases, it, "") }.toList()
 
     internal fun compare(a: String, b: String): Int {
         val x = a.split('.', '-').map { it.toIntOrNull() ?: 0 }
@@ -222,7 +237,7 @@ private fun NoteRow(note: WhatsNew.Note, index: Int) {
         Spacer(Modifier.width(14.dp))
         Column(Modifier.weight(1f)) {
             Text(note.title, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
-            Text(note.line, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            if (note.line.isNotEmpty()) Text(note.line, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
     }
 }

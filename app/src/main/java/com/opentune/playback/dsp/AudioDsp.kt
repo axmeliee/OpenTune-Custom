@@ -175,15 +175,16 @@ data class DspParams(
         }
         if (bassBoost > 0) out += { Biquad.lowShelf(fs, 100.0, bassBoost / 1000.0 * MAX_BASS_BOOST_DB) }
         if (clarity) {
-            // Cut rumble below hearing,
-            // firm up the bass, clear low-mid mud and boxiness, lift the
-            // presence band and the air above 10 kHz.
+            // Cut rumble below hearing, firm up the bass, clear low-mid mud,
+            // lift the presence band and the air above 10 kHz. Tuned so that,
+            // with its headroom, music plays as loud as with Clarity off
+            // (within half a dB, K-weighted, on pink and darker noise); the
+            // earlier, stronger curve played 1-2 dB quieter.
             out += { Biquad.highPass(fs, 24.0) }
-            out += { Biquad.peaking(fs, 72.0, 0.80, 3.2) }
-            out += { Biquad.peaking(fs, 280.0, 0.90, -3.0) }
-            out += { Biquad.peaking(fs, 750.0, 0.85, -1.4) }
-            if (3_400.0 < nyquistSafe) out += { Biquad.peaking(fs, 3_400.0, 0.85, 3.8) }
-            if (10_500.0 < nyquistSafe) out += { Biquad.highShelf(fs, 10_500.0, 4.8) }
+            out += { Biquad.peaking(fs, 72.0, 0.80, 2.4) }
+            out += { Biquad.peaking(fs, 280.0, 1.0, -1.8) }
+            if (3_400.0 < nyquistSafe) out += { Biquad.peaking(fs, 3_400.0, 0.90, 2.6) }
+            if (10_500.0 < nyquistSafe) out += { Biquad.highShelf(fs, 10_500.0, 3.2) }
         }
         return out
     }
@@ -217,7 +218,7 @@ data class DspParams(
     companion object {
         /** √2: neighbouring 2/3-octave bands overlap at about -3 dB. */
         const val BAND_Q = 1.4142
-        const val CLARITY_HEADROOM_DB = 3.3f
+        const val CLARITY_HEADROOM_DB = 1.0f
         const val MAX_BASS_BOOST_DB = 12.0
     }
 }

@@ -216,10 +216,35 @@ class ClarityTest {
 
     @Test
     fun liftsPresenceAndAirCutsMud() {
-        assertTrue("presence lifted", responseDb(3_400.0) > 2.5)
-        assertTrue("air lifted", responseDb(14_000.0) > 3.5)
-        assertTrue("low mids cut", responseDb(280.0) < -1.5)
+        assertTrue("presence lifted", responseDb(3_400.0) > 2.0)
+        assertTrue("air lifted", responseDb(14_000.0) > 2.5)
+        assertTrue("low mids cut", responseDb(280.0) < -1.2)
         assertTrue("rumble removed", responseDb(10.0) < -10.0)
+    }
+
+    /**
+     * Clarity, headroom included, plays about as loud as off: the change in
+     * K-weighted level (the weighting loudness meters use) of pink noise
+     * and of darker, music-like noise stays within half a dB.
+     */
+    @Test
+    fun keepsTheLoudness() {
+        val k = listOf(Biquad.highShelf(fs, 1_681.0, 4.0), Biquad.highPass(fs, 38.0, 0.5))
+        val headroomDb = 20 * kotlin.math.log10(DspParams(clarity = true).preampGain.toDouble())
+        for (slope in listOf(1.0, 1.5)) {
+            var off = 0.0
+            var on = 0.0
+            val n = 2_000
+            for (i in 0 until n) {
+                val f = 20.0 * Math.pow(1_000.0, i / (n - 1.0))
+                val df = f * Math.log(1_000.0) / (n - 1)
+                val weight = df / Math.pow(f, slope) * Math.pow(10.0, k.sumOf { it.magnitudeDb(f, fs) } / 10)
+                off += weight
+                on += weight * Math.pow(10.0, (responseDb(f) + headroomDb) / 10)
+            }
+            val changeDb = 10 * kotlin.math.log10(on / off)
+            assertEquals("loudness change for 1/f^$slope noise", 0.0, changeDb, 0.5)
+        }
     }
 
     @Test

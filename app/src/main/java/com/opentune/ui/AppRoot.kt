@@ -148,6 +148,7 @@ fun AppRoot(vm: PlayerViewModel) {
     LaunchedEffect(lifecycle) {
         lifecycle.repeatOnLifecycle(androidx.lifecycle.Lifecycle.State.STARTED) {
             com.opentune.data.Usage.active()
+            com.opentune.ui.components.Support.usedToday(appContext)
             while (true) {
                 if (com.opentune.data.settings.AppSettings.ui.value.checkForUpdates && update == null) {
                     update = com.opentune.data.UpdateCheck.checkIfDue(appContext)
@@ -162,11 +163,23 @@ fun AppRoot(vm: PlayerViewModel) {
     if (whatsNew.isNotEmpty() && update == null) {
         com.opentune.ui.components.WhatsNewSheet(whatsNew, com.opentune.BuildConfig.VERSION_NAME, onDismiss = { whatsNew = emptyList() })
     }
+    // Now and then, after some days of use, a request for a star on GitHub;
+    // never over an update or What's new, and not straight after opening.
+    var askStar by remember { mutableStateOf(false) }
+    var supporting by remember { mutableStateOf(false) }
+    LaunchedEffect(Unit) {
+        kotlinx.coroutines.delay(45_000)
+        askStar = com.opentune.ui.components.Support.shouldAsk(appContext)
+    }
+    if (askStar && update == null && whatsNew.isEmpty()) {
+        com.opentune.ui.components.StarPrompt(onDismiss = { askStar = false }, onSupport = { askStar = false; supporting = true })
+    }
+    if (supporting) com.opentune.ui.components.SupportDialog(onDismiss = { supporting = false })
     update?.let { r ->
         com.opentune.ui.settings.UpdateDialog(
             r,
             onDismiss = { update = null },
-            onNotNow = { com.opentune.data.UpdateCheck.skip(appContext, r.version); update = null },
+            onNotNow = { shown -> com.opentune.data.UpdateCheck.skip(appContext, shown.version); update = null },
         )
     }
 

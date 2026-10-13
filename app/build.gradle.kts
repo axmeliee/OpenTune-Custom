@@ -16,6 +16,11 @@ android {
         targetSdk = 36
         versionCode = 31
         versionName = "0.4.9"
+        // This version's store changelog, shown as What's new when a release
+        // goes out before the app's own notes for it are written.
+        val changelog = rootProject.file("fastlane/metadata/android/en-US/changelogs/$versionCode.txt")
+            .takeIf { it.exists() }?.readText().orEmpty().trim()
+        buildConfigField("String", "CHANGELOG", "\"" + changelog.replace("\\", "\\\\").replace("\"", "\\\"").replace("\n", "\\n") + "\"")
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }

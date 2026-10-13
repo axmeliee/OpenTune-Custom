@@ -2,6 +2,7 @@ package com.opentune.ui.settings
 
 import android.content.Intent
 import android.text.format.Formatter
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
@@ -36,13 +37,16 @@ import kotlinx.coroutines.launch
  * when the release has no APK to offer.
  */
 @Composable
-fun UpdateDialog(release: UpdateCheck.Release, onDismiss: () -> Unit, onNotNow: () -> Unit = onDismiss) {
+fun UpdateDialog(found: UpdateCheck.Release, onDismiss: () -> Unit, onNotNow: (UpdateCheck.Release) -> Unit = { onDismiss() }) {
     val context = LocalContext.current
+    // Swapped for a newer release if one came out since [found] was.
+    var release by remember(found) { mutableStateOf(found) }
     val scope = rememberCoroutineScope()
     var progress by remember { mutableStateOf<Float?>(null) }
     var error by remember { mutableStateOf<String?>(null) }
     var job by remember { mutableStateOf<Job?>(null) }
     val apk = release.apk
+    var kept by remember { mutableStateOf(Updater.cachedBytes(context)) }
 
     fun start() {
         if (!Updater.canInstall(context)) {
@@ -54,6 +58,7 @@ fun UpdateDialog(release: UpdateCheck.Release, onDismiss: () -> Unit, onNotNow: 
         progress = 0f
         job = scope.launch {
             try {
+                release = UpdateCheck.newest(context, release)
                 val file = Updater.download(context, release) { p -> progress = p }
                 Updater.install(context, file)
                 onDismiss()
@@ -63,6 +68,7 @@ fun UpdateDialog(release: UpdateCheck.Release, onDismiss: () -> Unit, onNotNow: 
                 error = e.message ?: "Download failed"
             } finally {
                 progress = null
+                kept = Updater.cachedBytes(context)
             }
         }
     }
@@ -88,6 +94,14 @@ fun UpdateDialog(release: UpdateCheck.Release, onDismiss: () -> Unit, onNotNow: 
                     LinearProgressIndicator(progress = { p }, modifier = Modifier.fillMaxWidth().padding(top = 14.dp))
                     Text("Downloading… ${(p * 100).toInt()}%", style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(top = 4.dp))
                 }
+                if (progress == null && kept > 0) {
+                    Text(
+                        "Delete the downloaded update (${Formatter.formatShortFileSize(context, kept)})",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.padding(top = 10.dp).clickable { Updater.deleteCached(context); kept = 0 },
+                    )
+                }
                 error?.let { Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(top = 10.dp)) }
             }
         },
@@ -105,7 +119,7 @@ fun UpdateDialog(release: UpdateCheck.Release, onDismiss: () -> Unit, onNotNow: 
             if (progress != null) {
                 SheetButton("Cancel", onClick = { job?.cancel() })
             } else {
-                SheetButton("Not now", onClick = onNotNow, closes = true)
+                SheetButton("Not now", onClick = { onNotNow(release) }, closes = true)
             }
         },
     )

@@ -41,6 +41,14 @@ class UpdateCheckTest {
         assertEquals("OpenTune-v0.3.0-universal.apk", UpdateCheck.parse(release, listOf("riscv64"))?.apk?.name)
     }
 
+    @Test fun readsTheVersionFromAnApkName() {
+        assertEquals("0.5.0", Updater.versionOf("OpenTune-v0.5.0-arm64-v8a.apk"))
+        assertEquals("0.4.10", Updater.versionOf("OpenTune-v0.4.10-universal.apk"))
+        assertEquals("1.2", Updater.versionOf("OpenTune-v1.2-x86_64.apk"))
+        assertNull(Updater.versionOf("OpenTune-v0.5.0-arm64-v8a.apk.part"))
+        assertNull(Updater.versionOf("notes.txt"))
+    }
+
     @Test fun readsSha256sumOutput() {
         val sums = """
             0f1e2d3c  OpenTune-v0.3.0-arm64-v8a.apk

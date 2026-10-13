@@ -32,6 +32,16 @@ class WhatsNewTest {
         assertEquals(0, WhatsNew.compare("0.3", "0.3.0"))
     }
 
+    /** 0.4.5 to 0.4.7 when 0.4.7 shipped before its notes: its store changelog comes first, not 0.4.6's notes. */
+    @Test fun aVersionWithoutNotesFallsBackToItsChangelog() {
+        val shown = WhatsNew.since("0.3.6", "0.3.10", "• Faster search\n• A new theme\n")
+        assertEquals(listOf("0.3.10", "0.3.9", "0.3.8"), shown.map { it.first })
+        assertEquals(listOf("Faster search", "A new theme"), shown.first().second.map { it.title })
+        // A version that has its own notes keeps them.
+        assertEquals("0.3.7", WhatsNew.since("0.3.6", "0.3.7", "• Ignored").first().first)
+        assertEquals(1, WhatsNew.since("0.3.6", "0.3.7", "• Ignored").size)
+    }
+
     /** A version released without notes is still the one named; the notes shown carry their own number. */
     @Test fun aVersionWithoutNotesIsNamedInTheTitle() {
         compose.setContent {

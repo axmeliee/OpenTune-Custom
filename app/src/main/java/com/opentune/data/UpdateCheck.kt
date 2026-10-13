@@ -20,6 +20,9 @@ import com.opentune.BuildConfig
 import com.opentune.data.DebugLog as Log
 import java.util.concurrent.TimeUnit
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
@@ -46,6 +49,12 @@ object UpdateCheck {
     const val RELEASES_PAGE = "https://github.com/justshivv/Opentune/releases"
     /** How often the automatic check goes online, at most. */
     private const val AUTO_EVERY_MS = 6L * 60 * 60 * 1000
+    /**
+     * How often it goes online while a found release is waiting: on a day
+     * with several releases, the one offered should be the newest, not the
+     * first one this phone happened to see.
+     */
+    private const val RECHECK_FOUND_MS = 20L * 60 * 1000
     /** The processors releases carry their own APK for; anything else gets the universal one. */
     private val BUILT_FOR = listOf("arm64-v8a", "armeabi-v7a", "x86_64")
     private val TAG_IN_URL = Regex("""/releases/tag/v?([0-9][0-9A-Za-z.\-]*)$""")
@@ -98,6 +107,46 @@ object UpdateCheck {
     private fun compare(release: Release): Result =
         if (isNewer(release.version, BuildConfig.VERSION_NAME)) Result.Newer(release) else Result.UpToDate
 
+    private val _pending = MutableStateFlow<Release?>(null)
+    /**
+     * A newer release than this one, known from the last check, including
+     * one the user said "not now" to. Shown as a dot until it's installed.
+     */
+    val pending: StateFlow<Release?> = _pending.asStateFlow()
+
+    /** Reads the pending release a past check remembered, at start. */
+    fun init(context: Context) {
+        val prefs = context.getSharedPreferences("updates", Context.MODE_PRIVATE)
+        val known = found(prefs)
+        if (known != null && !isNewer(known.version, BuildConfig.VERSION_NAME)) prefs.edit { remove(K_FOUND) }
+        _pending.value = known?.takeIf { isNewer(it.version, BuildConfig.VERSION_NAME) }
+        Updater.clearInstalled(context)
+    }
+
+    /**
+     * [release], or a newer one published since it was found, so the
+     * update installed is the latest even when it was found hours ago.
+     */
+    suspend fun newest(context: Context, release: Release): Release {
+        val prefs = context.getSharedPreferences("updates", Context.MODE_PRIVATE)
+        if (System.currentTimeMillis() - prefs.getLong("checkedAt", 0) < 2 * 60 * 1000L) return release
+        val fresh = (checkNow(context) as? Result.Newer)?.release ?: return release
+        return if (isNewer(fresh.version, release.version)) fresh else release
+    }
+
+    /** A check made from settings: remembered like the automatic one, so the dot agrees with it. */
+    suspend fun checkNow(context: Context): Result {
+        val result = check()
+        val prefs = context.getSharedPreferences("updates", Context.MODE_PRIVATE)
+        if (result !is Result.Failed) prefs.edit { putLong("checkedAt", System.currentTimeMillis()) }
+        when (result) {
+            is Result.Newer -> remember(prefs, result.release)
+            Result.UpToDate, Result.NoReleases -> forget(prefs)
+            is Result.Failed -> Unit
+        }
+        return result
+    }
+
     /**
      * The release that github.com/…/releases/latest led to ([finalUrl] ends
      * in /releases/tag/vX.Y.Z), with its files' addresses built from the
@@ -125,16 +174,18 @@ object UpdateCheck {
     suspend fun checkIfDue(context: Context): Release? {
         val prefs = context.getSharedPreferences("updates", Context.MODE_PRIVATE)
         val now = System.currentTimeMillis()
-        if (now - prefs.getLong("checkedAt", 0) >= AUTO_EVERY_MS) {
+        val every = if (found(prefs) != null) RECHECK_FOUND_MS else AUTO_EVERY_MS
+        if (now - prefs.getLong("checkedAt", 0) >= every) {
             val result = check()
             if (result !is Result.Failed) prefs.edit { putLong("checkedAt", now) }
             when (result) {
                 is Result.Newer -> remember(prefs, result.release)
-                Result.UpToDate, Result.NoReleases -> prefs.edit { remove(K_FOUND) }
+                Result.UpToDate, Result.NoReleases -> forget(prefs)
                 is Result.Failed -> Log.w(TAG, "Update check failed: ${result.reason}")
             }
         }
         val release = found(prefs)?.takeIf { isNewer(it.version, BuildConfig.VERSION_NAME) } ?: return null
+        _pending.value = release
         // A version the user said "not now" to isn't offered again until the next one.
         if (prefs.getString("skipped", null) == release.version) return null
         return release
@@ -146,8 +197,19 @@ object UpdateCheck {
     private const val TAG = "UpdateCheck"
     private const val K_FOUND = "found"
 
-    private fun remember(prefs: android.content.SharedPreferences, r: Release) = prefs.edit {
-        putString(K_FOUND, listOf(r.version, r.page, r.notes, r.apk?.name, r.apk?.url, r.apk?.bytes, r.sums?.url).joinToString(SEP) { it?.toString().orEmpty() })
+    private fun remember(prefs: android.content.SharedPreferences, r: Release) {
+        // Never step back: a slower path (the releases page) can lag behind the API.
+        val known = found(prefs)
+        if (known != null && isNewer(known.version, r.version)) return
+        prefs.edit {
+            putString(K_FOUND, listOf(r.version, r.page, r.notes, r.apk?.name, r.apk?.url, r.apk?.bytes, r.sums?.url).joinToString(SEP) { it?.toString().orEmpty() })
+        }
+        _pending.value = r
+    }
+
+    private fun forget(prefs: android.content.SharedPreferences) {
+        prefs.edit { remove(K_FOUND) }
+        _pending.value = null
     }
 
     private fun found(prefs: android.content.SharedPreferences): Release? {

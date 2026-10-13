@@ -86,6 +86,8 @@ fun SettingRow(
     onClick: (() -> Unit)? = null,
     trailing: (@Composable () -> Unit)? = null,
     below: (@Composable ColumnScope.() -> Unit)? = null,
+    /** Still being worked on: marked with a small "Beta" tag after the title. */
+    beta: Boolean = false,
 ) {
     val alpha = if (enabled) 1f else 0.45f
     Column(
@@ -100,7 +102,10 @@ fun SettingRow(
                 Box(Modifier.width(26.dp))
             }
             Column(Modifier.weight(1f)) {
-                Text(title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Normal, color = MaterialTheme.colorScheme.onSurface.copy(alpha = alpha))
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Normal, color = MaterialTheme.colorScheme.onSurface.copy(alpha = alpha), modifier = Modifier.weight(1f, fill = false))
+                    if (beta) BetaTag(Modifier.padding(start = 8.dp))
+                }
                 if (!summary.isNullOrBlank()) {
                     Text(
                         summary,
@@ -128,22 +133,38 @@ fun ToggleRow(
     summary: String? = null,
     icon: ImageVector? = null,
     enabled: Boolean = true,
+    beta: Boolean = false,
 ) {
-    SettingRow(title, summary = summary, icon = icon, enabled = enabled, onClick = { onChange(!checked) }, trailing = {
+    SettingRow(title, summary = summary, icon = icon, enabled = enabled, beta = beta, onClick = { onChange(!checked) }, trailing = {
         AppSwitch(checked, onChange, enabled)
     })
 }
 
 @Composable
-fun NavRow(title: String, onClick: () -> Unit, summary: String? = null, icon: ImageVector? = null, value: String? = null) {
+fun NavRow(title: String, onClick: () -> Unit, summary: String? = null, icon: ImageVector? = null, value: String? = null, dot: Boolean = false) {
     SettingRow(title, summary = summary, icon = icon, onClick = onClick, trailing = {
         Row(verticalAlignment = Alignment.CenterVertically) {
+            if (dot) UpdateDot(Modifier.padding(end = 6.dp))
             if (value != null) {
                 Text(value, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Normal, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
             Icon(Icons.AutoMirrored.Rounded.KeyboardArrowRight, null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
         }
     })
+}
+
+/** The small "Beta" tag on a setting that still has rough edges. */
+@Composable
+fun BetaTag(modifier: Modifier = Modifier) {
+    Text(
+        "Beta",
+        style = MaterialTheme.typography.labelSmall,
+        fontWeight = FontWeight.SemiBold,
+        color = MaterialTheme.colorScheme.tertiary,
+        modifier = modifier
+            .background(MaterialTheme.colorScheme.tertiary.copy(alpha = 0.16f), RoundedCornerShape(6.dp))
+            .padding(horizontal = 6.dp, vertical = 1.dp),
+    )
 }
 
 /** High-contrast switch: a light track with a dark thumb when on. */

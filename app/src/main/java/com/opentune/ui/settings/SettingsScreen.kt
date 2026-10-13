@@ -80,6 +80,8 @@ import androidx.compose.material.icons.rounded.SpaceBar
 import androidx.compose.material.icons.rounded.Speed
 import androidx.compose.material.icons.rounded.Storage
 import androidx.compose.material.icons.rounded.SurroundSound
+import androidx.compose.material.icons.rounded.Favorite
+import androidx.compose.material.icons.rounded.Star
 import androidx.compose.material.icons.rounded.SystemUpdate
 import androidx.compose.material.icons.rounded.TextFields
 import androidx.compose.material.icons.rounded.Upload
@@ -121,6 +123,7 @@ import coil3.SingletonImageLoader
 import com.opentune.BuildConfig
 import com.opentune.data.LogExport
 import com.opentune.data.UpdateCheck
+import com.opentune.data.Updater
 import com.opentune.data.account.AccountStore
 import com.opentune.data.download.DownloadState
 import com.opentune.data.download.Downloads
@@ -202,6 +205,7 @@ fun SettingsScreen(
     var openKey by rememberSaveable { mutableStateOf<String?>(null) }
     val signedIn by AccountStore.signedIn.collectAsState()
     val account by AccountStore.account.collectAsState()
+    val updatePending = com.opentune.ui.components.updatePending()
     val sections = settingsSections(onOpenEqualizer, onOpenReplay, onOpenWrapped, onSignIn, onOpenDownloads, onOpenSpotify)
     val placed = remember(sections) { place(sections) }
     val open = SETTINGS_CATEGORIES.firstOrNull { it.key == openKey }
@@ -284,7 +288,7 @@ fun SettingsScreen(
                                     } else {
                                         c.summary
                                     }
-                                    NavRow(c.title, { openKey = c.key }, summary = summary, icon = c.icon)
+                                    NavRow(c.title, { openKey = c.key }, summary = summary, icon = c.icon, dot = c.key == "about" && updatePending)
                                 }
                             }
                         }
@@ -347,6 +351,9 @@ private fun settingsSections(
     var listenBrainzDialog by remember { mutableStateOf(false) }
     var sponsorBlockDialog by remember { mutableStateOf(false) }
     var update by remember { mutableStateOf<UpdateCheck.Release?>(null) }
+    var supportDialog by remember { mutableStateOf(false) }
+    val pendingUpdate by UpdateCheck.pending.collectAsState()
+    var updateBytes by remember { mutableStateOf(0L) }
     var playerStyleDialog by remember { mutableStateOf(false) }
     var recommenderDialog by remember { mutableStateOf(false) }
     var followedDialog by remember { mutableStateOf(false) }
@@ -368,6 +375,7 @@ private fun settingsSections(
     var confirmSignOut by remember { mutableStateOf(false) }
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
+    LaunchedEffect(update) { updateBytes = withContext(Dispatchers.IO) { Updater.cachedBytes(context) } }
     val theme by AppSettings.theme.collectAsState()
     val pb by AppSettings.playback.collectAsState()
     val ui by AppSettings.ui.collectAsState()
@@ -433,6 +441,7 @@ private fun settingsSections(
     if (listenBrainzDialog) ListenBrainzDialog(onDismiss = { listenBrainzDialog = false })
     if (sponsorBlockDialog) SponsorBlockDialog(onDismiss = { sponsorBlockDialog = false })
     update?.let { UpdateDialog(it, onDismiss = { update = null }) }
+    if (supportDialog) com.opentune.ui.components.SupportDialog(onDismiss = { supportDialog = false })
     if (followedDialog) FollowedArtistsDialog(onDismiss = { followedDialog = false })
     if (playerStyleDialog) {
         ChoiceSheet(
@@ -620,7 +629,7 @@ private fun settingsSections(
                     )
                 },
                 Entry("Output precision", "16-bit 32-bit float sample rate") {
-                    SettingRow("Output precision", summary = outputSummary(context, pb.floatOutput), icon = Icons.Rounded.GraphicEq, below = {
+                    SettingRow("Output precision", summary = outputSummary(context, pb.floatOutput), icon = Icons.Rounded.GraphicEq, beta = true, below = {
                         PillSegmented(listOf(false, true), pb.floatOutput, { if (it) "32-bit float" else "16-bit PCM" }, { v -> AppSettings.updatePlayback { it.copy(floatOutput = v) } })
                         Text(
                             "Float keeps hi-res local files in 32-bit to the output and plays them without effects. Takes effect after a restart.",
@@ -660,6 +669,7 @@ private fun settingsSections(
                         else "Needs Android 14 or newer",
                         icon = Icons.Rounded.Usb,
                         enabled = BitPerfectUsb.supported,
+                        beta = true,
                     )
                 },
                 Entry("System audio effects", "dolby atmos soundalive equalizer device effects") {
@@ -675,7 +685,7 @@ private fun settingsSections(
                     )
                 },
                 Entry("Prefer USB DAC", "external dac usb audio") {
-                    ToggleRow("Prefer USB DAC", pb.preferUsbDac, { v -> AppSettings.updatePlayback { it.copy(preferUsbDac = v) } }, summary = "Send audio to a USB DAC whenever one is plugged in", icon = Icons.Rounded.Usb)
+                    ToggleRow("Prefer USB DAC", pb.preferUsbDac, { v -> AppSettings.updatePlayback { it.copy(preferUsbDac = v) } }, summary = "Send audio to a USB DAC whenever one is plugged in", icon = Icons.Rounded.Usb, beta = true)
                 },
             ),
         ),
@@ -704,7 +714,7 @@ private fun settingsSections(
                     ToggleRow("Preload upcoming songs", pb.preloadUpcoming, { v -> AppSettings.updatePlayback { it.copy(preloadUpcoming = v) } }, summary = "Next and previous songs start almost instantly. Uses a little extra data.", icon = Icons.Rounded.Speed)
                 },
                 Entry("Upgrade quality while playing", "better stream premium 256 opus swap") {
-                    ToggleRow("Upgrade quality while playing", pb.qualityUpgrade, { v -> AppSettings.updatePlayback { it.copy(qualityUpgrade = v) } }, summary = "If a clearly better stream turns up a few seconds in, switch to it without stopping", icon = Icons.Rounded.HighQuality)
+                    ToggleRow("Upgrade quality while playing", pb.qualityUpgrade, { v -> AppSettings.updatePlayback { it.copy(qualityUpgrade = v) } }, summary = "If a clearly better stream turns up a few seconds in, switch to it without stopping", icon = Icons.Rounded.HighQuality, beta = true)
                 },
                 Entry("Crossfade", "fade blend transition overlap") {
                     SettingRow(
@@ -725,10 +735,10 @@ private fun settingsSections(
                     ToggleRow("Skip silence", pb.skipSilence, { v -> AppSettings.updatePlayback { it.copy(skipSilence = v) } }, summary = "Trim gaps longer than a second", icon = Icons.Rounded.SpaceBar)
                 },
                 Entry("Clarity", "studio master clarity presence air bass clear enhance") {
-                    ToggleRow("Clarity", pb.clarity, { v -> AppSettings.updatePlayback { it.copy(clarity = v) } }, summary = "Firmer bass, less mud, more presence and air. Off plays the stream untouched.", icon = Icons.Rounded.AutoAwesome)
+                    ToggleRow("Clarity", pb.clarity, { v -> AppSettings.updatePlayback { it.copy(clarity = v) } }, summary = "Firmer bass, less mud, more presence and air, at the same loudness. Off plays the stream untouched.", icon = Icons.Rounded.AutoAwesome, beta = true)
                 },
                 Entry("Spatial audio", "stereo widen immersive") {
-                    ToggleRow("Spatial audio", pb.spatialAudio, { v -> AppSettings.updatePlayback { it.copy(spatialAudio = v) } }, summary = "Widens stereo tracks for a more open sound", icon = Icons.Rounded.SurroundSound)
+                    ToggleRow("Spatial audio", pb.spatialAudio, { v -> AppSettings.updatePlayback { it.copy(spatialAudio = v) } }, summary = "Widens stereo tracks for a more open sound", icon = Icons.Rounded.SurroundSound, beta = true)
                 },
                 Entry("Equalizer", "eq bands tone balance bass treble") {
                     NavRow("Equalizer", onOpenEqualizer, summary = "Fifteen bands, tone and balance", icon = Icons.Rounded.Equalizer)
@@ -1065,6 +1075,15 @@ private fun settingsSections(
                         }
                     }, summary = "Using ${Formatter.formatShortFileSize(context, cacheBytes)}", icon = Icons.Rounded.DeleteSweep)
                 },
+                Entry("Delete downloaded updates", "apk update installer free space") {
+                    NavRow("Delete downloaded updates", {
+                        scope.launch {
+                            withContext(Dispatchers.IO) { Updater.deleteCached(context) }
+                            updateBytes = 0
+                            message = "Downloaded updates deleted."
+                        }
+                    }, summary = if (updateBytes > 0) "Using ${Formatter.formatShortFileSize(context, updateBytes)}" else "None kept", icon = Icons.Rounded.DeleteSweep)
+                },
                 Entry("Clear image cache", "artwork") {
                     NavRow("Clear image cache", {
                         val loader = SingletonImageLoader.get(context)
@@ -1183,15 +1202,17 @@ private fun settingsSections(
             listOf(
                 Entry("Check for updates", "new version release download github") {
                     NavRow("Check for updates", {
+                        // A release already found opens at once; Update still looks for a newer one first.
+                        pendingUpdate?.let { update = it; return@NavRow }
                         scope.launch {
-                            when (val r = UpdateCheck.check()) {
+                            when (val r = UpdateCheck.checkNow(context)) {
                                 is UpdateCheck.Result.Newer -> update = r.release
                                 UpdateCheck.Result.UpToDate -> message = "You have the latest version (${BuildConfig.VERSION_NAME})."
                                 UpdateCheck.Result.NoReleases -> message = "No releases are published yet. Builds are on the GitHub branch for now."
                                 is UpdateCheck.Result.Failed -> message = "Couldn't check: ${r.reason}"
                             }
                         }
-                    }, summary = "Current version: ${BuildConfig.VERSION_NAME}", icon = Icons.Rounded.SystemUpdate)
+                    }, summary = pendingUpdate?.let { "OpenTune ${it.version} is ready to install. You have ${BuildConfig.VERSION_NAME}." } ?: "Current version: ${BuildConfig.VERSION_NAME}", icon = Icons.Rounded.SystemUpdate, dot = pendingUpdate != null)
                 },
                 Entry("Check for updates automatically", "update new version release auto") {
                     ToggleRow("Check for updates automatically", ui.checkForUpdates, { v -> AppSettings.updateUi { it.copy(checkForUpdates = v) }; com.opentune.data.UpdateCheck.schedule(context) }, summary = "Looks for a new release on GitHub every few hours, in the background too, and offers to install it", icon = Icons.Rounded.SystemUpdate)
@@ -1204,6 +1225,14 @@ private fun settingsSections(
                         summary = "Shares a random installation ID, app version, active dates and daily play totals. No hardware ID, account or song names. Reinstalls get a new ID; updates keep it.",
                         icon = Icons.Rounded.Info,
                     )
+                },
+                Entry("Support OpenTune", "donate upi pay money tip support developer") {
+                    NavRow("Support OpenTune", { supportDialog = true }, summary = "Pay any amount with a UPI app, to ${com.opentune.ui.components.Support.UPI_ID}", icon = Icons.Rounded.Favorite)
+                },
+                Entry("Star on GitHub", "star github rate like") {
+                    NavRow("Star on GitHub", {
+                        runCatching { context.startActivity(Intent(Intent.ACTION_VIEW, com.opentune.ui.components.Support.REPO.toUri())) }
+                    }, summary = "Helps other people find OpenTune", icon = Icons.Rounded.Star)
                 },
                 Entry("Source code", "github open source license gpl") {
                     NavRow("Source code", {

@@ -140,10 +140,12 @@ fun LibraryScreen(contentPadding: PaddingValues, actions: SongActions, nav: Libr
     LazyColumn(contentPadding = contentPadding, modifier = Modifier.fillMaxSize()) {
         item {
             PageHeader("Library", actions = {
-                GlassIconButton(Icons.Rounded.Settings, "Settings", nav.settings) {
-                    val photo = account?.thumbnailUrl
-                    if (photo != null) Artwork(photo, Modifier.size(44.dp), androidx.compose.foundation.shape.CircleShape)
-                    else Icon(Icons.Rounded.Settings, "Settings", Modifier.size(26.dp))
+                com.opentune.ui.components.WithUpdateDot {
+                    GlassIconButton(Icons.Rounded.Settings, "Settings", nav.settings) {
+                        val photo = account?.thumbnailUrl
+                        if (photo != null) Artwork(photo, Modifier.size(44.dp), androidx.compose.foundation.shape.CircleShape)
+                        else Icon(Icons.Rounded.Settings, "Settings", Modifier.size(26.dp))
+                    }
                 }
             })
         }
