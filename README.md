@@ -69,18 +69,22 @@ lock-screen controls, AirPlay, likes and history. Downloads, the
 equalizer and the other Android extras aren't in it yet.
 
 It isn't on the App Store, and Apple doesn't allow apps like it there, so
-it's installed the way other open-source iOS apps are:
+it's installed the way other open-source iOS apps are, signed with your own
+Apple ID:
 
-1. Download `OpenTune-iOS-unsigned` from the newest successful
-   [iOS build](https://github.com/justshivv/Opentune/actions/workflows/ios.yml)
-   (you need to be signed in to GitHub) and unzip it to get the `.ipa`.
-   The iOS app isn't attached to releases while it's this early.
-2. Install it with [AltStore](https://altstore.io) or
-   [SideStore](https://sidestore.io) (on the phone), or
-   [Sideloadly](https://sideloadly.io) (from a computer). They sign it with
-   your own Apple ID.
-3. With a free Apple ID the app has to be re-signed every 7 days, which
-   AltStore and SideStore do for you in the background.
+1. Set up [SideStore](https://sidestore.io) or
+   [AltStore](https://altstore.io). This needs a computer once; after that
+   everything happens on the phone.
+2. In SideStore or AltStore, add this source and install OpenTune from it:
+   `https://justshivv.github.io/Opentune/ios/source.json`
+   New builds then show up there as updates.
+3. With a free Apple ID, apps have to be re-signed every 7 days. SideStore
+   and AltStore do it for you in the background.
+
+The `.ipa` itself is at
+[releases/download/ios/OpenTune-iOS.ipa](https://github.com/justshivv/Opentune/releases/download/ios/OpenTune-iOS.ipa),
+for [Sideloadly](https://sideloadly.io) or other installers. It's rebuilt
+whenever the iOS app changes on main.
 
 iOS 16 or newer.
 

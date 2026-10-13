@@ -717,6 +717,17 @@ footer .about p { color: var(--dim); font-size: 13.5px; max-width: 46ch; margin-
         <div class="step"><span class="n">Step 2</span><h3>Allow the install</h3><p>Android asks you to let your browser or file manager install apps. Allow it, then confirm.</p><span class="hint">Settings &rsaquo; Apps &rsaquo; Special access &rsaquo; Install unknown apps</span></div>
         <div class="step"><span class="n">Step 3</span><h3>Press play</h3><p>Sign in only if you want your likes and playlists. OpenTune looks for new releases once a day and checks each download against its SHA-256 sums.</p><span class="hint">Nothing to buy, nothing upsold. APK links count unique browsers using a random ID; see Usage &amp; counting.</span></div>
       </div>
+      <div class="head" id="iphone" style="margin-top:56px">
+        <span class="kicker"><i></i>iPhone and iPad</span>
+        <h2>An early iOS version.</h2>
+        <p>Apple doesn't allow apps like OpenTune on the App Store, so it installs through SideStore or AltStore, which sign it with your own Apple ID. Setting one of them up needs a computer once; after that OpenTune installs, updates and re-signs itself on the phone. Add the OpenTune source and install it from there. iOS 16 or newer.</p>
+      </div>
+      <div class="ctas">
+        <a class="btn btn-tint" href="sidestore://source?url=https://justshivv.github.io/Opentune/ios/source.json"><svg class="line-ico"><use href="#i-download"/></svg>Add to SideStore</a>
+        <a class="btn btn-ghost" href="altstore://source?url=https://justshivv.github.io/Opentune/ios/source.json">Add to AltStore</a>
+        <a class="btn btn-ghost" href="https://github.com/justshivv/Opentune/releases/download/ios/OpenTune-iOS.ipa">Download the .ipa</a>
+      </div>
+      <p class="mono source-note">Source: https://justshivv.github.io/Opentune/ios/source.json</p>
     </div>
   </section>
 
@@ -1136,7 +1147,7 @@ footer .about p { color: var(--dim); font-size: 13.5px; max-width: 46ch; margin-
   getJson("releases.json", { cache: "no-cache" }).then(published)
     .then((list) => { if (list.length) { renderReleases(list, false); releasesShown = true; } })
     .catch(() => {})
-    .then(() => getJson("https://api.github.com/repos/justshivv/Opentune/releases?per_page=6"))
+    .then(() => getJson("https://api.github.com/repos/justshivv/Opentune/releases?per_page=10"))
     .then(published)
     .then((list) => { if (list.length) { renderReleases(list, true); releasesShown = true; } })
     .catch(() => {})

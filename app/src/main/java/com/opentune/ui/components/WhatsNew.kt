@@ -69,6 +69,8 @@ object WhatsNew {
             Note(Icons.Rounded.Mic, "Talk is live only", "Talk in a room is heard as it happens by whoever has Hear talk on, and isn't kept in the chat. The Talk button needs a short hold, so a brush doesn't start it."),
             Note(Icons.Rounded.TouchApp, "Opening and closing the player", "Tap the mini player and its cover grows into the player. Going back from Home while music plays shrinks the app up towards the notification."),
             Note(Icons.Rounded.Download, "Updates that don't fall behind", "The update offered is always the newest, even when several came out since yours. One you put off leaves a red dot on the account button until it's installed, and Settings › Storage can delete a downloaded update."),
+            Note(Icons.Rounded.AutoAwesome, "Clarity, as loud as off", "Clarity no longer makes music quieter. Settings still being worked on carry a Beta tag."),
+            Note(Icons.Rounded.Favorite, "Support OpenTune", "Settings › About can open GitHub to star the project, or any UPI app to chip in an amount you choose."),
         ),
         "0.4.9" to listOf(
             Note(Icons.Rounded.Lock, "Rooms you let people into", "People with the code knock; you let them in or turn them away. Only those you let in can hear what's playing or read the chat, and removing someone locks them out."),

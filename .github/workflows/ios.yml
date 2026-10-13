@@ -1,7 +1,9 @@
 # The iOS app: the core package's tests on Linux, then an unsigned build on
 # macOS packed as an .ipa for sideloading (AltStore, SideStore, Sideloadly
-# re-sign it with the installer's own Apple ID). The .ipa stays in the run's
-# artifacts; it isn't attached to releases.
+# re-sign it with the installer's own Apple ID). Builds from main replace the
+# .ipa on the "ios" pre-release, so it keeps one download address; the
+# website lists it in a SideStore/AltStore source (see pages.yml). Being a
+# pre-release, it never counts as the latest Android release.
 name: iOS
 
 on:
@@ -31,6 +33,8 @@ jobs:
     runs-on: macos-15
     timeout-minutes: 45
     needs: core
+    permissions:
+      contents: write
     steps:
       - uses: actions/checkout@v4
 
@@ -83,3 +87,18 @@ jobs:
         with:
           name: OpenTune-iOS-unsigned
           path: ${{ steps.ipa.outputs.file }}
+
+      - name: Publish for sideloading
+        if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          cp "${{ steps.ipa.outputs.file }}" OpenTune-iOS.ipa
+          title="OpenTune for iPhone v${{ steps.version.outputs.name }}"
+          notes="Unsigned build for SideStore, AltStore or Sideloadly, built from ${GITHUB_SHA::7}. In SideStore or AltStore, add the source https://justshivv.github.io/Opentune/ios/source.json to install OpenTune and get its updates on the phone."
+          if gh release view ios > /dev/null 2>&1; then
+            gh release edit ios --title "$title" --notes "$notes" --prerelease
+          else
+            gh release create ios --target "$GITHUB_SHA" --prerelease --title "$title" --notes "$notes"
+          fi
+          gh release upload ios OpenTune-iOS.ipa --clobber
