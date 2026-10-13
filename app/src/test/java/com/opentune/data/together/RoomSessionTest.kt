@@ -425,12 +425,15 @@ class RoomSessionTest {
         assertEquals("Ravi", hostState.value!!.chat.first { it.voice != null }.name)
         assertTrue("a note isn't played aloud", heard.isEmpty())
         // Talk is heard as it comes, in order.
-        onThread {
-            guest.sendVoice("talk1", 0, cfg, f1, 640, last = false, live = true, allFrames = f1, allCfg = cfg)
-            guest.sendVoice("talk1", 1, null, f2, 1_000, last = true, live = true, allFrames = f1 + f2, allCfg = cfg)
-        }
+        onThread { guest.sendVoice("talk1", 0, cfg, f1, 640, last = false, live = true, allFrames = f1, allCfg = cfg) }
+        waitFor("host sees Ravi talking") { hostState.value!!.talking == listOf("Ravi") }
+        onThread { guest.sendVoice("talk1", 1, null, f2, 1_000, last = true, live = true, allFrames = f1 + f2, allCfg = cfg) }
         waitFor("talk heard") { heard.size == 2 }
         assertEquals(listOf(2, 1), heard.map { it.second })
+        waitFor("talking over") { hostState.value!!.talking.isEmpty() }
+        // Talk isn't kept in the chat on either side; only the note is.
+        assertEquals(1, hostState.value!!.chat.count { it.voice != null })
+        assertEquals(1, guestState.value!!.chat.count { it.voice != null })
         // The guest sees its own note in its chat too.
         assertTrue(guestState.value!!.chat.any { it.mine && it.voice?.id?.endsWith("/note1") == true })
     }

@@ -302,6 +302,22 @@ fun AppRoot(vm: PlayerViewModel) {
     var dive by remember { androidx.compose.runtime.mutableFloatStateOf(if (opening) 0f else 1f) }
     LaunchedEffect(Unit) { com.opentune.ui.components.Opening.played = true }
 
+    // Back on the first page while music plays: the app shrinks up into a pill at the
+    // top, towards the notification's player, and goes to the background. Coming
+    // back finds it full size again.
+    val leave = remember { androidx.compose.animation.core.Animatable(0f) }
+    LaunchedEffect(lifecycle) { lifecycle.repeatOnLifecycle(androidx.lifecycle.Lifecycle.State.RESUMED) { leave.snapTo(0f) } }
+    val atRoot = entry != null && nav.previousBackStackEntry == null
+    BackHandler(enabled = isPlaying && atRoot && !playerOpen && !chromeUi.reduceAnimation && leave.targetValue == 0f) {
+        val activity = appContext as? android.app.Activity
+        uiScope.launch {
+            leave.animateTo(1f, androidx.compose.animation.core.tween(420, easing = androidx.compose.animation.core.CubicBezierEasing(0.4f, 0f, 0.2f, 1f)))
+            if (activity == null || !activity.moveTaskToBack(true)) { leave.snapTo(0f); return@launch }
+            // The shrink was the closing; skip the system's own on top of it where it allows.
+            @Suppress("DEPRECATION") activity.overridePendingTransition(0, 0)
+        }
+    }
+
     CompositionLocalProvider(
         LocalHazeState provides haze,
         LocalSongMenu provides songMenu,
@@ -314,6 +330,18 @@ fun AppRoot(vm: PlayerViewModel) {
                     val s = 1.14f - 0.14f * (1f - (1f - dive) * (1f - dive))
                     scaleX = s
                     scaleY = s
+                }
+                val p = leave.value
+                if (p > 0f) {
+                    // Shrinking toward the top centre, cropped down to a pill as it goes.
+                    val s = 1f - 0.68f * p
+                    scaleX = s
+                    scaleY = s
+                    transformOrigin = androidx.compose.ui.graphics.TransformOrigin(0.5f, 0f)
+                    translationY = 30.dp.toPx() * p
+                    shape = com.opentune.ui.components.pillCrop(p, 375.dp.toPx(), 100.dp.toPx())
+                    clip = true
+                    alpha = if (p < 0.7f) 1f else 1f - (p - 0.7f) / 0.3f
                 }
             },
         ) {
@@ -503,7 +531,13 @@ fun AppRoot(vm: PlayerViewModel) {
                     onExpand = chromeScroll::expand,
                     searchSelected = route == SEARCH_ROUTE,
                     onSearch = { if (route != SEARCH_ROUTE) nav.navigate(SEARCH_ROUTE) { launchSingleTop = true } },
-                    mini = if (song == null) null else { folded, m -> MiniPlayerBar(vm, onExpand = { playerOpen = true }, modifier = m, inline = folded) },
+                    mini = if (song == null) null else { folded, m ->
+                        MiniPlayerBar(vm, onExpand = {
+                            // The mini player's cover grows into the player's as it opens.
+                            if (chromeUi.coverFlight && !chromeUi.reduceAnimation) com.opentune.ui.components.FlyingCover.startExpand(round = folded)
+                            playerOpen = true
+                        }, modifier = m, inline = folded)
+                    },
                     motion = chromeUi.dockMotion,
                     lens = chromeUi.dockLens,
                     reduceMotion = chromeUi.reduceAnimation,
@@ -513,7 +547,10 @@ fun AppRoot(vm: PlayerViewModel) {
 
             AnimatedVisibility(
                 visible = playerOpen && song != null,
-                enter = PageMotion.playerIn(chromeUi.playerMotion, chromeUi.reduceAnimation),
+                // While the cover grows into place the player fades in under it, so the
+                // spot it's growing to stays put.
+                enter = if (com.opentune.ui.components.FlyingCover.expanding) androidx.compose.animation.fadeIn(androidx.compose.animation.core.tween(320))
+                    else PageMotion.playerIn(chromeUi.playerMotion, chromeUi.reduceAnimation),
                 exit = PageMotion.playerOut(chromeUi.playerMotion, chromeUi.reduceAnimation),
             ) {
                 // Registered after the NavHost's own handler, so back closes the
@@ -532,6 +569,8 @@ fun AppRoot(vm: PlayerViewModel) {
                     onTogether = { playerOpen = false; nav.navigate("together") },
                 )
             }
+            // The mini player's cover growing into the player's as it opens.
+            com.opentune.ui.components.CoverExpand(song?.thumbnailUrl.artworkAt(com.opentune.data.model.PLAYER_ART_PX), song?.thumbnailUrl.artworkAt(ROW_ART_PX))
             // A tapped song's cover flying down into the now-playing card.
             com.opentune.ui.components.CoverFlight(
                 song?.videoId,

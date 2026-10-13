@@ -98,6 +98,8 @@ internal fun interface TalkSink {
 private const val HEARTBEAT_MS = 2_000L
 /** A knock not repeated for this long is someone who gave up waiting. */
 private const val REQUEST_TIMEOUT_MS = 30_000L
+/** Talk with no new piece for this long has stopped. */
+private const val TALK_QUIET_MS = 3_000L
 private const val HERE_MS = 20_000L
 private const val MEMBER_TIMEOUT_MS = 50_000L
 private const val HOST_TIMEOUT_MS = 25_000L
@@ -736,8 +738,32 @@ internal class RoomSession(
                 c.played++
             }
         }
-        // Talk shows in the chat as it's said; a voice note once it's all in.
-        if (c.live || c.complete) showClip(clipId, nameOf(from), from, c.cfg, c.frames(), c.ms, c.complete, c.live, mine = false)
+        if (c.live) {
+            // Talk is only heard, as it happens; it doesn't stay in the chat.
+            talking(from, !c.complete)
+            if (c.complete) incoming.remove(clipId)
+        } else if (c.complete) {
+            showClip(clipId, nameOf(from), from, c.cfg, c.frames(), c.ms, complete = true, live = false, mine = false)
+        }
+    }
+
+    private val talkSeen = mutableMapOf<String, Long>()
+
+    /** Who's talking now, for the room screen; a talker gone quiet for a few seconds has stopped. */
+    private fun talking(from: String, on: Boolean) {
+        val name = nameOf(from)
+        if (on) {
+            val at = System.currentTimeMillis()
+            talkSeen[from] = at
+            update { if (name in it.talking) it else it.copy(talking = it.talking + name) }
+            main.launch {
+                delay(TALK_QUIET_MS)
+                if (talkSeen[from] == at) talking(from, false)
+            }
+        } else {
+            talkSeen.remove(from)
+            update { it.copy(talking = it.talking - name) }
+        }
     }
 
     private fun showClip(id: String, name: String, from: String, cfg: ByteArray?, frames: List<ByteArray>, ms: Long, complete: Boolean, live: Boolean, mine: Boolean) {
@@ -757,6 +783,7 @@ internal class RoomSession(
         if (roomKey == null) return
         send(Msg.Voice(id, seq, java.util.Base64.getEncoder().encodeToString(VoiceFrames.pack(frames)), last, live,
             cfg?.let { java.util.Base64.getEncoder().encodeToString(it) }, ms))
-        if (live || last) showClip("$me/$id", myName, me, allCfg, allFrames, ms, last, live, mine = true)
+        // Only a voice note shows in the chat; talk is heard live and gone.
+        if (!live && last) showClip("$me/$id", myName, me, allCfg, allFrames, ms, complete = true, live = false, mine = true)
     }
 }

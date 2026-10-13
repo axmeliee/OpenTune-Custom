@@ -1,0 +1,3 @@
+• Talk in a room is heard live only and isn't kept in the chat; the Talk button needs a short hold
+• Tapping the mini player grows its cover into the player
+• Going back from Home while music plays shrinks the app up towards the notification

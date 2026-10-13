@@ -252,7 +252,7 @@ internal fun RoomView(r: Together.Room, onBack: () -> Unit) {
             }
             item { SectionHeader("Listening", subtitle = "${r.members.size} in the room") }
             item { Members(r.members, r.myId, canRemove = r.hosting) }
-            if (r.phase == Together.Phase.Live) item { TalkPanel() }
+            if (r.phase == Together.Phase.Live) item { TalkPanel(r.talking) }
             item { SectionHeader("Chat") }
             if (r.chat.isEmpty()) {
                 item { Text("Say hi.", Modifier.padding(horizontal = 16.dp), color = MaterialTheme.colorScheme.onSurfaceVariant) }
@@ -440,7 +440,7 @@ private fun RequestRow(m: Member) {
  * later, the music dipping under it. Talk can be turned off for yourself.
  */
 @Composable
-private fun TalkPanel() {
+private fun TalkPanel(talking: List<String>) {
     val muted by Together.talkMuted.collectAsState()
     val recording by Together.recording.collectAsState()
     Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp)
@@ -449,7 +449,11 @@ private fun TalkPanel() {
             Column(Modifier.weight(1f)) {
                 Text("Talk", style = MaterialTheme.typography.titleMedium)
                 Text(
-                    if (recording == true) "Everyone hears you. Let go to stop." else "Hold to talk. Everyone hears you a moment later.",
+                    when {
+                        recording == true -> "Everyone with Hear talk on hears you. Let go to stop."
+                        talking.isNotEmpty() -> talking.joinToString(" and ") + (if (talking.size == 1) " is talking" else " are talking")
+                        else -> "Hold to talk. It isn't saved: whoever has Hear talk on hears it live."
+                    },
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -494,6 +498,13 @@ private fun HoldToRecord(live: Boolean, modifier: Modifier, content: @Composable
     Box(
         modifier.pointerInput(live) {
             detectTapGestures(onPress = {
+                // Only a real hold starts it: a brush, or a touch that turns into a
+                // scroll, lets go (or is taken by the scroll) before this runs out.
+                val letGo = kotlinx.coroutines.withTimeoutOrNull(if (live) TALK_HOLD_MS else NOTE_HOLD_MS) { tryAwaitRelease() }
+                if (letGo != null) {
+                    if (letGo) Toast.makeText(context, if (live) "Hold to talk" else "Hold to record a voice note", Toast.LENGTH_SHORT).show()
+                    return@detectTapGestures
+                }
                 val granted = androidx.core.content.ContextCompat.checkSelfPermission(context, android.Manifest.permission.RECORD_AUDIO) ==
                     android.content.pm.PackageManager.PERMISSION_GRANTED
                 if (!granted) { ask.launch(android.Manifest.permission.RECORD_AUDIO); return@detectTapGestures }
@@ -507,6 +518,10 @@ private fun HoldToRecord(live: Boolean, modifier: Modifier, content: @Composable
         contentAlignment = Alignment.Center,
     ) { content(recording == live) }
 }
+
+/** How long the Talk button, and the voice note mic, have to be held before they record. */
+private const val TALK_HOLD_MS = 450L
+private const val NOTE_HOLD_MS = 300L
 
 private val AVATARS = listOf(0xFFFF8A65, 0xFF4FC3F7, 0xFF9CCC65, 0xFFFFD54F, 0xFFBA68C8, 0xFF4DB6AC, 0xFFF06292, 0xFF7986CB)
 private fun avatarColor(name: String) = Color(AVATARS[Math.floorMod(name.hashCode(), AVATARS.size)])

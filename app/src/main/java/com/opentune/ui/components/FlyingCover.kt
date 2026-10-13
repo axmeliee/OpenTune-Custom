@@ -69,6 +69,85 @@ object FlyingCover {
     }
 
     private const val TAP_WINDOW_MS = 1_500L
+
+    // ---- Opening the player from the mini player ----
+
+    /** Where the full player's cover is laid out, while it's on screen. */
+    internal var playerCover by mutableStateOf<Rect?>(null)
+    /** How much the player's cover is scaled about its centre (smaller while paused). */
+    internal var playerCoverScale = 1f
+    /** While true the mini player's cover is growing into the player's; the player's own waits, hidden, under it. */
+    var expanding by mutableStateOf(false)
+        private set
+    private var expandFrom: Rect? = null
+    private var expandRound = false
+
+    /** On the full player's cover: where an opening lands. */
+    fun Modifier.playerLanding(): Modifier = onGloballyPositioned { playerCover = it.boundsInRoot() }
+
+    /** Starts the mini player's cover growing into the player that's about to open. */
+    fun startExpand(round: Boolean) {
+        val from = target ?: return
+        expandFrom = from
+        expandRound = round
+        expanding = true
+    }
+
+    internal fun expandStart() = expandFrom
+    internal fun expandRound() = expandRound
+
+    internal fun endExpand() {
+        expanding = false
+        expandFrom = null
+    }
+}
+
+/**
+ * The mini player's cover growing into the full player's, over everything,
+ * while the player fades in behind it ([FlyingCover.startExpand]).
+ */
+@Composable
+fun CoverExpand(url: String?, smallUrl: String? = null) {
+    val t = remember { Animatable(0f) }
+    val expanding = FlyingCover.expanding
+    LaunchedEffect(expanding) {
+        if (!expanding) return@LaunchedEffect
+        // The player lays out its cover in a frame or two; without one (another layout), skip it.
+        var tries = 0
+        while (FlyingCover.playerCover == null && tries++ < 25) kotlinx.coroutines.delay(16)
+        if (FlyingCover.playerCover == null) { FlyingCover.endExpand(); return@LaunchedEffect }
+        t.snapTo(0f)
+        t.animateTo(1f, tween(460, easing = CubicBezierEasing(0.2f, 0f, 0f, 1f)))
+        FlyingCover.endExpand()
+    }
+    if (!expanding) return
+    val from = FlyingCover.expandStart() ?: return
+    val laid = FlyingCover.playerCover ?: return
+    // Land on the cover as it's drawn, scaled about its centre.
+    val k = FlyingCover.playerCoverScale
+    val to = Rect(
+        laid.center.x - laid.width * k / 2f, laid.center.y - laid.height * k / 2f,
+        laid.center.x + laid.width * k / 2f, laid.center.y + laid.height * k / 2f,
+    )
+    val p = t.value
+    fun lerp(a: Float, b: Float) = a + (b - a) * p
+    val left = lerp(from.left, to.left)
+    val top = lerp(from.top, to.top)
+    val w = lerp(from.width, to.width)
+    val h = lerp(from.height, to.height)
+    val density = LocalDensity.current
+    val startCorner = if (FlyingCover.expandRound()) from.width / 2f else with(density) { 12.dp.toPx() }
+    val corner = with(density) { (startCorner + (28.dp.toPx() - startCorner) * p).toDp() }
+    Box(
+        Modifier
+            .offset { IntOffset(left.roundToInt(), top.roundToInt()) }
+            .size(with(density) { w.toDp() }, with(density) { h.toDp() })
+            .shadow(with(density) { (28f * p).toDp() }, RoundedCornerShape(corner)),
+    ) {
+        // The mini player's own copy underneath, already loaded, so it never shows empty.
+        if (smallUrl != null) Artwork(smallUrl, Modifier.matchParentSize(), RoundedCornerShape(corner))
+        Artwork(url, Modifier.matchParentSize(), RoundedCornerShape(corner))
+    }
 }
 
 /**
@@ -117,3 +196,17 @@ fun CoverFlight(songKey: String?, url: String?, enabled: Boolean) {
         Artwork(f.first, Modifier.matchParentSize(), RoundedCornerShape((14 - 2 * p).dp))
     }
 }
+
+/**
+ * The app's window cropped toward a pill at the top centre, [p] of the way:
+ * at 1 it's [width] by [height] with fully round ends, in the layer's own
+ * (unscaled) pixels.
+ */
+fun pillCrop(p: Float, width: Float, height: Float): androidx.compose.ui.graphics.Shape =
+    androidx.compose.foundation.shape.GenericShape { size, _ ->
+        val w = size.width + (minOf(width, size.width) - size.width) * p
+        val h = size.height + (height - size.height) * p
+        val r = h / 2f * p
+        val left = (size.width - w) / 2f
+        addRoundRect(androidx.compose.ui.geometry.RoundRect(left, 0f, left + w, h, androidx.compose.ui.geometry.CornerRadius(r, r)))
+    }

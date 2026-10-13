@@ -81,6 +81,8 @@ object Together {
         val requests: List<Member> = emptyList(),
         /** For the host: knocking needs approval; off lets anyone with the code straight in. */
         val askToJoin: Boolean = true,
+        /** Names of the people talking right now. */
+        val talking: List<String> = emptyList(),
     ) {
         val following get() = !hosting && phase == Phase.Live
     }

@@ -57,6 +57,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.ui.unit.Dp
@@ -325,14 +326,19 @@ fun ArtworkPane(
         contentAlignment = Alignment.Center,
     ) {
         if (glow) CoverGlow(isPlaying, scale, Modifier.matchParentSize())
+        // Where the mini player's cover grows to when the player opens; hidden until it lands.
+        DisposableEffect(Unit) { onDispose { com.opentune.ui.components.FlyingCover.playerCover = null } }
+        com.opentune.ui.components.FlyingCover.playerCoverScale = scale
         CoverSwap(CoverShown(song.thumbnailUrl, index), change) { url, motion ->
             Artwork(
                 url.artworkAt(com.opentune.data.model.PLAYER_ART_PX),
                 Modifier
                     .fillMaxWidth()
                     .aspectRatio(1f)
+                    .then(with(com.opentune.ui.components.FlyingCover) { Modifier.playerLanding() })
                     .then(motion)
                     .graphicsLayer {
+                        alpha = if (com.opentune.ui.components.FlyingCover.expanding) 0f else 1f
                         scaleX = scale
                         scaleY = scale
                         translationX = offsetX.value

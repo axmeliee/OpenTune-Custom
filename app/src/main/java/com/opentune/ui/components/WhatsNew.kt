@@ -65,6 +65,10 @@ object WhatsNew {
 
     /** Newest first. Add the coming version's notes at the top when releasing. */
     val NOTES: List<Pair<String, List<Note>>> = listOf(
+        "0.5.0" to listOf(
+            Note(Icons.Rounded.Mic, "Talk is live only", "Talk in a room is heard as it happens by whoever has Hear talk on, and isn't kept in the chat. The Talk button needs a short hold, so a brush doesn't start it."),
+            Note(Icons.Rounded.TouchApp, "Opening and closing the player", "Tap the mini player and its cover grows into the player. Going back from Home while music plays shrinks the app up towards the notification."),
+        ),
         "0.4.9" to listOf(
             Note(Icons.Rounded.Lock, "Rooms you let people into", "People with the code knock; you let them in or turn them away. Only those you let in can hear what's playing or read the chat, and removing someone locks them out."),
             Note(Icons.Rounded.Mic, "Voice notes and talk", "Hold the mic in a room's chat to send a voice note, or hold Talk and everyone hears you a moment later, the music dipping under you."),
