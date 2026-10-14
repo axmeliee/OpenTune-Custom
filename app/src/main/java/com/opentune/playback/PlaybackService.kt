@@ -952,7 +952,7 @@ class PlaybackService : MediaLibraryService() {
         val id = videoIdOf(uri) ?: return
         fun alreadyExternal(): Boolean {
             val key = externalStreamKeyOf(selectedUri(uri)) ?: return false
-            return !force || ExternalStreams.get(id, key)?.lossless != false
+            return ExternalStreams.get(id, key)?.lossless != false
         }
         if (alreadyExternal()) return
         upgradeJob = scope.launch {
@@ -966,8 +966,20 @@ class PlaybackService : MediaLibraryService() {
             }
             if (alreadyExternal()) return@launch
             val duration = player.duration.takeIf { it > 0 } ?: item.toSong().durationMillis()
-            val lossless = if (Podcasts.isEpisode(id) || !shouldRetryExternal(startup?.checkedMaximum == true, force)) null else ExternalStreams.find(item.toSong(), duration, force = force,
-                losslessOnly = externalStreamKeyOf(selectedUri(uri)) != null)
+            // A slow startup lookup can finish here without delaying audible playback.
+            val saavn = if (!Podcasts.isEpisode(id) && externalStreamKeyOf(selectedUri(uri)) == null)
+                ExternalStreams.findJioSaavn(item.toSong(), duration) else null
+            kotlinx.coroutines.currentCoroutineContext().ensureActive()
+            if (player.currentMediaItem?.localConfiguration?.uri != uri) return@launch
+            if (saavn != null && ExternalStreams.allowed(saavn.lossless)) {
+                val left = player.duration - player.currentPosition
+                if (player.duration > 0 && left < UPGRADE_MIN_REMAINING_MS) return@launch
+                swapToUpgrade(player, id, externalStreamUri(id, saavn.key))
+                return@launch
+            }
+            val lossless = if (Podcasts.isEpisode(id)) null else ExternalStreams.find(item.toSong(), duration, force = force,
+                beforePlayback = AppSettings.effectiveAudioQuality == com.opentune.data.settings.AudioQuality.MAX,
+                losslessOnly = true)
             kotlinx.coroutines.currentCoroutineContext().ensureActive()
             if (player.currentMediaItem?.localConfiguration?.uri != uri) return@launch
             updateExternalStats()
@@ -1010,7 +1022,7 @@ class PlaybackService : MediaLibraryService() {
         val provider = when {
             item == null -> "No track selected"
             rendition != null -> rendition.provider
-            uri?.let(::startupToken) != null -> "Checking highest-quality sources…"
+            uri?.let(::startupToken) != null -> "Loading audio…"
             LocalMusic.isLocal(item.mediaId) -> "Local file"
             Radio.isRadio(item.mediaId) -> "Internet radio"
             Subsonic.isSubsonic(item.mediaId) -> "Your music server"
@@ -1043,8 +1055,8 @@ class PlaybackService : MediaLibraryService() {
      * then buffers the very next one.
      */
     private fun warmNeighbours() {
-        // Maximum chooses external audio first; warming YouTube would race that decision.
-        if (AppSettings.effectiveAudioQuality == com.opentune.data.settings.AudioQuality.MAX) return
+        // Maximum also starts immediately; warm its normal stream while quality
+        // searches run independently, so next/previous do not repeat resolution.
         if (!AppSettings.playback.value.preloadUpcoming) return
         val player = mediaSession?.player ?: return
         val timeline = player.currentTimeline
@@ -1061,9 +1073,16 @@ class PlaybackService : MediaLibraryService() {
         ids.forEach { warmedAt[it] = now }
         if (warmedAt.size > 64) warmedAt.entries.removeAll { now - it.value > WARM_TTL_MS }
 
+        val songs = indices.map { player.getMediaItemAt(it).toSong() }.filter { it.videoId in ids }.distinctBy { it.videoId }
         val previousJob = warmJob
         warmJob = scope.launch(Dispatchers.IO) {
             previousJob?.join()
+            // Prepare the preferred source independently of YouTube URL warm-up.
+            if (AppSettings.effectiveAudioQuality == com.opentune.data.settings.AudioQuality.MAX) launch {
+                for (song in songs) kotlinx.coroutines.withTimeoutOrNull(3_000) {
+                    ExternalStreams.findJioSaavn(song, song.durationMillis())
+                }
+            }
             // One at a time: these compete with the playing track for bandwidth.
             for (id in ids) {
                 runCatching { StreamResolver.resolve(id) }
@@ -1505,4 +1524,5 @@ internal fun loudnessGainDb(loudnessDb: Double, level: com.opentune.data.setting
     val target = (-loudnessDb + level.offsetDb).coerceAtMost(level.maxGainDb.toDouble())
     return if (speakerHold) target.coerceAtLeast(0.0) else target
 }
+
 

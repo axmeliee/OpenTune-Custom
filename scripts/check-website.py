@@ -14,7 +14,7 @@ today = date.today()
 iso = today.isoformat()
 summary = {'asOf': iso + 'T12:00:00Z', 'totals': {'installs': 1234, 'plays': 54321, 'since': '2026-01-01'}, 'today': {'active': 12, 'plays': 42}, 'week': 100, 'month': 300,
            'daily': [{'day': (today - timedelta(days=i)).isoformat(), 'active': 12, 'plays': 42} for i in range(30)],
-           'versions': [], 'downloads': [{'release': '0.4.' + str(i), 'browsers': i + 1} for i in range(12)], 'downloadBrowsers': 99}
+           'currentVersions': [{'version':'0.4.10','installations':19,'inferred':19},{'version':'0.4.13','installations':1,'inferred':0}], 'versions': [], 'downloads': [{'release': '0.4.' + str(i), 'browsers': i + 1} for i in range(12)], 'downloadBrowsers': 99}
 login_html = subprocess.check_output(['node', '--input-type=module', '-e',
     "import {authRoute} from './usage-api/auth.mjs'; console.log(await (await authRoute(new Request('https://usage.test/login'),{})).text());"], text=True, cwd=ROOT.parent)
 backend = 'opentune-usage.create-a-new-site-with-sites.workers.dev'
@@ -43,7 +43,7 @@ def route(request):
         else:
             args = parse_qs(url.query)
             start, end = args['from'][0], args['to'][0]
-            request.fulfill(json={'asOf': summary['asOf'], 'range': {'from': start, 'to': end}, 'coverageSince': '2026-01-01', 'totals': {'active': 12, 'plays': 84},
+            request.fulfill(json={'asOf': summary['asOf'], 'range': {'from': start, 'to': end}, 'timeZone': args.get('timeZone',['UTC'])[0], 'coverageSince': '2026-01-01', 'totals': {'active': 12, 'plays': 84},
                                  'daily': [{'day': end, 'active': 12, 'plays': 84}], 'versions': [{'version': '0.4.13-' + 'verylonglabel' * 9, 'installations': 12, 'plays': 84}]}, headers=cors)
     elif url.netloc == 'api.github.com':
         assert 'authorization' not in request.request.headers, 'Owner session must never reach GitHub'
@@ -113,6 +113,15 @@ with sync_playwright() as p:
         assert re.fullmatch(r'dashboard\.[a-f0-9]{12}\.js', page.locator('script[type=module]').get_attribute('src'))
         expect(page.locator('#period-plays')).to_have_text('84')
         expect(page.locator('#period-average')).to_have_text('7')
+        expect(page.locator('#report-zone')).to_have_value('Asia/Kolkata')
+        expect(page.locator('#day-detail')).to_contain_text('IST')
+        expect(page.locator('#updated')).to_contain_text('IST')
+        expect(page.locator('#current-versions-table tbody tr')).to_have_count(2)
+        expect(page.locator('#current-versions-table tbody tr').first).to_contain_text('19')
+        page.locator('#report-zone').select_option('UTC')
+        expect(page.locator('#day-detail')).to_contain_text('UTC')
+        page.locator('#report-zone').select_option('Asia/Kolkata')
+        expect(page.locator('#day-detail')).to_contain_text('IST')
         active_bar = page.locator('#chart .selected').bounding_box()
         chart_box = page.locator('#chart').bounding_box()
         assert active_bar['x'] >= chart_box['x'] - 1 and active_bar['x'] + active_bar['width'] <= chart_box['x'] + chart_box['width'] + 1
@@ -160,6 +169,7 @@ with sync_playwright() as p:
     page = context.new_page()
     mode = 'legacy'
     page.goto('https://usage.test/usage/')
+    page.locator('#report-zone').select_option('UTC')
     expect(page.locator('#period-status')).to_contain_text('Limited server')
     expect(page.locator('#period-active')).to_have_text('—')
     expect(page.locator('#period-plays')).to_have_text('1,260')

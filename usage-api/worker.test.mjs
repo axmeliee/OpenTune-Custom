@@ -37,6 +37,45 @@ test('different installations count separately; week/month use distinct IDs acro
   await ingest(db,{...body(3),installationId:id.replace(/1$/,'2')},now);
   const result=await summary(db,now); assert.equal(result.week,2); assert.equal(result.month,2); assert.equal(result.totals.plays,6);
 });
+test('upgrading one of 20 installations moves exactly one current count and preserves history',async()=>{
+  const db=database();
+  for(let i=1;i<=20;i++) await ingest(db,{...body(2,'0.4.10'),installationId:`00000000-0000-4000-8000-${String(i).padStart(12,'0')}`},now);
+  await ingest(db,body(1,'0.4.13'),now);
+  // Replayed old reports must not move the installation back.
+  await ingest(db,body(2,'0.4.10'),new Date('2026-10-09T13:00:00Z'));
+  const result=await summary(db,now);
+  assert.deepEqual(result.currentVersions.map(r=>[r.version,r.installations]),[['0.4.10',19],['0.4.13',1]]);
+  assert.equal(result.currentVersions.reduce((sum,r)=>sum+r.installations,0),20);
+  assert.equal(result.totals.installs,20);assert.equal(result.totals.plays,41);
+  assert.equal(result.versions.find(r=>r.version==='0.4.10').installations,20);
+});
+test('legacy current versions use newest activity day and numeric version order',async()=>{
+  const db=database();
+  await ingest(db,body(1,'0.4.9'),now);await ingest(db,body(1,'0.4.13'),now);
+  assert.equal((await summary(db,now)).currentVersions[0].version,'0.4.13');
+  await ingest(db,{installationId:id,days:[{day:'2026-10-08',version:'1.0.0',plays:1}]},now);
+  assert.equal((await summary(db,now)).currentVersions[0].version,'0.4.13');
+});
+test('explicit version revisions handle upgrades, downgrades, offline backlog and delayed retries',async()=>{
+  const db=database();
+  const report=(version,revision)=>({...body(3,'0.4.10'),currentVersion:version,versionRevision:revision});
+  await ingest(db,report('0.4.14',1),now);
+  await ingest(db,report('0.4.15',2),now);
+  await ingest(db,report('0.4.14',1),now);
+  assert.equal((await summary(db,now)).currentVersions[0].version,'0.4.15');
+  await ingest(db,report('0.4.14',3),now);
+  await ingest(db,body(1,'0.4.16'),now); // Legacy retry cannot overwrite explicit state.
+  const result=await summary(db,now);
+  assert.deepEqual(result.currentVersions.map(r=>[r.version,r.installations,r.inferred]),[['0.4.14',1,0]]);
+  assert.equal(result.totals.plays,4);
+});
+test('invalid current version metadata cannot partially write activity or version state',async()=>{
+  const db=database();
+  for(const extra of [{currentVersion:'bad',versionRevision:1},{currentVersion:'0.4.14'},{versionRevision:1},
+    {currentVersion:'0.4.14',versionRevision:0},{currentVersion:'0.4.14',versionRevision:1.5}])
+    await assert.rejects(ingest(db,{...body(),...extra},now));
+  assert.equal((await summary(db,now)).totals.installs,0);
+});
 test('four downloads from one browser count once per release',async()=>{
   const db=database(); for(let i=0;i<4;i++) await db.prepare(downloadSql).bind(id,'0.4.2',now.toISOString()).run();
   await db.prepare(downloadSql).bind(id,'0.4.3',now.toISOString()).run();
@@ -70,6 +109,24 @@ test('invalid batch does not partially write valid rows',async()=>{
 
 
 const { analytics, validateRange } = await import('./worker.mjs');
+test('IST midnight accepts the next calendar day without changing legacy UTC totals',async()=>{
+  const db=database(), midnight=new Date('2026-10-09T18:30:00Z');
+  const mixed={installationId:id,currentVersion:'0.4.14',versionRevision:1,days:[
+    {day:'2026-10-09',version:'0.4.13',plays:4},
+    {day:'2026-10-10',version:'0.4.14',plays:1,timeZone:'Asia/Kolkata'}
+  ]};
+  await ingest(db,mixed,midnight);await ingest(db,mixed,midnight);
+  const ist=await analytics(db,{from:'2026-10-10',to:'2026-10-10'},midnight,'Asia/Kolkata');
+  assert.equal(ist.timeZone,'Asia/Kolkata');assert.equal(ist.totals.plays,1);assert.equal(ist.totals.active,1);
+  assert.equal(ist.coverageSince,'2026-10-10');
+  const utc=await analytics(db,{from:'2026-10-09',to:'2026-10-09'},midnight,'UTC');
+  assert.equal(utc.totals.plays,4);
+  const all=await summary(db,midnight,'Asia/Kolkata');
+  assert.equal(all.totals.plays,5);assert.equal(all.totals.installs,1);assert.equal(all.today.plays,1);
+  assert.doesNotThrow(()=>validateRange(new URLSearchParams('from=2026-10-10&to=2026-10-10'),midnight,'Asia/Kolkata'));
+  assert.throws(()=>validateRange(new URLSearchParams('from=2026-10-10&to=2026-10-10'),midnight,'UTC'));
+  assert.throws(()=>validateActivity({...body(),days:[{...body().days[0],timeZone:'unknown'}]},midnight));
+});
 test('date range uses inclusive UTC endpoints and distinct installations across days and versions', async () => {
   const db = database();
   await ingest(db, { installationId:id, days:[

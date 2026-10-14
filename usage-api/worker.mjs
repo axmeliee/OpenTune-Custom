@@ -4,13 +4,48 @@ const VERSION = /^\d+\.\d+\.\d+(?:-[a-zA-Z0-9.-]{1,32})?$/;
 const DAY = 86400000;
 export const activitySql = `INSERT INTO activity(installation,day,version,plays,received_at) VALUES(?,?,?,?,?)
  ON CONFLICT(installation,day,version) DO UPDATE SET plays=MAX(activity.plays,excluded.plays),received_at=excluded.received_at`;
+const istActivitySql = activitySql.replaceAll('activity', 'activity_ist');
+const allActivity = '(SELECT * FROM activity UNION ALL SELECT * FROM activity_ist)';
+export function calendarDay(now, timeZone = 'UTC') {
+  return new Intl.DateTimeFormat('en-CA', {timeZone,year:'numeric',month:'2-digit',day:'2-digit'}).format(now);
+}
+function reportZone(value = 'UTC') {
+  if (!['UTC','Asia/Kolkata'].includes(value)) throw new Error('Unsupported reporting time zone');
+  return value;
+}
+const activityTable = zone => reportZone(zone) === 'Asia/Kolkata' ? 'activity_ist' : 'activity';
 export const downloadSql = 'INSERT OR IGNORE INTO downloads(browser,release,first_requested_at) VALUES(?,?,?)';
+const currentVersionSql = `INSERT INTO installation_versions(installation,version,revision,received_at) VALUES(?,?,?,?)
+ ON CONFLICT(installation) DO UPDATE SET version=excluded.version,revision=excluded.revision,received_at=excluded.received_at
+ WHERE excluded.revision > installation_versions.revision`;
+// Old clients report daily history only. Use their newest activity day, then
+// numeric version order for same-day upgrades (0.4.13 must sort after 0.4.9).
+// Explicit version revisions from newer clients also support downgrades and
+// cannot be rolled back by delayed reports or retries.
+const currentVersionsSql = `WITH parts AS (
+ SELECT installation,day,version,substr(version,instr(version,'.')+1) AS tail FROM ${allActivity} AS a
+ WHERE NOT EXISTS (SELECT 1 FROM installation_versions v WHERE v.installation=a.installation)
+), ranked AS (
+ SELECT installation,version,ROW_NUMBER() OVER (PARTITION BY installation ORDER BY day DESC,
+ CAST(version AS INTEGER) DESC,CAST(tail AS INTEGER) DESC,
+ CAST(substr(tail,instr(tail,'.')+1) AS INTEGER) DESC,
+ CASE WHEN instr(version,'-')=0 THEN 1 ELSE 0 END DESC,version DESC) AS rank FROM parts
+), current AS (
+ SELECT version,0 AS inferred FROM installation_versions
+ UNION ALL SELECT version,1 AS inferred FROM ranked WHERE rank=1
+)
+ SELECT version,COUNT(*) AS installations,SUM(inferred) AS inferred FROM current GROUP BY version
+ ORDER BY installations DESC,version DESC`;
 
 export function validateActivity(body, now = new Date()) {
   if (!UUID.test(body?.installationId) || !Array.isArray(body.days) || body.days.length < 1 || body.days.length > 64) throw new Error('Invalid installation or batch');
-  const today = now.toISOString().slice(0,10);
-  const earliest = new Date(now.getTime() - 30 * DAY).toISOString().slice(0,10);
+  if (body.currentVersion !== undefined || body.versionRevision !== undefined) {
+    if (!VERSION.test(body.currentVersion || '') || !Number.isSafeInteger(body.versionRevision) || body.versionRevision < 1)
+      throw new Error('Invalid current version');
+  }
   const rows = body.days.map(row => {
+    const zone = reportZone(row.timeZone);
+    const today = calendarDay(now,zone), earliest = calendarDay(new Date(now.getTime()-30*DAY),zone);
     if (!/^\d{4}-\d{2}-\d{2}$/.test(row.day) || !Number.isFinite(Date.parse(row.day)) ||
         new Date(row.day).toISOString().slice(0,10) !== row.day || row.day > today || row.day < earliest ||
         !VERSION.test(row.version) || !Number.isInteger(row.plays) || row.plays < 0 || row.plays > 10000) throw new Error('Invalid daily aggregate');
@@ -21,53 +56,60 @@ export function validateActivity(body, now = new Date()) {
 
 export async function ingest(db, body, now = new Date()) {
   const rows = validateActivity(body, now);
-  await db.batch(rows.map(row => db.prepare(activitySql).bind(...row)));
+  const statements = rows.map((row,i) => db.prepare(body.days[i].timeZone === 'Asia/Kolkata' ? istActivitySql : activitySql).bind(...row));
+  if (body.currentVersion !== undefined) statements.push(db.prepare(currentVersionSql)
+    .bind(body.installationId.toLowerCase(),body.currentVersion,body.versionRevision,now.toISOString()));
+  await db.batch(statements);
   return { accepted: rows.length };
 }
 
-export async function summary(db, now = new Date()) {
-  const day = now.toISOString().slice(0,10);
-  const week = new Date(Date.UTC(now.getUTCFullYear(),now.getUTCMonth(),now.getUTCDate()));
+export async function summary(db, now = new Date(), timeZone = 'UTC') {
+  const table = activityTable(timeZone);
+  const day = calendarDay(now,timeZone);
+  const week = new Date(day+'T00:00:00Z');
   week.setUTCDate(week.getUTCDate() - ((week.getUTCDay()+6)%7));
   const month = day.slice(0,7)+'-01';
-  const from = new Date(now.getTime()-29*DAY).toISOString().slice(0,10);
+  const from = calendarDay(new Date(now.getTime()-29*DAY),timeZone);
   const results = await db.batch([
-    db.prepare('SELECT COUNT(DISTINCT installation) AS installs, COALESCE(SUM(plays),0) AS plays, MIN(day) AS since FROM activity'),
-    db.prepare('SELECT COUNT(DISTINCT installation) AS active, COALESCE(SUM(plays),0) AS plays FROM activity WHERE day=?').bind(day),
-    db.prepare('SELECT COUNT(DISTINCT installation) AS active FROM activity WHERE day>=? AND day<=?').bind(week.toISOString().slice(0,10),day),
-    db.prepare('SELECT COUNT(DISTINCT installation) AS active FROM activity WHERE day>=? AND day<=?').bind(month,day),
-    db.prepare('SELECT day,COUNT(DISTINCT installation) AS active,SUM(plays) AS plays FROM activity WHERE day>=? AND day<=? GROUP BY day ORDER BY day').bind(from,day),
-    db.prepare('SELECT version,COUNT(DISTINCT installation) AS installations FROM activity GROUP BY version ORDER BY MAX(day) DESC'),
+    db.prepare(`SELECT COUNT(DISTINCT installation) AS installs, COALESCE(SUM(plays),0) AS plays, MIN(day) AS since FROM ${allActivity}`),
+    db.prepare(`SELECT COUNT(DISTINCT installation) AS active, COALESCE(SUM(plays),0) AS plays FROM ${table} WHERE day=?`).bind(day),
+    db.prepare(`SELECT COUNT(DISTINCT installation) AS active FROM ${table} WHERE day>=? AND day<=?`).bind(week.toISOString().slice(0,10),day),
+    db.prepare(`SELECT COUNT(DISTINCT installation) AS active FROM ${table} WHERE day>=? AND day<=?`).bind(month,day),
+    db.prepare(`SELECT day,COUNT(DISTINCT installation) AS active,SUM(plays) AS plays FROM ${table} WHERE day>=? AND day<=? GROUP BY day ORDER BY day`).bind(from,day),
+    db.prepare(`SELECT version,COUNT(DISTINCT installation) AS installations FROM ${allActivity} GROUP BY version ORDER BY MAX(day) DESC`),
     db.prepare('SELECT release,COUNT(*) AS browsers FROM downloads GROUP BY release ORDER BY MAX(first_requested_at) DESC'),
     db.prepare('SELECT COUNT(DISTINCT browser) AS browsers FROM downloads'),
+    db.prepare(currentVersionsSql),
   ]);
-  return { asOf: now.toISOString(), totals: results[0].results[0], today: results[1].results[0],
+  return { asOf: now.toISOString(), timeZone, totals: results[0].results[0], today: results[1].results[0],
     week: results[2].results[0].active, month: results[3].results[0].active,
     daily: results[4].results, versions: results[5].results, downloads: results[6].results,
-    downloadBrowsers: results[7].results[0].browsers };
+    downloadBrowsers: results[7].results[0].browsers, currentVersions: results[8].results };
 }
 
-// Inclusive UTC dates; bounded to keep dashboard queries predictable.
-export function validateRange(params, now = new Date()) {
+// Inclusive calendar dates in the requested reporting zone; bounded to keep dashboard queries predictable.
+export function validateRange(params, now = new Date(), timeZone = 'UTC') {
+  reportZone(timeZone);
   const from = params.get('from'), to = params.get('to');
   const valid = value => /^\d{4}-\d{2}-\d{2}$/.test(value || '') &&
     Number.isFinite(Date.parse(value)) && new Date(value).toISOString().slice(0,10) === value;
-  if (!valid(from) || !valid(to) || from > to || to > now.toISOString().slice(0,10) ||
+  if (!valid(from) || !valid(to) || from > to || to > calendarDay(now,timeZone) ||
       (Date.parse(to) - Date.parse(from)) / DAY >= 366) {
-    throw new Error('Choose valid UTC dates, up to 366 days, ending today or earlier');
+    throw new Error('Choose valid reporting dates, up to 366 days, ending today or earlier');
   }
   return { from, to };
 }
 
-export async function analytics(db, range, now = new Date()) {
+export async function analytics(db, range, now = new Date(), timeZone = 'UTC') {
   const { from, to } = range;
+  const table = activityTable(timeZone);
   const results = await db.batch([
-    db.prepare('SELECT COUNT(DISTINCT installation) AS active, COALESCE(SUM(plays),0) AS plays FROM activity WHERE day BETWEEN ? AND ?').bind(from,to),
-    db.prepare('SELECT day, COUNT(DISTINCT installation) AS active, SUM(plays) AS plays FROM activity WHERE day BETWEEN ? AND ? GROUP BY day ORDER BY day').bind(from,to),
-    db.prepare('SELECT version, COUNT(DISTINCT installation) AS installations, SUM(plays) AS plays FROM activity WHERE day BETWEEN ? AND ? GROUP BY version ORDER BY installations DESC, version DESC').bind(from,to),
-    db.prepare('SELECT MIN(day) AS since FROM activity'),
+    db.prepare(`SELECT COUNT(DISTINCT installation) AS active, COALESCE(SUM(plays),0) AS plays FROM ${table} WHERE day BETWEEN ? AND ?`).bind(from,to),
+    db.prepare(`SELECT day, COUNT(DISTINCT installation) AS active, SUM(plays) AS plays FROM ${table} WHERE day BETWEEN ? AND ? GROUP BY day ORDER BY day`).bind(from,to),
+    db.prepare(`SELECT version, COUNT(DISTINCT installation) AS installations, SUM(plays) AS plays FROM ${table} WHERE day BETWEEN ? AND ? GROUP BY version ORDER BY installations DESC, version DESC`).bind(from,to),
+    db.prepare(`SELECT MIN(day) AS since FROM ${table}`),
   ]);
-  return { asOf: now.toISOString(), range, totals: results[0].results[0],
+  return { asOf: now.toISOString(), range, timeZone, totals: results[0].results[0],
     daily: results[1].results, versions: results[2].results,
     coverageSince: results[3].results[0].since };
 }
@@ -105,11 +147,14 @@ export default {
         return secured;
       }
       if (request.method==='GET' && path==='/v1/analytics') {
-        let range;
-        try { range = validateRange(url.searchParams); } catch(e) { return json({error:e.message},400); }
-        return json(await analytics(env.DB,range));
+        let range,zone;
+        try { zone=reportZone(url.searchParams.get('timeZone') || 'UTC'); range = validateRange(url.searchParams,new Date(),zone); } catch(e) { return json({error:e.message},400); }
+        return json(await analytics(env.DB,range,new Date(),zone));
       }
-      if (request.method==='GET' && path==='/v1/summary') return json(await summary(env.DB));
+      if (request.method==='GET' && path==='/v1/summary') {
+        let zone;try { zone=reportZone(url.searchParams.get('timeZone') || 'UTC'); } catch(e) {return json({error:e.message},400);}
+        return json(await summary(env.DB,new Date(),zone));
+      }
       if (request.method!=='POST' || !['/v1/activity','/v1/download'].includes(path)) return json({error:'Not found'},404);
       if (!request.headers.get('Content-Type')?.startsWith('application/json')) return json({error:'JSON required'},415);
       // Bounded streaming read: don't trust Content-Length from public clients.

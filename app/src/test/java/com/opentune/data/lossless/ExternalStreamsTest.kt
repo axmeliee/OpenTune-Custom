@@ -12,6 +12,22 @@ import org.robolectric.annotation.Config
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [35], application = android.app.Application::class)
 class ExternalStreamsTest {
+    @Test fun startupCacheRejectsExpiredFailedAndDisabledRenditions() {
+        AppSettings.init(RuntimeEnvironment.getApplication())
+        AppSettings.updatePlayback { it.copy(wifiQuality = AudioQuality.MAX, mobileQuality = AudioQuality.MAX, losslessUnmeteredOnly = false) }
+        val fresh = ExternalStreams.Rendition("startup-fresh", "https://cdn.example/audio", "FLAC", true, System.nanoTime() / 1_000_000)
+        assertNull(ExternalStreams.cached("not-looked-up"))
+        ExternalStreams.remember("startup-cache", fresh)
+        assertEquals(fresh, ExternalStreams.cached("startup-cache"))
+        ExternalStreams.remember("startup-expired", fresh.copy(key = "expired", at = fresh.at - 11 * 60_000))
+        assertNull(ExternalStreams.cached("startup-expired"))
+        ExternalStreams.failed("startup-cache")
+        assertNull(ExternalStreams.cached("startup-cache"))
+        ExternalStreams.remember("startup-disabled", fresh.copy(key = "disabled"))
+        AppSettings.updatePlayback { it.copy(wifiQuality = AudioQuality.HIGH, mobileQuality = AudioQuality.HIGH, losslessStreaming = false) }
+        assertNull(ExternalStreams.cached("startup-disabled"))
+    }
+
     @Test fun replacingAResultDoesNotInvalidateBytesThePlayerIsStillReading() {
         AppSettings.init(RuntimeEnvironment.getApplication())
         AppSettings.updatePlayback { it.copy(wifiQuality = AudioQuality.MAX, mobileQuality = AudioQuality.MAX, losslessUnmeteredOnly = false) }
@@ -29,3 +45,4 @@ class ExternalStreamsTest {
         assertNull(ExternalStreams.get("song", "new"))
     }
 }
+

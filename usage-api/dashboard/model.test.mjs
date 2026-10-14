@@ -2,8 +2,8 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { presetRange, rangeError, dailyRows, legacyAnalytics } from './model.mjs';
 test('UTC presets cross year and leap-day boundaries inclusively', () => {
-  assert.deepEqual(presetRange(7,new Date('2027-01-02T23:59:00Z')),{from:'2026-12-27',to:'2027-01-02'});
-  assert.deepEqual(presetRange(2,new Date('2024-03-01T00:01:00Z')),{from:'2024-02-29',to:'2024-03-01'});
+  assert.deepEqual(presetRange(7,new Date('2027-01-02T23:59:00Z'),'UTC'),{from:'2026-12-27',to:'2027-01-02'});
+  assert.deepEqual(presetRange(2,new Date('2024-03-01T00:01:00Z'),'UTC'),{from:'2024-02-29',to:'2024-03-01'});
   assert.ok(rangeError({from:'2026-02-30',to:'2026-03-01'}));
   assert.ok(rangeError({from:'2026-03-01',to:'2026-02-28'}));
 });
@@ -18,4 +18,11 @@ test('legacy fallback never fabricates period unique users or older history', ()
   assert.equal(data.totals.active,null); assert.equal(data.totals.plays,7); assert.equal(data.versions,null);
   assert.equal(legacyAnalytics(summary,{from:'2026-10-09',to:'2026-10-09'}).totals.active,1);
   assert.throws(()=>legacyAnalytics(summary,{from:'2026-08-01',to:'2026-10-09'}));
+});
+
+test('IST is the default and changes calendar day at 18:30 UTC', () => {
+  assert.deepEqual(presetRange(1,new Date('2026-12-31T18:29:59Z')),{from:'2026-12-31',to:'2026-12-31'});
+  assert.deepEqual(presetRange(1,new Date('2026-12-31T18:30:00Z')),{from:'2027-01-01',to:'2027-01-01'});
+  assert.equal(rangeError({from:'2027-01-01',to:'2027-01-01'},new Date('2026-12-31T18:30:00Z')),'');
+  assert.ok(rangeError({from:'2027-01-01',to:'2027-01-01'},new Date('2026-12-31T18:30:00Z'),'UTC'));
 });

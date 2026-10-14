@@ -20,6 +20,31 @@ object ExternalStreams {
 
     fun selectionDetail(videoId: String): String? = reports[videoId]
 
+    /** Instant startup lookup only; a miss must never start network work. */
+    fun cached(videoId: String): Rendition? {
+        val now = now()
+        if ((failedUntil[videoId] ?: 0) > now) return null
+        return renditions[videoId]?.takeIf {
+            now - it.at < TTL && allowed(it.lossless) &&
+                (it.lossless || it.sessionRevision == SpotiflacSession.revision.value)
+        }
+    }
+
+    /** JioSaavn has its own fast path; never wait for a FLAC search before it. */
+    suspend fun findJioSaavn(song: Song, durationMs: Long): Rendition? {
+        if (!allowed(false) || (failedUntil[song.videoId] ?: 0) > now()) return null
+        cached(song.videoId)?.let { return it }
+        val duration = CatalogMetadata.duration(song, durationMs)
+        if (duration <= 0) return null
+        val url = JioSaavnSource.resolve(song, duration, report = { report(song.videoId, it) }) ?: return null
+        val rendition = Rendition(java.util.UUID.randomUUID().toString(), url, "JioSaavn · 320 kbps (lossy)", false, now(),
+            provider = "JioSaavn", kbps = 320, sessionRevision = SpotiflacSession.revision.value)
+        // A simultaneous FLAC result remains the preferred cached rendition.
+        cached(song.videoId)?.takeIf { it.lossless }?.let { return it }
+        remember(song.videoId, rendition)
+        return rendition
+    }
+
     private fun report(videoId: String, detail: String) {
         if (reports.size > 256) reports.clear()
         reports[videoId] = detail
@@ -107,4 +132,5 @@ object ExternalStreams {
 
     private fun now(): Long = System.nanoTime() / 1_000_000
 }
+
 

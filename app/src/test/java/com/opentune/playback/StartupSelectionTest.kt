@@ -3,28 +3,18 @@ package com.opentune.playback
 import androidx.media3.datasource.DataSpec
 import com.opentune.data.lossless.ExternalStreams
 import com.opentune.data.model.Song
-import kotlinx.coroutines.CancellationException
-import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.async
-import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.runBlocking
-import kotlinx.coroutines.yield
 import org.junit.Assert.*
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
-import java.io.IOException
 
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [35], application = android.app.Application::class)
 @androidx.annotation.OptIn(androidx.media3.common.util.UnstableApi::class)
 class StartupSelectionTest {
-    @Test fun explicitRetryCanSearchAfterMaximumStartupMiss() {
-        assertFalse(shouldRetryExternal(checkedMaximum = true, force = false))
-        assertTrue(shouldRetryExternal(checkedMaximum = true, force = true))
-        assertTrue(shouldRetryExternal(checkedMaximum = false, force = false))
-    }
     @Test fun playerRetainsTheSourceFactorySelectionToken() {
         val context = org.robolectric.RuntimeEnvironment.getApplication()
         val delegate = androidx.media3.exoplayer.source.DefaultMediaSourceFactory(context)
@@ -46,18 +36,22 @@ class StartupSelectionTest {
     private val spec = DataSpec.Builder().setUri(original).setPosition(42).build()
     private val flac = ExternalStreams.Rendition("flac", "https://cdn.example/audio", "24-bit FLAC", true, 0)
 
-    @Test fun maximumWaitsForExternalSearchBeforeSelectingAnyStream() = runBlocking {
-        val gate = CompletableDeferred<ExternalStreams.Rendition?>()
-        val selection = StartupSelection(song, original, { true }) { _, duration ->
-            assertEquals(180_000L, duration)
-            gate.await()
+    @Test fun maximumStartsAfterAQuickJioSaavnMiss() = runBlocking {
+        var calls = 0
+        val selection = StartupSelection(song, original, { true }, findJioSaavn = { _, _ -> null }) { id ->
+            assertEquals(song.videoId, id)
+            calls++
+            null
         }
-        val pending = async { selection.resolve(spec) }
-        yield()
-        assertFalse(pending.isCompleted)
-        assertNull(selection.selected)
-        gate.complete(flac)
-        val chosen = pending.await()
+        val chosen = selection.resolve(spec)
+        assertEquals(original, chosen.uri)
+        assertEquals(42L, chosen.position)
+        assertEquals(1, calls)
+    }
+
+    @Test fun cachedMaximumUsesItsOwnCacheKeyWithoutSearchingAgain() = runBlocking {
+        val selection = StartupSelection(song, original, { true }, findJioSaavn = { _, _ -> null }) { flac }
+        val chosen = selection.resolve(spec)
         assertEquals("flac", externalStreamKeyOf(chosen.uri))
         assertNotEquals(cacheKeyOf(original), cacheKeyOf(chosen.uri))
         assertEquals(42L, chosen.position)
@@ -66,7 +60,7 @@ class StartupSelectionTest {
     @Test fun seeksKeepTheSelectedRenditionEvenIfSettingsChange() = runBlocking {
         var maximum = true
         var calls = 0
-        val selection = StartupSelection(song, original, { maximum }) { _, _ -> calls++; flac }
+        val selection = StartupSelection(song, original, { maximum }, findJioSaavn = { _, _ -> error("Cached source must not search") }) { calls++; flac }
         val first = selection.resolve(spec)
         maximum = false
         val seek = selection.resolve(spec.buildUpon().setPosition(900).build())
@@ -75,28 +69,57 @@ class StartupSelectionTest {
         assertEquals(1, calls)
     }
 
-    @Test fun missingOrFailedProvidersFallBackToYouTube() = runBlocking {
-        val unavailable = StartupSelection(song, original, { true }) { _, _ -> null }
-        assertEquals(original, unavailable.resolve(spec).uri)
-        val failed = StartupSelection(song, original, { true }) { _, _ -> throw IOException("Provider down") }
-        assertEquals(original, failed.resolve(spec).uri)
-    }
-
-    @Test fun lowerQualityDoesNotWaitForExternalProviders() = runBlocking {
-        val selection = StartupSelection(song, original, { false }) { _, _ -> error("Unexpected lookup") }
+    @Test fun lowerQualityDoesNotCheckExternalCache() = runBlocking {
+        val selection = StartupSelection(song, original, { false }, findJioSaavn = { _, _ -> error("Unexpected lookup") }) { error("Unexpected lookup") }
         assertEquals(original, selection.resolve(spec).uri)
-        assertFalse(selection.checkedMaximum)
     }
 
-    @Test fun cancellationDoesNotPinAnUnwantedFallback() = runBlocking {
-        val started = CompletableDeferred<Unit>()
-        val selection = StartupSelection(song, original, { true }) { _, _ ->
-            started.complete(Unit)
-            CompletableDeferred<ExternalStreams.Rendition?>().await()
-        }
+    @Test fun aLateExternalResultCannotChangeBytesDuringASeek() = runBlocking {
+        var available: ExternalStreams.Rendition? = null
+        val selection = StartupSelection(song, original, { true }, findJioSaavn = { _, _ -> null }) { available }
+        assertEquals(original, selection.resolve(spec).uri)
+        available = flac
+        assertEquals(original, selection.resolve(spec.buildUpon().setPosition(900).build()).uri)
+        // A fresh media source may use it, with a different cache key.
+        val next = StartupSelection(song, original, { true }, findJioSaavn = { _, _ -> null }) { available }
+        assertEquals("flac", externalStreamKeyOf(next.resolve(spec).uri))
+    }
+
+    @Test fun concurrentOpensKeepOneRendition() = runBlocking {
+        var calls = 0
+        val selection = StartupSelection(song, original, { true }, findJioSaavn = { _, _ -> null }) { calls++; flac.copy(key = "key-$calls") }
+        val first = async { selection.resolve(spec) }
+        val second = async { selection.resolve(spec.buildUpon().setPosition(900).build()) }
+        assertEquals(first.await().uri, second.await().uri)
+        assertEquals(1, calls)
+    }
+
+    @Test fun aSlowProviderCannotHoldStartupAndItsRequestIsCancelled() = runBlocking {
+        var cancelled = false
+        val selection = StartupSelection(song, original, { true }, lookupBudgetMs = 20,
+            findJioSaavn = { _, _ ->
+                try { kotlinx.coroutines.awaitCancellation() } finally { cancelled = true }
+            }, cached = { null })
+        val result = kotlinx.coroutines.withTimeout(2_000) { selection.resolve(spec) }
+        assertEquals(original, result.uri)
+        assertTrue(cancelled)
+    }
+
+    @Test fun aQuickJioSaavnMatchTakesPriorityOverYouTube() = runBlocking {
+        val saavn = flac.copy(key = "saavn", label = "JioSaavn", lossless = false)
+        val selection = StartupSelection(song, original, { true },
+            findJioSaavn = { _, duration -> assertEquals(180_000L, duration); saavn }, cached = { null })
+        assertEquals("saavn", externalStreamKeyOf(selection.resolve(spec).uri))
+    }
+
+    @Test fun cancelledStartupNeverPinsAFallback() = runBlocking {
+        val started = kotlinx.coroutines.CompletableDeferred<Unit>()
+        val selection = StartupSelection(song, original, { true },
+            findJioSaavn = { _, _ -> started.complete(Unit); kotlinx.coroutines.awaitCancellation() }, cached = { null })
         val pending = async { selection.resolve(spec) }
         started.await()
-        pending.cancelAndJoin()
+        pending.cancel()
+        pending.join()
         assertNull(selection.selected)
     }
 
@@ -108,4 +131,5 @@ class StartupSelectionTest {
         assertEquals(fallback, withoutStartup(tagged))
     }
 }
+
 

@@ -21,7 +21,13 @@ class UsageTest {
         assertEquals("202612", Usage.month(utc(2026, 12, 31, 23)))
     }
 
+    @Test fun istChangesDayAt1830UtcIncludingYearBoundary() {
+        assertEquals("20261231", Usage.istDay(java.time.Instant.parse("2026-12-31T18:29:59Z").toEpochMilli()))
+        assertEquals("20270101", Usage.istDay(java.time.Instant.parse("2026-12-31T18:30:00Z").toEpochMilli()))
+    }
+
     @Test fun keepsOddVersionNamesToSafeCharacters() {
         assertEquals("ver-0.3.6-beta1x", Usage.periodKeys(0, "0.3.6-beta 1 (x)")[1])
     }
 }
+

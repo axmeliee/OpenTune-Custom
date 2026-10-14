@@ -49,5 +49,12 @@ if(process.env.USAGE_ADMIN_USERNAME && process.env.USAGE_ADMIN_PASSWORD) {
   const {token}=await pagesLogin.json();
   const pagesRead=await read('/usage/v1/summary',{headers:{Origin:'https://justshivv.github.io',Authorization:'Bearer '+token}});
   assert.equal(pagesRead.status,200);
+  const current = await pagesRead.json();
+  assert.ok(Array.isArray(current.currentVersions));
+  assert.equal(current.currentVersions.reduce((sum,row)=>sum+row.installations,0),current.totals.installs);
+  const todayIst = new Intl.DateTimeFormat('en-CA',{timeZone:'Asia/Kolkata',year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date());
+  const istRead=await read(`/usage/v1/analytics?from=${todayIst}&to=${todayIst}&timeZone=Asia%2FKolkata`,{headers:{Origin:'https://justshivv.github.io',Authorization:'Bearer '+token}});
+  assert.equal(istRead.status,200);
+  assert.equal((await istRead.json()).timeZone,'Asia/Kolkata');
   console.log('Verified Pages bearer login, Worker cookie login, private data and anonymous rejection.');
 } else console.log('Verified login form and anonymous rejection. Add owner credentials to enable sign-in.');

@@ -9,34 +9,34 @@ import com.opentune.data.settings.AppSettings
 import com.opentune.data.settings.AudioQuality
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.withTimeoutOrNull
 
-/** One choice per media source, made before the cache opens. Seeks must keep the same bytes. */
+/** Prefer a cached source or a quick JioSaavn match; never wait for FLAC at startup. */
 @androidx.annotation.OptIn(androidx.media3.common.util.UnstableApi::class)
 internal class StartupSelection(
     private val song: Song,
     private val original: Uri,
     private val maximum: () -> Boolean = { AppSettings.effectiveAudioQuality == AudioQuality.MAX },
-    private val find: suspend (Song, Long) -> ExternalStreams.Rendition? = { item, duration ->
-        ExternalStreams.find(item, duration, beforePlayback = true)
-    },
+    private val lookupBudgetMs: Long = 900L,
+    private val findJioSaavn: suspend (Song, Long) -> ExternalStreams.Rendition? = ExternalStreams::findJioSaavn,
+    private val cached: (String) -> ExternalStreams.Rendition? = ExternalStreams::cached,
 ) {
     private val mutex = Mutex()
     @Volatile var selected: Uri? = null
         private set
-    @Volatile var checkedMaximum: Boolean = false
-        private set
-
     suspend fun resolve(spec: DataSpec): DataSpec = mutex.withLock {
+        currentCoroutineContext().ensureActive()
         if (selected == null) {
-            checkedMaximum = maximum()
-            val rendition = try {
-                if (checkedMaximum) find(song, song.durationMillis()) else null
+            val rendition = if (maximum()) cached(song.videoId) ?: try {
+                withTimeoutOrNull(lookupBudgetMs) { findJioSaavn(song, song.durationMillis()) }
             } catch (e: CancellationException) {
                 throw e
             } catch (_: Exception) {
                 null
-            }
+            } else null
             selected = rendition?.let { externalStreamUri(song.videoId, it.key) } ?: original
         }
         spec.withUri(selected!!)
@@ -52,5 +52,4 @@ internal fun withoutStartup(uri: Uri): Uri = uri.buildUpon().clearQuery().apply 
 internal fun youtubeFallbackUri(id: String, upgraded: Boolean = false): Uri = streamUri(id, upgraded).buildUpon().appendQueryParameter("fallback", "youtube").build()
 
 
-/** A user retry or a newly verified session supersedes an earlier startup miss. */
-internal fun shouldRetryExternal(checkedMaximum: Boolean, force: Boolean): Boolean = force || !checkedMaximum
+

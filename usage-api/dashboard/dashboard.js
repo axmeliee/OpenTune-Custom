@@ -3,6 +3,8 @@ import { isoDay, presetRange, rangeError, dailyRows, legacyAnalytics } from './m
 const $ = id => document.getElementById(id);
 const fmt = value => Number.isFinite(value) ? value.toLocaleString('en-US', { maximumFractionDigits: 1 }) : '—';
 const dateLabel = day => new Date(day + 'T00:00:00Z').toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'UTC' });
+const reportZone = () => $('report-zone').value;
+const zoneLabel = () => reportZone() === 'Asia/Kolkata' ? 'IST' : 'UTC';
 let apiPromise, summaryPromise, allController, periodController, periodData, selectedDay;
 const node = (tag, text, className) => { const el = document.createElement(tag); if (text != null) el.textContent = text; if (className) el.className = className; return el; };
 async function response(url, signal) {
@@ -55,7 +57,7 @@ function table(id, headings, rows, { daily = false } = {}) {
 function selectDay(day) {
   selectedDay = day;
   const row = dailyRows(periodData).find(row => row.day === day);
-  const detail = $('day-detail'); detail.replaceChildren(node('strong', dateLabel(day) + ' · UTC'));
+  const detail = $('day-detail'); detail.replaceChildren(node('strong', dateLabel(day) + ' · ' + zoneLabel()));
   detail.append(node('span', row?.active == null ? ' — No activity history available for this date.' : ` — ${fmt(row.active)} active installations · ${fmt(row.plays)} plays · ${fmt(row.active ? row.plays / row.active : null)} plays per active installation`));
   for (const bar of $('chart').children) { const selected = bar.dataset.day === day; bar.classList.toggle('selected', selected); bar.setAttribute('aria-pressed', String(selected)); }
   const activeBar = $('chart').querySelector('.selected');
@@ -82,7 +84,7 @@ function chart() {
   selectDay(selectedDay && rows.some(row => row.day === selectedDay) ? selectedDay : periodData.range.to);
 }
 async function loadPeriod() {
-  const range = { from: $('from').value, to: $('to').value }, error = rangeError(range);
+  const range = { from: $('from').value, to: $('to').value }, error = rangeError(range, new Date(), reportZone());
   $('filter-error').textContent = error; if (error) return;
   periodController?.abort(); const controller = new AbortController(); periodController = controller;
   const signal = controller.signal;
@@ -93,19 +95,20 @@ async function loadPeriod() {
   for (const id of ['period-active', 'period-plays', 'period-average']) $(id).textContent = '—';
   for (const id of ['daily-table', 'versions-table', 'chart']) empty(id, 'Loading…');
   $('day-detail').textContent = 'Loading daily counts…';
-  for (const button of document.querySelectorAll('[data-days]')) { const preset = presetRange(Number(button.dataset.days)); button.setAttribute('aria-pressed', String(preset.from === range.from && preset.to === range.to)); }
+  for (const button of document.querySelectorAll('[data-days]')) { const preset = presetRange(Number(button.dataset.days), new Date(), reportZone()); button.setAttribute('aria-pressed', String(preset.from === range.from && preset.to === range.to)); }
   try {
     const api = await apiPromise; let data;
-    try { data = await response(`${api}/v1/analytics?${new URLSearchParams(range)}`, signal); }
-    catch (e) { if (e.status !== 404) throw e; data = legacyAnalytics(await summaryPromise, range); }
+    try { data = await response(`${api}/v1/analytics?${new URLSearchParams({...range,timeZone:reportZone()})}`, signal); }
+    catch (e) { if (e.status !== 404 || reportZone() !== 'UTC') throw e; data = legacyAnalytics(await summaryPromise, range); }
     if (signal.aborted) return;
+    if (reportZone() === 'Asia/Kolkata' && data.timeZone !== 'Asia/Kolkata') throw new Error('IST reporting needs the API update.');
     periodData = data;
     const hasHistory = data.coverageSince && range.to >= data.coverageSince;
     $('period-active').textContent = fmt(hasHistory ? data.totals.active : null);
     $('period-plays').textContent = fmt(hasHistory ? data.totals.plays : null);
     $('period-average').textContent = fmt(hasHistory && data.totals.active > 0 ? data.totals.plays / data.totals.active : null);
-    $('period-status').textContent = data.limited ? 'Limited server: daily counts available; period-wide unique counts and version filters need the analytics API update.' : !hasHistory ? 'No activity history available for these dates.' : `Reports available since ${dateLabel(data.coverageSince)}. Today and recent days may still change.`;
-    table('daily-table', ['Date (UTC)', 'Active', 'Plays'], dailyRows(data).reverse().map(row => [row.day, row.active, row.plays]), { daily: true });
+    $('period-status').textContent = data.limited ? 'Limited server: daily counts available; period-wide unique counts and version filters need the analytics API update.' : !hasHistory ? (reportZone() === 'Asia/Kolkata' ? 'No IST reports for these dates yet. Updated apps report IST; older counts remain in UTC history.' : 'No activity history available for these dates.') : `Reports available since ${dateLabel(data.coverageSince)}. Today and recent days may still change.`;
+    table('daily-table', [`Date (${zoneLabel()})`, 'Active', 'Plays'], dailyRows(data).reverse().map(row => [row.day, row.active, row.plays]), { daily: true });
     if (data.versions) table('versions-table', ['Version', 'Active', 'Plays'], data.versions.map(row => [row.version, row.installations, row.plays]));
     else empty('versions-table', 'Date-filtered versions need the analytics API update.');
     chart();
@@ -119,11 +122,12 @@ async function loadPeriod() {
 async function loadAll() {
   allController?.abort(); const controller = new AbortController(); allController = controller; const signal = controller.signal;
   $('refresh').disabled = true; $('updated').textContent = '';
+  $('current-versions-note').textContent = 'Loading current versions…';
   $('lifetime-status').textContent = 'Loading totals…'; $('github-status').textContent = 'Loading GitHub totals…';
   for (const id of ['all-installs', 'all-plays', 'all-browsers', 'all-downloads']) $(id).textContent = '—';
-  for (const id of ['downloads-table', 'browser-table']) empty(id, 'Loading…');
+  for (const id of ['downloads-table', 'browser-table', 'current-versions-table']) empty(id, 'Loading…');
   apiPromise = Promise.resolve(apiBase);
-  summaryPromise = apiPromise.then(api => response(api + '/v1/summary', signal));
+  summaryPromise = apiPromise.then(api => response(api + '/v1/summary?' + new URLSearchParams({timeZone:reportZone()}), signal));
   await Promise.allSettled([
     loadPeriod(),
     summaryPromise.then(data => {
@@ -131,8 +135,16 @@ async function loadAll() {
       $('all-installs').textContent = fmt(data.totals.installs); $('all-plays').textContent = fmt(data.totals.plays); $('all-browsers').textContent = fmt(data.downloadBrowsers);
       $('lifetime-status').textContent = data.totals.since ? `Activity recorded since ${dateLabel(data.totals.since)}` : 'No activity reports received yet.';
       table('browser-table', ['Release', 'Browsers'], data.downloads.map(row => [row.release, row.browsers]));
-      $('updated').textContent = `Activity updated ${new Date(data.asOf).toLocaleString('en-GB', { timeZone: 'UTC' })} UTC`;
-    }).catch(() => { if (!signal.aborted) { $('lifetime-status').textContent = 'Reporting totals unavailable — not zero.'; empty('browser-table', 'Unavailable. Try refreshing data.'); } }),
+      if (Array.isArray(data.currentVersions)) {
+        table('current-versions-table', ['Version', 'Installations'], data.currentVersions.map(row => [row.version, row.installations]));
+        const inferred = data.currentVersions.reduce((sum, row) => sum + row.inferred, 0);
+        $('current-versions-note').textContent = `${fmt(data.totals.installs)} reporting installations in total. ${inferred ? `${fmt(inferred)} older installations estimated from daily history.` : 'Each installation is assigned to its latest reported version.'}`;
+      } else {
+        empty('current-versions-table', 'Current version counts need the API update.');
+        $('current-versions-note').textContent = 'Historical version activity remains available above.';
+      }
+      $('updated').textContent = `Activity updated ${new Date(data.asOf).toLocaleString('en-GB', { timeZone: 'Asia/Kolkata' })} IST`;
+    }).catch(() => { if (!signal.aborted) { $('lifetime-status').textContent = 'Reporting totals unavailable — not zero.'; empty('browser-table', 'Unavailable. Try refreshing data.'); empty('current-versions-table', 'Unavailable. Try refreshing data.'); $('current-versions-note').textContent = 'Current versions unavailable — not zero.'; } }),
     (async () => {
       try {
         const releases = [];
@@ -148,10 +160,19 @@ async function loadAll() {
   if (!signal.aborted) $('refresh').disabled = false;
 }
 $('filters').addEventListener('submit', event => { event.preventDefault(); loadPeriod(); });
-for (const button of document.querySelectorAll('[data-days]')) button.addEventListener('click', () => { const range = presetRange(Number(button.dataset.days)); $('from').value = range.from; $('to').value = range.to; loadPeriod(); });
+for (const button of document.querySelectorAll('[data-days]')) button.addEventListener('click', () => { const range = presetRange(Number(button.dataset.days), new Date(), reportZone()); $('from').value = range.from; $('to').value = range.to; loadPeriod(); });
 $('chart-metric').addEventListener('change', chart);
 $('refresh').addEventListener('click', loadAll);
-$('from').max = $('to').max = isoDay(new Date());
-const initial = presetRange(30); $('from').value = initial.from; $('to').value = initial.to;
+function updateCalendar() {
+  $('from').max = $('to').max = isoDay(new Date(), reportZone());
+  document.querySelectorAll('.report-zone-label').forEach(label => { label.textContent = zoneLabel(); });
+}
+$('report-zone').addEventListener('change', () => {
+  updateCalendar();
+  const range = presetRange(30, new Date(), reportZone()); $('from').value = range.from; $('to').value = range.to;
+  loadAll();
+});
+updateCalendar();
+const initial = presetRange(30, new Date(), reportZone()); $('from').value = initial.from; $('to').value = initial.to;
 document.querySelector('.about').addEventListener('toggle', event => { event.currentTarget.querySelector('summary span').textContent = event.currentTarget.open ? 'View less' : 'View more'; });
 start(loadAll);

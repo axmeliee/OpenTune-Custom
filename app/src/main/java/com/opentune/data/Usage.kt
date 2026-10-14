@@ -65,11 +65,15 @@ object Usage {
                 val batch = pending.sorted().take(64)
                 val payload = buildJsonObject {
                     put("installationId", id)
+                    // Separate current installation state from historical daily plays.
+                    put("currentVersion", BuildConfig.VERSION_NAME)
+                    put("versionRevision", p.getLong("version-revision", 1L))
                     put("days", buildJsonArray { batch.forEach { entry ->
                         val d = entry.substringBefore('|')
                         add(buildJsonObject {
                             put("day", "${d.take(4)}-${d.substring(4,6)}-${d.takeLast(2)}")
-                            put("version", entry.substringAfter('|'))
+                            put("version", entry.split('|')[1])
+                            if (entry.endsWith("|IST")) put("timeZone", "Asia/Kolkata")
                             put("plays", p.getInt("total:$entry", 0))
                         })
                     } })
@@ -90,14 +94,20 @@ object Usage {
             val id = p.getString("installation", null) ?: UUID.randomUUID().toString().also {
                 if (!p.edit().putString("installation", it).commit()) return null
             }
-            val key = "${day(now)}|${version}"
+            val key = "${istDay(now)}|${version}|IST"
             val total = (p.getInt("total:$key", 0) + if (play) 1 else 0).coerceAtMost(10000)
             val pending = p.getStringSet("pending", emptySet()).orEmpty().toMutableSet()
             pending.add(key)
-            val oldest = day(now - 30L * 86400000)
-            pending.removeAll { it.substringBefore('|') < oldest }
+            val oldestUtc = day(now - 30L * 86400000)
+            val oldestIst = istDay(now - 30L * 86400000)
+            fun expired(entry: String) = entry.substringBefore('|') < if (entry.endsWith("|IST")) oldestIst else oldestUtc
+            pending.removeAll(::expired)
             val editor = p.edit().putInt("total:$key", total).putStringSet("pending", pending)
-            p.all.keys.filter { it.startsWith("total:") && it.removePrefix("total:").substringBefore('|') < oldest }.forEach(editor::remove)
+            if (p.getString("current-version", null) != version) {
+                editor.putString("current-version", version)
+                    .putLong("version-revision", p.getLong("version-revision", 0L) + 1)
+            }
+            p.all.keys.filter { it.startsWith("total:") && expired(it.removePrefix("total:")) }.forEach(editor::remove)
             if (!editor.commit()) return null
         return id to pending
     }
@@ -132,6 +142,11 @@ object Usage {
         timeInMillis = now
     }
 
+    /** New daily reports use IST; pending legacy UTC keys keep their original meaning. */
+    internal fun istDay(now: Long): String = Calendar.getInstance(TimeZone.getTimeZone("Asia/Kolkata"), Locale.ROOT).apply {
+        timeInMillis = now
+    }.let { "%04d%02d%02d".format(Locale.ROOT, it.get(Calendar.YEAR), it.get(Calendar.MONTH) + 1, it.get(Calendar.DAY_OF_MONTH)) }
+
     /** "20261009", in UTC so every phone agrees on when a day starts. */
     internal fun day(now: Long): String = utc(now).let { "%04d%02d%02d".format(Locale.ROOT, it.get(Calendar.YEAR), it.get(Calendar.MONTH) + 1, it.get(Calendar.DAY_OF_MONTH)) }
 
@@ -142,3 +157,4 @@ object Usage {
     internal fun month(now: Long): String = utc(now).let { "%04d%02d".format(Locale.ROOT, it.get(Calendar.YEAR), it.get(Calendar.MONTH) + 1) }
 
 }
+

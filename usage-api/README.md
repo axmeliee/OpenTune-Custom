@@ -26,7 +26,7 @@ Use **Sign out** to clear the session from this browser. A copied session token 
 expiry or credential rotation, so rotate credentials if a session is compromised.
 To change or reset credentials, update the two repository secrets and rerun **Usage API**.
 Each run that configures credentials rotates the session key, requiring browsers to sign in again.
-Existing data is preserved. No D1 migration or recreation is needed.
+Existing data is preserved. The workflow applies additive CREATE TABLE IF NOT EXISTS statements; it never recreates or clears the database.
 
 The workflow checks login and logout when credentials are supplied, and always checks that anonymous
 requests cannot read analytics. Build with `python scripts/prepare-usage-assets.py` and run
@@ -43,7 +43,7 @@ The public API URL and D1 binding are configured in this repository; credentials
 ## Deploy the existing backend
 
 Use **Actions → Usage API → Run workflow** on main. It builds private assets and deploys the existing
-Worker and D1 binding using `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID`. Do not recreate the
+Worker and D1 binding, applying the additive schema first, using `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID`. Do not recreate the
 production database. For local tests, use a separate SQLite database rather than fabricated production reports.
 Android release builds honor Settings → About → Count this phone in usage numbers; debug builds do not upload.
 The public ingestion URL stays in `site/usage-config.json`; no authentication credential is shipped in the APK.
@@ -52,8 +52,9 @@ The public ingestion URL stays in `site/usage-config.json`; no authentication cr
 
 * **Unique installations reported:** distinct random UUIDs, generated once in private app storage.
   App upgrades preserve them. Reinstalling/clearing app data creates a new ID. Backups and transfers exclude IDs.
-* **Daily/weekly/monthly active:** distinct installation IDs in the corresponding UTC period,
+* **Daily/weekly/monthly active:** distinct installation IDs in the selected reporting calendar (IST by default; legacy UTC history is separate),
   across versions and days. Week starts Monday. Not a sum of daily counts.
+* **Current versions:** each installation appears once under its latest reported version. New clients send a persisted version revision, so updates/downgrades move one count and delayed retries cannot undo the move. Older clients are inferred from their latest activity day, using numeric version order for same-day upgrades. These estimates cannot identify same-day legacy downgrades. Offline or uninstalled apps remain at their last report. Historical version activity is retained separately.
 * **Plays:** cumulative totals per installation/day/version, persisted before upload.
   Database upsert takes `MAX`, so repeat or reordered requests cannot add plays twice.
   Up to 30 days of pending reports retry on subsequent app use. Lost app storage loses undelivered reports.
@@ -93,17 +94,19 @@ updates, unique periods, repeated downloads, invalid input and request-size/orig
 
 ## Date-range dashboard
 
-`GET /v1/analytics?from=2026-10-01&to=2026-10-09` returns inclusive UTC
+`GET /v1/analytics?from=2026-10-01&to=2026-10-09&timeZone=Asia%2FKolkata` returns inclusive IST
 activity totals, daily counts, version counts and the first recorded activity date.
 Ranges may cover up to 366 days and cannot end in the future. Unique installations
 are deduplicated across the entire period; they are not the sum of daily counts.
-The aggregate response formats and ingestion contracts are unchanged. Read endpoints now require owner authentication. No migration is needed.
+Read endpoints require owner authentication. Omitting `timeZone` preserves UTC API compatibility. The dashboard defaults to IST; the UTC history selector preserves older reports. Existing daily totals have no event times, so they are never relabelled as IST. New app daily rows send `timeZone: "Asia/Kolkata"` and are stored separately; absent/UTC rows keep their original table. All-time totals combine both and deduplicate installations.
+
+New activity payloads also include `currentVersion` and `versionRevision` (a persisted increasing integer). Current version updates and daily aggregates commit atomically. `/v1/summary` adds `currentVersions`, with `version`, `installations` and `inferred` counts; identifiers are never returned. A version revision changes only when the installed version changes, so retries and an offline backlog cannot move a device back to an older version.
 
 Build assets first with `python scripts/prepare-usage-assets.py` from the repository root, then deploy
-with `npx wrangler@4 deploy` from this directory; do not
+with `npx wrangler@4 d1 execute opentune-usage --remote --file=schema.sql` followed by `npx wrangler@4 deploy` from this directory; do not
 recreate the production D1 database. The Usage API workflow can do this with repository
 secrets `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID`. The token needs permission
 to deploy this Worker and access its existing D1 binding. It must not be committed.
-Until the Worker update is deployed, the dashboard safely uses the existing last-30-day
-summary. Older ranges and period-wide unique counts are explicitly unavailable in
+Until the Worker update is deployed, the UTC history view can use the existing last-30-day
+summary; IST stays unavailable until the updated API is deployed. Older ranges and period-wide unique counts are explicitly unavailable in
 that mode. Download totals remain all-time because GitHub provides no daily history.

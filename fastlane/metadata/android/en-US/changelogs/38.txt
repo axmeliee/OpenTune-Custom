@@ -1,0 +1,2 @@
+Faster song starts and skips: FLAC searches no longer block playback. JioSaavn is preferred before YouTube, with a short startup timeout and upcoming-track warm-up.
+Usage analytics now assigns each installation to its current version and reports new daily activity in IST. Older UTC history remains available separately.
