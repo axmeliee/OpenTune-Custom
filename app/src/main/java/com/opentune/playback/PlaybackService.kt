@@ -1327,7 +1327,7 @@ class PlaybackService : MediaLibraryService() {
             com.opentune.data.download.Downloads.enqueue(this, item.toSong())
             val index = player.currentMediaItemIndex
             val position = player.currentPosition
-            player.replaceMediaItem(index, item.buildUpon().setUri(streamUri(mediaId)).build())
+            player.replaceMediaItem(index, item.buildUpon().setUri(streamUri(mediaId, upgraded = false)).build())
             player.seekTo(index, position)
             player.prepare()
             return

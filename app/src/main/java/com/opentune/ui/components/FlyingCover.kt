@@ -112,11 +112,11 @@ fun CoverExpand(url: String?, smallUrl: String? = null) {
     val expanding = FlyingCover.expanding
     LaunchedEffect(expanding) {
         if (!expanding) return@LaunchedEffect
-        // The player lays out its cover in a frame or two; without one (another layout), skip it.
-        var tries = 0
-        while (FlyingCover.playerCover == null && tries++ < 25) kotlinx.coroutines.delay(16)
-        if (FlyingCover.playerCover == null) { FlyingCover.endExpand(); return@LaunchedEffect }
         try {
+            // Also clear the hidden-cover flag when cancelled while waiting for layout.
+            var tries = 0
+            while (FlyingCover.playerCover == null && tries++ < 25) kotlinx.coroutines.delay(16)
+            if (FlyingCover.playerCover == null) return@LaunchedEffect
             t.snapTo(0f)
             t.animateTo(1f, tween(460, easing = CubicBezierEasing(0.2f, 0f, 0f, 1f)))
         } finally {
@@ -158,7 +158,7 @@ fun CoverExpand(url: String?, smallUrl: String? = null) {
  * [url] as its cover. Draws nothing between flights.
  */
 @Composable
-fun CoverFlight(songKey: String?, url: String?, enabled: Boolean) {
+fun CoverFlight(songKey: String?, url: String?, enabled: Boolean, modifier: Modifier = Modifier) {
     var flight by remember { mutableStateOf<Triple<String?, Offset, Rect>?>(null) }
     val t = remember { Animatable(0f) }
     LaunchedEffect(songKey, enabled) {
@@ -190,7 +190,7 @@ fun CoverFlight(songKey: String?, url: String?, enabled: Boolean) {
     val y = from.y + (to.center.y - from.y) * p - with(density) { 90.dp.toPx() } * sin(Math.PI.toFloat() * p) * 0.6f
     val lift = 1f + 0.12f * sin(Math.PI.toFloat() * p)
     Box(
-        Modifier
+        modifier
             .offset { IntOffset((x - size / 2f).roundToInt(), (y - size / 2f).roundToInt()) }
             .size(with(density) { size.toDp() })
             .graphicsLayer {
