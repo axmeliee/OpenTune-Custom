@@ -1,5 +1,6 @@
 """Browser regressions using local files and fixtures; never sends usage reports."""
 import json
+import re
 from datetime import date, timedelta
 from pathlib import Path
 from urllib.parse import urlparse, parse_qs
@@ -73,6 +74,8 @@ with sync_playwright() as p:
         assert page.locator('meta[property="og:image"]').get_attribute('content').endswith('/opentune-logo-current.png')
         page.screenshot(path=str(OUT / f'home-{width}.png'))
         page.goto('http://opentune.test/usage/')
+        assert re.fullmatch(r'dashboard\.[a-f0-9]{12}\.css', page.locator('link[rel=stylesheet]').get_attribute('href'))
+        assert re.fullmatch(r'dashboard\.[a-f0-9]{12}\.js', page.locator('script[type=module]').get_attribute('src'))
         expect(page.locator('#period-plays')).to_have_text('84')
         expect(page.locator('#period-average')).to_have_text('7')
         active_bar = page.locator('#chart .selected').bounding_box()
