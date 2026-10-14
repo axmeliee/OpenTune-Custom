@@ -121,7 +121,7 @@ async function loadAll() {
   $('lifetime-status').textContent = 'Loading totals…'; $('github-status').textContent = 'Loading GitHub totals…';
   for (const id of ['all-installs', 'all-plays', 'all-browsers', 'all-downloads']) $(id).textContent = '—';
   for (const id of ['downloads-table', 'browser-table']) empty(id, 'Loading…');
-  apiPromise = Promise.resolve(location.origin);
+  apiPromise = Promise.resolve(location.origin + '/usage');
   summaryPromise = apiPromise.then(api => response(api + '/v1/summary', signal));
   await Promise.allSettled([
     loadPeriod(),

@@ -75,7 +75,7 @@ export async function analytics(db, range, now = new Date()) {
 export default {
   async fetch(request, env) {
     const url = new URL(request.url);
-    const path = url.pathname;
+    const path = url.pathname.replace(/^\/usage\/v1\/(summary|analytics)$/, '/v1/$1');
     const reporting = ['/v1/activity', '/v1/download'].includes(path) && ['POST', 'OPTIONS'].includes(request.method);
     // Authentication precedes every database read and every static asset response.
     if (!reporting && !(await authorized(request, env))) return locked();

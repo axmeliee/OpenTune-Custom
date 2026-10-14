@@ -17,8 +17,8 @@ summary = {'asOf': iso + 'T12:00:00Z', 'totals': {'installs': 1234, 'plays': 543
 mode = 'normal'
 def route(request):
     url = urlparse(request.request.url)
-    if url.netloc == 'usage.test' and url.path.startswith('/v1/'):
-        if url.path == '/v1/summary':
+    if url.netloc == 'usage.test' and url.path.startswith('/usage/v1/'):
+        if url.path == '/usage/v1/summary':
             request.fulfill(json=summary)
         elif mode == 'legacy':
             request.fulfill(status=404, json={})

@@ -1,26 +1,33 @@
-# Private usage analytics
+# Private usage analytics with Google sign-in
 
-The dashboard is served at https://opentune-usage.create-a-new-site-with-sites.workers.dev/usage/.
-Both the dashboard/assets and aggregate read APIs require HTTP Basic authentication over HTTPS.
-Username: `owner`. Public Pages only links to owner sign-in. Android activity reports and website
-download reports remain anonymous, write-only endpoints.
+Dashboard: https://opentune-usage.create-a-new-site-with-sites.workers.dev/usage/
 
-## Owner password setup
+The Worker verifies Cloudflare Access JWT signatures, issuer, application audience, expiry and owner
+email on every private route, even direct API calls. Missing configuration denies access. Static
+assets use `run_worker_first: true` and no-store responses. Anonymous reporting stays write-only;
+no D1 migration is needed. Google sign-in is managed by Cloudflare Access, not by OpenTune.
 
-Create a random password of at least 32 printable ASCII characters (no spaces) in a password manager.
-Add it as the repository Actions secret `USAGE_ADMIN_PASSWORD` at
-https://github.com/justshivv/Opentune/settings/secrets/actions.
-Run **Actions → Usage API → Run workflow** on `main`. The workflow deploys the existing Worker,
-stores the password as a Worker secret and checks unauthenticated rejection plus authenticated reads.
-Do not put the password in source code, URLs, issue comments or chat. Store it in your password manager.
-Changing the secret and rerunning this workflow rotates the password. Close the private browser window
-to discard the browser's cached Basic login. Missing or invalid server credentials lock all read access.
-The workflow preserves an existing Worker password if the repository secret is absent.
+## One-time Cloudflare setup
 
-Build assets with `python scripts/prepare-usage-assets.py`; test with
-`node --test usage-api/worker.test.mjs usage-api/dashboard/model.test.mjs`.
-`run_worker_first: true` is essential: assets must never bypass authentication.
-No database migration or deletion is required. Existing reporting history is preserved.
+1. In Cloudflare Zero Trust → Integrations → Identity providers, add **Google** using the
+   [official Google setup](https://developers.cloudflare.com/cloudflare-one/integrations/identity-providers/google/).
+   Signing in to the Cloudflare dashboard with Google does not automatically configure Access's Google provider.
+2. Create a self-hosted Access application named **OpenTune owner analytics** for
+   `opentune-usage.create-a-new-site-with-sites.workers.dev/usage` (include all child paths).
+   Protect only `/usage`, not the entire reporting Worker. Select **Google only** as the identity provider.
+3. Add an **Allow** policy with **Include → Emails → your exact Google email**. Do not include Everyone.
+4. Copy the application's Audience (AUD) tag and your team hostname (`your-team.cloudflareaccess.com`).
+5. In GitHub repository Actions secrets, set `ACCESS_TEAM_DOMAIN`, `ACCESS_AUD`, and `ACCESS_OWNER_EMAIL`.
+   Run **Actions → Usage API → Run workflow** on main. The workflow stores these as Worker secrets.
+6. Open the dashboard and sign in with your Google account. A private browser window using a different
+   account must be denied. Data APIs are under `/usage/v1/…`; old `/v1/…` read URLs also require a valid owner JWT.
+
+Never paste Google client secrets, Access cookies or signed tokens in source code or chat.
+The deployment workflow checks anonymous rejection. Only the owner can finish the interactive Google login check.
+To log out, visit the Worker's `/cdn-cgi/access/logout` URL.
+
+Build: `python scripts/prepare-usage-assets.py`.
+Tests: `node --test usage-api/worker.test.mjs usage-api/dashboard/model.test.mjs`.
 
 ## Reporting and aggregation reference
 

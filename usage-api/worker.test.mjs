@@ -14,8 +14,21 @@ function database() {
     }
   };
 }
-const password = 'test-only-password-not-a-real-secret-123456789';
-const auth = {Authorization:'Basic ' + btoa('owner:' + password)};
+const accessEnv = {ACCESS_TEAM_DOMAIN:'opentune-test.cloudflareaccess.com',ACCESS_AUD:'test-audience',ACCESS_OWNER_EMAIL:'owner@example.com'};
+const keys = await crypto.subtle.generateKey({name:'RSASSA-PKCS1-v1_5',modulusLength:2048,publicExponent:new Uint8Array([1,0,1]),hash:'SHA-256'},true,['sign','verify']);
+const jwk = {...await crypto.subtle.exportKey('jwk',keys.publicKey),kid:'test-key',alg:'RS256',use:'sig'};
+globalThis.fetch = async url => {
+  assert.equal(String(url),'https://opentune-test.cloudflareaccess.com/cdn-cgi/access/certs');
+  return Response.json({keys:[jwk]});
+};
+async function jwt(changes={},headerChanges={}) {
+  const encode = value => Buffer.from(JSON.stringify(value)).toString('base64url');
+  const now=Math.floor(Date.now()/1000);
+  const unsigned=encode({alg:'RS256',kid:'test-key',...headerChanges})+'.'+encode({iss:'https://'+accessEnv.ACCESS_TEAM_DOMAIN,aud:[accessEnv.ACCESS_AUD],type:'app',email:accessEnv.ACCESS_OWNER_EMAIL,iat:now,exp:now+3600,...changes});
+  const signature=await crypto.subtle.sign('RSASSA-PKCS1-v1_5',keys.privateKey,new TextEncoder().encode(unsigned));
+  return unsigned+'.'+Buffer.from(signature).toString('base64url');
+}
+const auth = {'Cf-Access-Jwt-Assertion':await jwt()};
 const id='00000000-0000-4000-8000-000000000001';
 const now=new Date('2026-10-09T12:00:00Z');
 const body=(plays=0,version='0.4.2')=>({installationId:id,days:[{day:'2026-10-09',version,plays}]});
@@ -96,24 +109,24 @@ test('range validation rejects impossible, future, reversed, missing and oversiz
     assert.throws(()=>validateRange(new URLSearchParams(query),now));
   }
   assert.deepEqual(validateRange(new URLSearchParams('from=2026-10-09&to=2026-10-09'),now),{from:'2026-10-09',to:'2026-10-09'});
-  assert.equal((await worker.fetch(new Request('https://example.test/v1/analytics?from=bad',{headers:auth}),{USAGE_ADMIN_PASSWORD:password})).status,400);
-  const result = await worker.fetch(new Request('https://example.test/v1/analytics?from=2020-01-01&to=2020-01-02',{headers:auth}),{DB:database(),USAGE_ADMIN_PASSWORD:password});
+  assert.equal((await worker.fetch(new Request('https://example.test/v1/analytics?from=bad',{headers:auth}),accessEnv)).status,400);
+  const result = await worker.fetch(new Request('https://example.test/v1/analytics?from=2020-01-01&to=2020-01-02',{headers:auth}),{DB:database(),...accessEnv});
   assert.equal(result.status,200); assert.equal((await result.json()).totals.active,0);
 });
 
 test('private routes fail closed, including direct asset URLs and spoofed identity headers', async () => {
   for (const path of ['/','/usage/','/usage/index.html','/usage/dashboard.js','/usage/assets.json','/v1/summary','/v1/analytics']) {
     for (const headers of [{}, {Authorization:'Basic !!!!'}, {Authorization:'Basic '+btoa('owner:wrong')}, {'Cf-Access-Authenticated-User-Email':'owner@example.com'}]) {
-      const result = await worker.fetch(new Request('https://example.test'+path,{headers}),{USAGE_ADMIN_PASSWORD:password});
+      const result = await worker.fetch(new Request('https://example.test'+path,{headers}),accessEnv);
       assert.equal(result.status,401); assert.match(result.headers.get('cache-control'),/no-store/);
-      assert.equal(await result.text(),'Owner sign-in required.');
+      assert.match(await result.text(),/Owner sign-in required/);
     }
     assert.equal((await worker.fetch(new Request('https://example.test'+path,{headers:auth}),{})).status,401);
-    assert.equal((await worker.fetch(new Request('https://example.test'+path,{headers:auth}),{USAGE_ADMIN_PASSWORD:'short'})).status,401);
+    assert.equal((await worker.fetch(new Request('https://example.test'+path,{headers:auth}),{...accessEnv,ACCESS_AUD:''})).status,401);
   }
 });
 test('owner can read aggregates and assets, with no-cache and anti-framing headers', async () => {
-  const env={USAGE_ADMIN_PASSWORD:password,DB:database(),ASSETS:{fetch:async()=>new Response('private dashboard',{headers:{'Cache-Control':'public, max-age=3600'}})}};
+  const env={...accessEnv,DB:database(),ASSETS:{fetch:async()=>new Response('private dashboard',{headers:{'Cache-Control':'public, max-age=3600'}})}};
   for (const path of ['/v1/summary','/usage/']) {
     const result=await worker.fetch(new Request('https://example.test'+path,{headers:auth}),env);
     assert.equal(result.status,200); assert.match(result.headers.get('cache-control'),/no-store/);
@@ -121,7 +134,7 @@ test('owner can read aggregates and assets, with no-cache and anti-framing heade
   }
   const cross=await worker.fetch(new Request('https://example.test/v1/summary',{headers:{...auth,Origin:'https://justshivv.github.io'}}),env);
   assert.equal(cross.status,403);
-  const wrongUser=await worker.fetch(new Request('https://example.test/v1/summary',{headers:{Authorization:'Basic '+btoa('other:'+password)}}),env);
+  const wrongUser=await worker.fetch(new Request('https://example.test/v1/summary',{headers:{'Cf-Access-Jwt-Assertion':await jwt({email:'other@example.com'})}}),env);
   assert.equal(wrongUser.status,401);
 });
 test('anonymous reporting stays compatible and cannot reveal stored data', async () => {
@@ -133,4 +146,15 @@ test('anonymous reporting stays compatible and cannot reveal stored data', async
   const download=await worker.fetch(new Request('https://example.test/v1/download',{method:'POST',headers:{'Content-Type':'application/json',Origin:'https://justshivv.github.io'},body:JSON.stringify({browserId:id,release:'0.4.13'})}),env);
   assert.equal(download.status,200);
   assert.equal((await worker.fetch(new Request('https://example.test/v1/summary'),env)).status,401);
+});
+
+test('Access rejects expired, tampered, wrong issuer/audience, non-owner and non-RS256 tokens',async()=>{
+  for (const token of [await jwt({exp:0}),await jwt({email:'intruder@example.com'}),await jwt({aud:['another-app']}),await jwt({iss:'https://evil.example'}),await jwt({type:'service'}),await jwt({nbf:9999999999}),await jwt({}, {alg:'none'}),await jwt({}, {alg:'HS256'}),await jwt()+'.extra',auth['Cf-Access-Jwt-Assertion'].slice(0,-10)+'AAAAAAAAAA']) {
+    const result=await worker.fetch(new Request('https://example.test/v1/summary',{headers:{'Cf-Access-Jwt-Assertion':token}}),accessEnv);
+    assert.equal(result.status,401);
+  }
+});
+test('verified Access cookie authenticates same-origin API requests outside the edge login path',async()=>{
+  const response=await worker.fetch(new Request('https://example.test/v1/summary',{headers:{Cookie:'unrelated=value; CF_Authorization='+auth['Cf-Access-Jwt-Assertion']}}),{...accessEnv,DB:database()});
+  assert.equal(response.status,200);
 });
