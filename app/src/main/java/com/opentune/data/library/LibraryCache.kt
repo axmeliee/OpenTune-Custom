@@ -24,7 +24,7 @@ object LibraryCache {
     private val _playlists = MutableStateFlow<List<ShelfItem>>(emptyList())
     val playlists = _playlists.asStateFlow()
     fun owner(): String = AccountStore.account.value?.email?.takeIf { it.isNotBlank() }
-        ?.let(::hash) ?: "guest"
+        ?.let(::hash) ?: if (AccountStore.signedIn.value) "unidentified" else "guest"
 
     fun init(context: Context) {
         root = File(context.filesDir, "library-cache").apply { mkdirs() }
@@ -41,6 +41,7 @@ object LibraryCache {
     }
 
     fun collection(id: String, owner: String = owner()): Collection? = runCatching {
+        if (owner == "unidentified") return null
         json.decodeFromString(Collection.serializer(), file(owner, id).readText())
     }.getOrNull()
 
@@ -51,7 +52,7 @@ object LibraryCache {
 
     @Synchronized
     fun save(collection: Collection, owner: String) {
-        if (this.owner() != owner) return
+        if (this.owner() != owner || owner == "unidentified") return
         write(file(owner, collection.browseId), json.encodeToString(Collection.serializer(), collection))
         LibraryArtwork.keep(listOf(collection.thumbnailUrl) + collection.songs.map { it.thumbnailUrl })
     }
@@ -59,8 +60,8 @@ object LibraryCache {
     @Synchronized
     fun savePlaylists(items: List<ShelfItem>, owner: String) {
         if (this.owner() != owner) return
-        write(file(owner, "index"), json.encodeToString(ListSerializer(ShelfItem.serializer()), items))
-        if (this.owner() == owner) _playlists.value = items
+        if (owner != "unidentified") write(file(owner, "index"), json.encodeToString(ListSerializer(ShelfItem.serializer()), items))
+        _playlists.value = items
         LibraryArtwork.keep(items.map { it.thumbnailUrl })
     }
 

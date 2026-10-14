@@ -34,9 +34,11 @@ object LibraryArtwork {
     }
 
     fun keep(urls: List<String?>) {
+        scope.launch {
         urls.filterNotNull().mapNotNull { it.artworkAt(PLAYER_ART_PX) }.distinct()
             .filter { it.startsWith("https://") && local(it) == null }
             .forEach { if (pending.add(it)) queue.trySend(it) }
+        }
     }
 
     fun local(url: String): String? = target(url)?.takeIf { it.isFile && it.length() > 0 }?.toURI()?.toString()

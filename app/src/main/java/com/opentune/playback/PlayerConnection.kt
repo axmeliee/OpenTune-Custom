@@ -98,7 +98,12 @@ class PlayerConnection(private val context: Context) {
         }
 
         override fun onPlayerError(error: PlaybackException) {
-            _error.value = error.cause?.message ?: error.message
+            _error.value = when (error.errorCode) {
+                PlaybackException.ERROR_CODE_PARSING_CONTAINER_UNSUPPORTED,
+                PlaybackException.ERROR_CODE_PARSING_CONTAINER_MALFORMED ->
+                    "This audio copy could not be read. Saved downloads will be repaired when connected."
+                else -> error.cause?.message ?: error.message
+            }
         }
 
         override fun onTracksChanged(tracks: Tracks) {
