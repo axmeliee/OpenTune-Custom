@@ -107,6 +107,8 @@ private fun GraphicsLayerScope.drawn(change: CoverChange, p: Float, entering: Bo
     val x = (p - 1f).coerceIn(0f, 1f)    // how far out, while going
     val dir = if (forward) 1f else -1f
     val w = size.width
+    // Graphics layers are reused. Clear effects left by an interrupted dissolve.
+    renderEffect = null
     when (change) {
         CoverChange.FLIP -> {
             rotationY = if (entering) -90f * (1f - e) else 90f * x

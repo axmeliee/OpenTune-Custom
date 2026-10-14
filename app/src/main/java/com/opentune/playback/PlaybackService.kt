@@ -1318,6 +1318,20 @@ class PlaybackService : MediaLibraryService() {
         val item = player.currentMediaItem ?: return
         val mediaId = item.mediaId
         val uri = item.localConfiguration?.uri?.let(::selectedUri)
+        if (uri?.scheme == "file" &&
+            error.errorCode in setOf(PlaybackException.ERROR_CODE_PARSING_CONTAINER_UNSUPPORTED, PlaybackException.ERROR_CODE_PARSING_CONTAINER_MALFORMED) &&
+            com.opentune.data.download.Downloads.entryNow(mediaId)?.path == uri.path) {
+            // Old versions could mark a bad ranged response as complete. Repair it
+            // and let playback use the network instead of retrying the same file.
+            com.opentune.data.download.Downloads.markBroken(mediaId)
+            com.opentune.data.download.Downloads.enqueue(this, item.toSong())
+            val index = player.currentMediaItemIndex
+            val position = player.currentPosition
+            player.replaceMediaItem(index, item.buildUpon().setUri(streamUri(mediaId)).build())
+            player.seekTo(index, position)
+            player.prepare()
+            return
+        }
         if (uri != null && (isUpgradedUri(uri) || externalStreamKeyOf(uri) != null)) {
             Log.w(TAG, "Upgraded stream for $mediaId failed (${error.errorCodeName}); back to the one it started on")
             StreamResolver.dropUpgrade(mediaId)

@@ -1,6 +1,7 @@
 package com.opentune.data.model
 
 /** A playable YouTube Music track. */
+@kotlinx.serialization.Serializable
 data class Song(
     val videoId: String,
     val title: String,

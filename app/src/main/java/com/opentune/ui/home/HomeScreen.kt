@@ -34,6 +34,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ViewList
 import androidx.compose.material.icons.rounded.GraphicEq
 import androidx.compose.material.icons.rounded.GridView
+import androidx.compose.material.icons.rounded.History
 import androidx.compose.material.icons.rounded.Person
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.material3.Icon
@@ -77,6 +78,7 @@ import com.opentune.ui.components.SongListItem
 import com.opentune.ui.rememberLoader
 import com.opentune.ui.type
 
+@OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
 @Composable
 fun HomeScreen(
     contentPadding: PaddingValues,
@@ -94,7 +96,12 @@ fun HomeScreen(
     val hideExplicit = library.hideExplicit
     val more = remember(moreAll, hideExplicit) { ContentFilter.shelves(moreAll, hideExplicit) }
     val records by History.records.collectAsState()
-    val recents = remember(records) { History.recents(records, 24) }
+    val recents = remember(records, hideExplicit) { ContentFilter.songs(History.recents(records, 100), hideExplicit) }
+    var historyOpen by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf(false) }
+    val first = (state as? UiState.Success<List<HomeShelf>>)?.data?.let { ContentFilter.shelves(it, hideExplicit) }.orEmpty()
+    val allShelves = first + more
+    val picks = allShelves.filter { it.isQuickPicks() }
+    val otherShelves = allShelves.filterNot { it.isQuickPicks() }
     val mixes = remember(records) { com.opentune.data.history.DailyMixes.build(records) }
     val ui by AppSettings.ui.collectAsState()
     val signedIn by AccountStore.signedIn.collectAsState()
@@ -105,6 +112,16 @@ fun HomeScreen(
         if (signedIn != seenSignedIn) {
             seenSignedIn = signedIn
             loader.reload(keepContent = true)
+        }
+    }
+
+    if (historyOpen) {
+        androidx.compose.material3.ModalBottomSheet(onDismissRequest = { historyOpen = false }) {
+            if (recents.isEmpty()) Text("Your recently played songs will appear here", Modifier.padding(24.dp))
+            else Recents(recents, ui.recentsAsGrid, actions) {
+                AppSettings.updateUi { it.copy(recentsAsGrid = !it.recentsAsGrid) }
+            }
+            Spacer(Modifier.height(24.dp))
         }
     }
 
@@ -133,12 +150,15 @@ fun HomeScreen(
                         Text(greeting, style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.primary)
                         Text(firstName ?: "What's playing?", style = MaterialTheme.typography.displaySmall)
                     }
+                    IconButton(onClick = { historyOpen = true }) {
+                        Icon(Icons.Rounded.History, "Recently played")
+                    }
                     if (onRecognize != null) {
-                        GlassIconButton(Icons.Rounded.GraphicEq, "Name a song playing nearby", onRecognize, size = 52.dp)
-                        Spacer(Modifier.width(10.dp))
+                        GlassIconButton(Icons.Rounded.GraphicEq, "Name a song playing nearby", onRecognize, size = 44.dp)
+                        Spacer(Modifier.width(4.dp))
                     }
                     com.opentune.ui.components.WithUpdateDot {
-                        GlassIconButton(Icons.Rounded.Person, "Account and settings", onOpenSettings, size = 52.dp) {
+                        GlassIconButton(Icons.Rounded.Person, "Account and settings", onOpenSettings, size = 44.dp) {
                             val photo = account?.thumbnailUrl
                             if (photo != null) Artwork(photo, Modifier.size(44.dp), CircleShape)
                             else Icon(Icons.Rounded.Person, "Account and settings", Modifier.size(26.dp))
@@ -146,15 +166,8 @@ fun HomeScreen(
                     }
                 }
             }
-            if (recents.isNotEmpty()) {
-                item(key = "recents") {
-                    Recents(
-                        songs = recents,
-                        asGrid = ui.recentsAsGrid,
-                        actions = actions,
-                        onToggleLayout = { AppSettings.updateUi { it.copy(recentsAsGrid = !it.recentsAsGrid) } },
-                    )
-                }
+            itemsIndexed(picks, key = { i, shelf -> "pick:$i:${shelf.title}" }) { i, shelf ->
+                QuickPicks(if (i == 0) shelf.copy(title = "Quick picks", subtitle = shelf.title) else shelf, onItemClick)
             }
             if (mixes.isNotEmpty()) {
                 item(key = "mixes") { MixesShelf(mixes, actions) }
@@ -165,13 +178,8 @@ fun HomeScreen(
                     ErrorState(s.message, onRetry = { loader.reload() }, modifier = Modifier.padding(top = 24.dp))
                 }
                 is UiState.Success -> {
-                    val first = ContentFilter.shelves(s.data, hideExplicit)
-                    itemsIndexed(first, key = { i, shelf -> "$i:${shelf.title}" }, contentType = { _, shelf -> shelfType(shelf) }) { _, shelf ->
+                    itemsIndexed(otherShelves, key = { i, shelf -> "shelf:$i:${shelf.title}" }, contentType = { _, shelf -> shelfType(shelf) }) { _, shelf ->
                         HomeShelfView(shelf, onItemClick)
-                    }
-                    // The rest of Home, which arrives a page at a time after the first.
-                    itemsIndexed(more, key = { i, shelf -> "more$i:${shelf.title}" }, contentType = { _, shelf -> shelfType(shelf) }) { _, shelf ->
-                        HomeShelfView(shelf, onItemClick, Modifier.animateItem())
                     }
                 }
             }
@@ -261,25 +269,20 @@ fun HomeShelfView(shelf: HomeShelf, onItemClick: (ShelfItem) -> Unit, modifier: 
 private fun QuickPicks(shelf: HomeShelf, onItemClick: (ShelfItem) -> Unit) {
     Column {
         SectionHeader(shelf.title, subtitle = shelf.subtitle)
-        LazyHorizontalGrid(
-            rows = GridCells.Fixed(4),
-            modifier = Modifier.fillMaxWidth().height(64.dp * 4),
-            contentPadding = PaddingValues(horizontal = 8.dp),
-        ) {
-            items(shelf.items) { item ->
-                Row(
-                    Modifier
-                        .width(300.dp)
-                        .height(64.dp)
-                        .clickable { onItemClick(item) }
-                        .padding(horizontal = 8.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(12.dp),
-                ) {
-                    Artwork(item.thumbnailUrl.artworkAt(ROW_ART_PX), Modifier.size(48.dp))
-                    Column(Modifier.weight(1f)) {
-                        Text(item.title, maxLines = 1, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.bodyLarge)
-                        com.opentune.ui.components.SubtitleLine(item.subtitle, explicit = item.explicit)
+        val pages = rememberPagerState(pageCount = { (shelf.items.size + 3) / 4 })
+        HorizontalPager(state = pages, modifier = Modifier.fillMaxWidth().height(64.dp * 4), verticalAlignment = Alignment.Top) { page ->
+            Column(Modifier.fillMaxWidth()) {
+                for (item in shelf.items.drop(page * 4).take(4)) {
+                    Row(
+                        Modifier.fillMaxWidth().height(64.dp).clickable { onItemClick(item) }.padding(horizontal = 20.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(12.dp),
+                    ) {
+                        Artwork(item.thumbnailUrl.artworkAt(ROW_ART_PX), Modifier.size(48.dp))
+                        Column(Modifier.weight(1f)) {
+                            Text(item.title, maxLines = 1, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.bodyLarge)
+                            com.opentune.ui.components.SubtitleLine(item.subtitle, explicit = item.explicit)
+                        }
                     }
                 }
             }

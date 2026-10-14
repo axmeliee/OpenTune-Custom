@@ -102,6 +102,29 @@ import com.opentune.ui.components.SectionHeader
 fun TogetherScreen(contentPadding: PaddingValues, code: String?, onBack: () -> Unit) {
     val room by Together.room.collectAsState()
     val r = room
+    var handled by rememberSaveable(code) { mutableStateOf(false) }
+    var switchRoom by rememberSaveable(code) { mutableStateOf(false) }
+    val invite = RoomCode.parse(code)
+    val inviteName = Together.savedName.ifBlank { com.opentune.data.account.AccountStore.account.value?.name.orEmpty() }
+    LaunchedEffect(code) {
+        if (!handled && invite != null) {
+            handled = true
+            if (r != null && r.code != invite) switchRoom = true
+            else if (r == null && inviteName.isNotBlank()) Together.join(invite, inviteName)
+        }
+    }
+    if (switchRoom && invite != null) {
+        androidx.compose.material3.AlertDialog(
+            onDismissRequest = { switchRoom = false },
+            title = { Text("Join the invited room?") },
+            text = { Text("This leaves your current room.") },
+            confirmButton = { androidx.compose.material3.TextButton(onClick = {
+                switchRoom = false
+                Together.join(invite, inviteName.ifBlank { "Listener" })
+            }) { Text("Join room") } },
+            dismissButton = { androidx.compose.material3.TextButton(onClick = { switchRoom = false }) { Text("Stay here") } },
+        )
+    }
     Box(Modifier.fillMaxSize().padding(contentPadding)) {
         if (r == null) StartRoom(code, onBack) else RoomView(r, onBack)
     }
@@ -147,7 +170,7 @@ internal fun StartRoom(code: String?, onBack: () -> Unit) {
                     HorizontalDivider(Modifier.weight(1f))
                 }
                 OutlinedTextField(
-                    typed, { typed = it.uppercase().take(16) },
+                    typed, { typed = RoomCode.parse(it)?.pretty ?: it.take(256) },
                     label = { Text("Room code") },
                     placeholder = { Text("K7QX-M2PA-9DTE") },
                     singleLine = true,

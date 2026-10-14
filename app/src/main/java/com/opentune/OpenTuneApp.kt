@@ -38,6 +38,7 @@ class OpenTuneApp : Application(), SingletonImageLoader.Factory {
         ImageLoader.Builder(context)
             .components {
                 add(OkHttpNetworkFetcherFactory(callFactory = { Http.client }))
+                add(coil3.map.Mapper<String, String> { data, _ -> com.opentune.data.library.LibraryArtwork.local(data) })
                 // A cover on your own server is stored without credentials; sign it here.
                 add(coil3.map.Mapper<String, String> { data, _ -> if (Subsonic.isCoverRef(data)) Subsonic.resolveCover(data) else null })
             }
@@ -89,9 +90,11 @@ class OpenTuneApp : Application(), SingletonImageLoader.Factory {
         com.opentune.data.podcasts.Podcasts.init(this)
         AlbumCovers.init(this)
         AutoEq.init(this)
+        com.opentune.data.library.LibraryArtwork.init(this)
         LibraryStore.init(this)
         Downloads.init(this)
         AccountStore.init(this)
+        com.opentune.data.library.LibraryCache.init(this)
         InnerTubeXResolver.init(this)
         // Last session's Home, shown at once and refreshed in the background.
         MusicRepository.init(this)?.let { ScreenCache.put("home", it, at = 0L) }

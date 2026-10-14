@@ -39,6 +39,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.debounce
 import kotlinx.coroutines.flow.drop
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -132,7 +133,7 @@ object Downloads {
     fun fileFor(videoId: String): File? {
         val e = _entries.value[videoId] ?: return null
         if (e.state != DownloadState.DONE) return null
-        return e.path?.let(::File)?.takeIf { it.exists() }
+        return e.path?.let(::File)?.takeIf { it.isFile && it.length() > 0 }
     }
 
     fun artFor(videoId: String): File? =
@@ -166,17 +167,25 @@ object Downloads {
             File(dir, "$videoId.part").delete()
             File(dir, "$videoId.lyrics.json").delete()
         }
-        _entries.value = _entries.value - videoId
+        _entries.update { it - videoId }
     }
 
     fun retry(context: Context, videoId: String) {
         val e = _entries.value[videoId] ?: return
-        _entries.value = _entries.value - videoId
+        _entries.update { it - videoId }
         enqueue(context, e.song.toSong())
     }
 
+    /** A legacy download failed the player's extractor; keep the row so it can be repaired. */
+    fun markBroken(videoId: String) {
+        val entry = _entries.value[videoId] ?: return
+        entry.path?.let { File(it).delete() }
+        put(videoId) { (it ?: entry).copy(state = DownloadState.FAILED, path = null, progress = 0f,
+            error = "Saved audio is incomplete. Tap to download again.") }
+    }
+
     internal fun put(videoId: String, t: (DownloadEntry?) -> DownloadEntry) {
-        _entries.value = _entries.value + (videoId to t(_entries.value[videoId]))
+        _entries.update { entries -> entries + (videoId to t(entries[videoId])) }
     }
 
     internal fun directory(): File = dir ?: error("Downloads not initialised")
@@ -233,6 +242,7 @@ class DownloadWorker(context: Context, params: WorkerParameters) : CoroutineWork
             onProgress(p)
             runCatching { setForegroundAsync(foregroundInfo(title, p)) }
         }
+        DownloadAudio.validate(part)
         if (!part.renameTo(target)) throw IOException("Couldn't save the file")
     }
 
@@ -318,7 +328,7 @@ internal object RangedFetch {
                         while (true) {
                             val start = starts.getOrNull(next.getAndIncrement()) ?: break
                             val end = minOf(start + CHUNK, total) - 1
-                            fetchRange(client, url, headers, start, end, file) { n ->
+                            fetchRange(client, url, headers, start, end, total, file) { n ->
                                 val now = done.addAndGet(n)
                                 val last = reported.get()
                                 if (now - last > 256 * 1024 && reported.compareAndSet(last, now)) onProgress(now.toFloat() / total)
@@ -335,6 +345,7 @@ internal object RangedFetch {
     private fun sizeFrom(client: OkHttpClient, url: String, headers: Map<String, String>): Long {
         val request = Request.Builder().url(url).apply {
             headers.forEach { (k, v) -> header(k, v) }
+            header("Accept-Encoding", "identity")
             header("Range", "bytes=0-0")
         }.build()
         client.newCall(request).execute().use { r ->
@@ -351,6 +362,7 @@ internal object RangedFetch {
         headers: Map<String, String>,
         start: Long,
         end: Long,
+        total: Long,
         file: RandomAccessFile,
         onBytes: (Long) -> Unit,
     ) {
@@ -361,16 +373,25 @@ internal object RangedFetch {
                 runInterruptible {
                     val request = Request.Builder().url(url).apply {
                         headers.forEach { (k, v) -> header(k, v) }
-                        header("Range", "bytes=$start-$end")
+                        header("Accept-Encoding", "identity")
+            header("Range", "bytes=$start-$end")
                     }.build()
                     client.newCall(request).execute().use { response ->
                         if (response.code != 206) throw IOException("Server answered ${response.code}")
+                        if (response.header("Content-Range") != "bytes $start-$end/$total") {
+                            throw IOException("Server returned a different audio range")
+                        }
+                        val type = response.header("Content-Type").orEmpty().lowercase()
+                        if (type.contains("text/") || type.contains("json") || type.contains("html")) {
+                            throw IOException("Server returned a page instead of audio")
+                        }
                         val input = response.body?.byteStream() ?: throw IOException("Empty response")
                         val buf = ByteArray(64 * 1024)
                         var at = start
                         while (true) {
                             val n = input.read(buf)
                             if (n < 0) break
+                            if (at + n > end + 1) throw IOException("Audio range is longer than requested")
                             synchronized(file) { file.seek(at); file.write(buf, 0, n) }
                             at += n
                             got += n

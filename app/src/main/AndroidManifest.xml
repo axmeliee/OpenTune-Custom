@@ -72,6 +72,14 @@
                 <category android:name="android.intent.category.BROWSABLE" />
                 <data android:scheme="opentune" android:host="together" />
             </intent-filter>
+            <!-- GitHub Pages cannot publish assetlinks.json at the domain root;
+                 browsers use the invite landing page when Android has no default handler. -->
+            <intent-filter tools:ignore="AppLinkWarning">
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="https" android:host="justshivv.github.io" android:pathPrefix="/Opentune/together/" />
+            </intent-filter>
             <!-- "Play … on OpenTune" from the Assistant. -->
             <intent-filter>
                 <action android:name="android.media.action.MEDIA_PLAY_FROM_SEARCH" />

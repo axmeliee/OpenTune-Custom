@@ -55,4 +55,30 @@ class RangedFetchTest {
         part.delete()
         Unit
     }
+    @Test fun rejectsWrongRangeEvenWhenResponseHasTheExpectedLength() = runBlocking {
+        rejectsResponse("bytes 1-16/16", ByteArray(16), "audio/mp4")
+    }
+
+    @Test fun rejectsOversizedBodiesBeforeWritingPastTheRange() = runBlocking {
+        rejectsResponse("bytes 0-15/16", ByteArray(32), "audio/mp4")
+    }
+
+    @Test fun rejectsAnErrorPageReturnedAsPartialContent() = runBlocking {
+        rejectsResponse("bytes 0-15/16", ByteArray(16), "text/html")
+    }
+
+    private suspend fun rejectsResponse(range: String, bytes: ByteArray, type: String) {
+        val bad = OkHttpClient.Builder().addInterceptor { chain ->
+            Response.Builder().request(chain.request()).protocol(Protocol.HTTP_1_1).code(206).message("Partial")
+                .header("Content-Range", range).header("Content-Type", type)
+                .body(bytes.toResponseBody()).build()
+        }.build()
+        val part = File.createTempFile("wrong-range", ".part")
+        try {
+            val failure = runCatching { RangedFetch.fetch(bad, "https://media.invalid/audio?clen=16", emptyMap(), part) {} }.exceptionOrNull()
+            assertTrue(failure is java.io.IOException)
+            assertEquals(16L, part.length())
+        } finally { part.delete() }
+    }
+
 }

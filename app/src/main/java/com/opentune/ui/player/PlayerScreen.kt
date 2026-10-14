@@ -205,11 +205,7 @@ fun PlayerScreen(
     val currentIndex by vm.currentIndex.collectAsState()
     val upNext by vm.upNext.collectAsState()
     val ui by AppSettings.ui.collectAsState()
-    // A music video's frame or a local file without art: the album's own cover, when MusicBrainz knows it.
-    val cover by produceState<String?>(null, current.videoId, ui.albumCovers) {
-        value = if (ui.albumCovers && AlbumCovers.wants(current)) AlbumCovers.coverFor(current) else null
-    }
-    val shown = cover?.let { current.copy(thumbnailUrl = it) } ?: current
+    val shown = current
     val source by vm.source.collectAsState()
     val audioFormat by vm.audioFormat.collectAsState()
     val actions = remember(vm, onCollapse) {

@@ -36,6 +36,7 @@ import kotlinx.serialization.json.Json
 import kotlinx.coroutines.withContext
 
 /** An album or playlist page, ready to show. */
+@Serializable
 data class Collection(
     val browseId: String,
     val title: String,
@@ -66,6 +67,7 @@ object MusicRepository {
      */
     val homeMore: StateFlow<List<HomeShelf>> = _homeMore.asStateFlow()
     private var homeMoreJob: Job? = null
+    private var libraryWarmJob: Job? = null
 
     /**
      * Remembers where Home is kept, and returns the first page saved last
@@ -299,10 +301,18 @@ object MusicRepository {
     }
 
     suspend fun collection(browseId: String): Collection = io {
+        val owner = com.opentune.data.library.LibraryCache.owner()
         val response = Innertube.browse(browseId)
         val header = InnertubeParser.parseBrowseHeader(response)
-        val songs = InnertubeParser.parsePlaylistShelf(response)?.songs?.takeIf { it.isNotEmpty() }
-            ?: InnertubeParser.collectSongsDeep(response)
+        val page = InnertubeParser.parsePlaylistShelf(response)
+        val songs = (page?.songs?.takeIf { it.isNotEmpty() } ?: InnertubeParser.collectSongsDeep(response)).toMutableList()
+        var token = page?.continuation
+        val seen = HashSet<String>()
+        while (token != null && seen.add(token) && seen.size <= 100) {
+            val next = InnertubeParser.parsePlaylistContinuation(Innertube.browseContinuation(token))
+            songs += next.songs
+            token = next.continuation
+        }
         Collection(
             browseId = browseId,
             title = header?.title.orEmpty(),
@@ -310,7 +320,7 @@ object MusicRepository {
             // Album rows carry no art of their own; the cover is the header's.
             thumbnailUrl = header?.thumbnailUrl,
             songs = ContentFilter.songs(songs.map { song -> if (song.thumbnailUrl == null) song.copy(thumbnailUrl = header?.thumbnailUrl) else song }),
-        )
+        ).also { com.opentune.data.library.LibraryCache.save(it, owner) }
     }
 
     suspend fun artist(browseId: String): ArtistPage = io {
@@ -319,7 +329,22 @@ object MusicRepository {
 
     /** The signed-in account's playlists on YouTube Music, without the "New playlist" tile. */
     suspend fun libraryPlaylists(): List<ShelfItem> = io {
+        val owner = com.opentune.data.library.LibraryCache.owner()
         InnertubeParser.parseLibraryItems(Innertube.browse("FEmusic_liked_playlists")).filter { it.browseId != null }
+            .also { items ->
+                com.opentune.data.library.LibraryCache.savePlaylists(items, owner)
+                // Fill saved playlists one at a time, without blocking the Library screen.
+                libraryWarmJob?.cancel()
+                libraryWarmJob = scope.launch {
+                    for (item in items) {
+                        val id = item.browseId ?: continue
+                        if (com.opentune.data.library.LibraryCache.owner() != owner) break
+                        if (!com.opentune.data.library.LibraryCache.fresh(id, owner)) {
+                            try { collection(id) } catch (e: CancellationException) { throw e } catch (_: Exception) { }
+                        }
+                    }
+                }
+            }
     }
 
     /** The song and the radio YouTube Music queues after it; the song itself is always kept. */

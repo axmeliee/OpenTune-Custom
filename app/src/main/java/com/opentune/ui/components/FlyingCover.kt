@@ -116,9 +116,12 @@ fun CoverExpand(url: String?, smallUrl: String? = null) {
         var tries = 0
         while (FlyingCover.playerCover == null && tries++ < 25) kotlinx.coroutines.delay(16)
         if (FlyingCover.playerCover == null) { FlyingCover.endExpand(); return@LaunchedEffect }
-        t.snapTo(0f)
-        t.animateTo(1f, tween(460, easing = CubicBezierEasing(0.2f, 0f, 0f, 1f)))
-        FlyingCover.endExpand()
+        try {
+            t.snapTo(0f)
+            t.animateTo(1f, tween(460, easing = CubicBezierEasing(0.2f, 0f, 0f, 1f)))
+        } finally {
+            FlyingCover.endExpand()
+        }
     }
     if (!expanding) return
     val from = FlyingCover.expandStart() ?: return
@@ -158,7 +161,8 @@ fun CoverExpand(url: String?, smallUrl: String? = null) {
 fun CoverFlight(songKey: String?, url: String?, enabled: Boolean) {
     var flight by remember { mutableStateOf<Triple<String?, Offset, Rect>?>(null) }
     val t = remember { Animatable(0f) }
-    LaunchedEffect(songKey) {
+    LaunchedEffect(songKey, enabled) {
+        flight = null
         if (!enabled || songKey == null) return@LaunchedEffect
         val start = FlyingCover.takeStart() ?: return@LaunchedEffect
         // The card may still be arriving for a first song; wait a moment for it.
@@ -167,9 +171,13 @@ fun CoverFlight(songKey: String?, url: String?, enabled: Boolean) {
         while (end == null && tries++ < 20) { kotlinx.coroutines.delay(16); end = FlyingCover.target }
         end ?: return@LaunchedEffect
         flight = Triple(url, start, end)
-        t.snapTo(0f)
-        t.animateTo(1f, tween(720, easing = CubicBezierEasing(0.3f, 0f, 0.15f, 1f)))
-        flight = null
+        try {
+            t.snapTo(0f)
+            t.animateTo(1f, tween(720, easing = CubicBezierEasing(0.3f, 0f, 0.15f, 1f)))
+        } finally {
+            // A skip can cancel this effect before another tap starts a flight.
+            flight = null
+        }
     }
     val f = flight ?: return
     val density = LocalDensity.current
