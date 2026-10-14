@@ -66,3 +66,20 @@ node --test worker.test.mjs
 
 Tests run the actual schema and queries against SQLite, covering retries, out-of-order reports,
 updates, unique periods, repeated downloads, invalid input and request-size/origin checks.
+
+
+## Date-range dashboard
+
+`GET /v1/analytics?from=2026-10-01&to=2026-10-09` returns inclusive UTC
+activity totals, daily counts, version counts and the first recorded activity date.
+Ranges may cover up to 366 days and cannot end in the future. Unique installations
+are deduplicated across the entire period; they are not the sum of daily counts.
+The existing `/v1/summary` and ingestion contracts are unchanged. No migration is needed.
+
+Update the existing Worker with `npx wrangler@4 deploy` from this directory; do not
+recreate the production D1 database. The Usage API workflow can do this with repository
+secrets `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID`. The token needs permission
+to deploy this Worker and access its existing D1 binding. It must not be committed.
+Until the Worker update is deployed, the dashboard safely uses the existing last-30-day
+summary. Older ranges and period-wide unique counts are explicitly unavailable in
+that mode. Download totals remain all-time because GitHub provides no daily history.

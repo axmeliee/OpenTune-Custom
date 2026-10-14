@@ -61,3 +61,40 @@ test('invalid batch does not partially write valid rows',async()=>{
   await assert.rejects(ingest(db,{...body(),days:[...body().days,{day:'invalid',version:'0.4.2',plays:1}]},now));
   assert.equal((await summary(db,now)).totals.installs,0);
 });
+
+
+const { analytics, validateRange } = await import('./worker.mjs');
+test('date range uses inclusive UTC endpoints and distinct installations across days and versions', async () => {
+  const db = database();
+  await ingest(db, { installationId:id, days:[
+    {day:'2026-10-07',version:'0.4.2',plays:90},
+    {day:'2026-10-08',version:'0.4.2',plays:2},
+    {day:'2026-10-09',version:'0.4.2',plays:3},
+    {day:'2026-10-09',version:'0.4.3',plays:1},
+  ] }, now);
+  await ingest(db, {...body(4),installationId:id.replace(/1$/,'2')}, now);
+  const result = await analytics(db, {from:'2026-10-08',to:'2026-10-09'}, now);
+  assert.deepEqual({...result.totals}, {active:2,plays:10});
+  assert.equal(result.coverageSince,'2026-10-07');
+  assert.deepEqual(result.daily.map(row => [row.day,row.active,row.plays]), [['2026-10-08',1,2],['2026-10-09',2,8]]);
+  assert.deepEqual(result.versions.map(row => [row.version,row.installations,row.plays]), [['0.4.2',2,9],['0.4.3',1,1]]);
+  const day = await analytics(db,{from:'2026-10-08',to:'2026-10-08'},now);
+  assert.deepEqual({...day.totals},{active:1,plays:2});
+});
+test('historical activity remains queryable beyond the summary 30 day window', async () => {
+  const db=database();
+  await ingest(db,{installationId:id,days:[{day:'2026-01-01',version:'0.4.2',plays:7}]},new Date('2026-01-01T12:00:00Z'));
+  assert.equal((await summary(db,now)).daily.length,0);
+  assert.equal((await analytics(db,{from:'2026-01-01',to:'2026-01-01'},now)).totals.plays,7);
+  const empty = await analytics(database(),{from:'2026-10-01',to:'2026-10-09'},now);
+  assert.equal(empty.coverageSince,null); assert.deepEqual(empty.daily,[]);
+});
+test('range validation rejects impossible, future, reversed, missing and oversized dates', async () => {
+  for (const query of ['from=2026-02-30&to=2026-03-01','from=2026-10-09&to=2026-10-10','from=2026-10-09&to=2026-10-08','from=2025-01-01&to=2026-10-09','from=bad','']) {
+    assert.throws(()=>validateRange(new URLSearchParams(query),now));
+  }
+  assert.deepEqual(validateRange(new URLSearchParams('from=2026-10-09&to=2026-10-09'),now),{from:'2026-10-09',to:'2026-10-09'});
+  assert.equal((await worker.fetch(new Request('https://example.test/v1/analytics?from=bad'),{})).status,400);
+  const result = await worker.fetch(new Request('https://example.test/v1/analytics?from=2020-01-01&to=2020-01-02'),{DB:database()});
+  assert.equal(result.status,200); assert.equal((await result.json()).totals.active,0);
+});

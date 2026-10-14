@@ -46,6 +46,31 @@ export async function summary(db, now = new Date()) {
     downloadBrowsers: results[7].results[0].browsers };
 }
 
+// Inclusive UTC dates; bounded to keep public dashboard queries predictable.
+export function validateRange(params, now = new Date()) {
+  const from = params.get('from'), to = params.get('to');
+  const valid = value => /^\d{4}-\d{2}-\d{2}$/.test(value || '') &&
+    Number.isFinite(Date.parse(value)) && new Date(value).toISOString().slice(0,10) === value;
+  if (!valid(from) || !valid(to) || from > to || to > now.toISOString().slice(0,10) ||
+      (Date.parse(to) - Date.parse(from)) / DAY >= 366) {
+    throw new Error('Choose valid UTC dates, up to 366 days, ending today or earlier');
+  }
+  return { from, to };
+}
+
+export async function analytics(db, range, now = new Date()) {
+  const { from, to } = range;
+  const results = await db.batch([
+    db.prepare('SELECT COUNT(DISTINCT installation) AS active, COALESCE(SUM(plays),0) AS plays FROM activity WHERE day BETWEEN ? AND ?').bind(from,to),
+    db.prepare('SELECT day, COUNT(DISTINCT installation) AS active, SUM(plays) AS plays FROM activity WHERE day BETWEEN ? AND ? GROUP BY day ORDER BY day').bind(from,to),
+    db.prepare('SELECT version, COUNT(DISTINCT installation) AS installations, SUM(plays) AS plays FROM activity WHERE day BETWEEN ? AND ? GROUP BY version ORDER BY installations DESC, version DESC').bind(from,to),
+    db.prepare('SELECT MIN(day) AS since FROM activity'),
+  ]);
+  return { asOf: now.toISOString(), range, totals: results[0].results[0],
+    daily: results[1].results, versions: results[2].results,
+    coverageSince: results[3].results[0].since };
+}
+
 export default {
   async fetch(request, env) {
     const origin = request.headers.get('Origin');
@@ -57,8 +82,14 @@ export default {
     headers['Access-Control-Allow-Headers']='Content-Type';
     const json = (body,status=200) => new Response(JSON.stringify(body),{status,headers});
     if (request.method==='OPTIONS') return new Response(null,{status:204,headers});
-    const path = new URL(request.url).pathname;
+    const url = new URL(request.url);
+    const path = url.pathname;
     try {
+      if (request.method==='GET' && path==='/v1/analytics') {
+        let range;
+        try { range = validateRange(url.searchParams); } catch(e) { return json({error:e.message},400); }
+        return json(await analytics(env.DB,range));
+      }
       if (request.method==='GET' && path==='/v1/summary') return json(await summary(env.DB));
       if (request.method!=='POST' || !['/v1/activity','/v1/download'].includes(path)) return json({error:'Not found'},404);
       if (!request.headers.get('Content-Type')?.startsWith('application/json')) return json({error:'JSON required'},415);
@@ -82,3 +113,4 @@ export default {
     } catch { return json({error:'Temporarily unavailable; retry the same payload'},503); }
   }
 };
+

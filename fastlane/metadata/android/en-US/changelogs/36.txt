@@ -1,0 +1,4 @@
+• JioSaavn now gets the source-pill light beam, with reduced-motion preferences respected.
+• Usage dashboard: date filters, daily counts, charts, and expandable tables with wrapped values.
+• Website: improved mobile sizing and header visibility, plus the current logo in shared links.
+• SpotiFLAC and playback resolution are unchanged from 0.4.12.
