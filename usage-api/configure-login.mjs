@@ -11,4 +11,7 @@ if(!username && !password) {
   const result=spawnSync('npx',['--yes','wrangler@4','secret','bulk'],{input:JSON.stringify(values),encoding:'utf8',stdio:['pipe','pipe','pipe']});
   if(result.status!==0) throw new Error('Login secret update failed; check Cloudflare deployment permissions.');
   console.log('Owner login configured. Previous browser sessions must sign in again.');
+  // Secret bulk updates publish a new Worker version. Allow edge instances to
+  // settle before testing a session that depends on all three new secrets.
+  await new Promise(resolve=>setTimeout(resolve,30000));
 }
