@@ -8,7 +8,7 @@ require an owner session; anonymous app reporting continues to work.
 
 1. Open [GitHub repository secrets](https://github.com/justshivv/Opentune/settings/secrets/actions).
 2. Add two **Repository secrets**:
-   - `USAGE_ADMIN_USERNAME`: your chosen username (for example `owner`; 3–64 letters, numbers, dots, underscores or hyphens).
+   - `USAGE_ADMIN_USERNAME`: your chosen username (for example `owner`; 3–128 letters, numbers or ._@+- characters; email addresses work too).
    - `USAGE_ADMIN_PASSWORD`: a unique password or passphrase, 16–256 characters long.
 3. Open **Actions → Usage API → Run workflow**, select **main**, and run it.
 4. Open the dashboard and enter those credentials.

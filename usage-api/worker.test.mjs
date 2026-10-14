@@ -184,3 +184,9 @@ test('foreign origins cannot obtain or use a bearer session',async()=>{
   const result=await worker.fetch(new Request('https://example.test/v1/summary',{headers:{Origin:'https://evil.test',Authorization:'Bearer '+auth.Cookie.split('=')[1]}}),loginEnv);
   assert.equal(result.status,403);assert.equal(result.headers.get('Access-Control-Allow-Origin'),null);
 });
+
+test('an email address can be the owner username',async()=>{
+  const env={...loginEnv,USAGE_ADMIN_USERNAME:'owner@example.com'};
+  const result=await worker.fetch(loginRequest('owner@example.com'),env);
+  assert.equal(result.status,303);
+});
