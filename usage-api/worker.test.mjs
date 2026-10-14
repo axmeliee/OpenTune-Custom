@@ -50,7 +50,7 @@ test('reject invalid IDs, negative counts, invalid dates and future/backdated ba
 });
 test('API rejects foreign origins and oversized bodies without touching database',async()=>{
   const rejected=await worker.fetch(new Request('https://example.test/v1/summary',{headers:{Origin:'https://foreign.test'}}),{});
-  assert.equal(rejected.status,401);
+  assert.equal(rejected.status,403);
   const large=await worker.fetch(new Request('https://example.test/v1/activity',{method:'POST',headers:{'Content-Type':'application/json'},body:' '.repeat(17000)}),{});
   assert.equal(large.status,413);
 });
@@ -163,4 +163,24 @@ test('anonymous reporting remains write-only and compatible',async()=>{
   const result=await worker.fetch(new Request('https://example.test/v1/activity',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({installationId:id,days:[{day,version:'0.4.13',plays:3}]})}),env);
   assert.equal(result.status,200);assert.deepEqual(await result.json(),{accepted:1});
   assert.equal((await worker.fetch(new Request('https://example.test/v1/summary'),env)).status,401);
+});
+
+test('GitHub Pages login returns a bearer session without third-party cookies',async()=>{
+  const origin='https://justshivv.github.io';
+  const request=new Request('https://example.test/auth/login',{method:'POST',headers:{Origin:origin,Accept:'application/json','Content-Type':'application/x-www-form-urlencoded'},body:new URLSearchParams({username:'owner',password:loginEnv.USAGE_ADMIN_PASSWORD})});
+  const login=await worker.fetch(request,loginEnv);
+  assert.equal(login.status,200);assert.equal(login.headers.get('set-cookie'),null);assert.equal(login.headers.get('Access-Control-Allow-Origin'),origin);
+  const {token}=await login.json();
+  const result=await worker.fetch(new Request('https://example.test/usage/v1/summary',{headers:{Origin:origin,Authorization:'Bearer '+token}}),{...loginEnv,DB:database()});
+  assert.equal(result.status,200);assert.equal(result.headers.get('Access-Control-Allow-Origin'),origin);
+  const unauthenticated=await worker.fetch(new Request('https://example.test/usage/v1/summary',{headers:{Origin:origin}}),loginEnv);
+  assert.equal(unauthenticated.status,401);assert.equal(unauthenticated.headers.get('Access-Control-Allow-Origin'),origin);
+  const preflight=await worker.fetch(new Request('https://example.test/usage/v1/summary',{method:'OPTIONS',headers:{Origin:origin,'Access-Control-Request-Headers':'authorization'}}),loginEnv);
+  assert.equal(preflight.status,204);assert.match(preflight.headers.get('Access-Control-Allow-Headers'),/Authorization/);
+});
+test('foreign origins cannot obtain or use a bearer session',async()=>{
+  const login=new Request('https://example.test/auth/login',{method:'POST',headers:{Origin:'https://evil.test',Accept:'application/json','Content-Type':'application/x-www-form-urlencoded'},body:new URLSearchParams({username:'owner',password:loginEnv.USAGE_ADMIN_PASSWORD})});
+  assert.equal((await worker.fetch(login,loginEnv)).status,403);
+  const result=await worker.fetch(new Request('https://example.test/v1/summary',{headers:{Origin:'https://evil.test',Authorization:'Bearer '+auth.Cookie.split('=')[1]}}),loginEnv);
+  assert.equal(result.status,403);assert.equal(result.headers.get('Access-Control-Allow-Origin'),null);
 });

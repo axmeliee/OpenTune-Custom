@@ -1,6 +1,6 @@
 # Private usage analytics with username and password
 
-Open https://opentune-usage.create-a-new-site-with-sites.workers.dev/usage/ to sign in.
+Open https://justshivv.github.io/Opentune/usage/ to sign in. Login, analytics and sign-out all stay at this URL.
 Google sign-in and Cloudflare Access are no longer used. Both the dashboard and read APIs
 require an owner session; anonymous app reporting continues to work.
 
@@ -21,8 +21,7 @@ The old `ACCESS_*` secrets are unused and may be deleted.
 
 ## Sessions and password changes
 
-Sessions expire after eight hours. Cookies are Secure, HttpOnly and SameSite=Strict;
-passwords are never stored in browser storage. Login attempts are limited to five per minute per IP.
+Sessions expire after eight hours. GitHub Pages keeps the signed session token in sessionStorage for the current tab, so refresh works without third-party cookies. Passwords are never stored. The interface is static/public; the Worker authenticates every request for private data. A strict content security policy limits scripts and connections. The legacy Worker URL still uses Secure, HttpOnly, SameSite=Strict cookies. Login attempts are limited to five per minute per IP.
 Use **Sign out** to clear the session from this browser. A copied session token remains valid until
 expiry or credential rotation, so rotate credentials if a session is compromised.
 To change or reset credentials, update the two repository secrets and rerun **Usage API**.

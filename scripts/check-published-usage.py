@@ -1,4 +1,4 @@
-"""Read-only check: Pages no longer serves the dashboard."""
+"""Read-only check: Pages serves the login/dashboard interface and correct share image."""
 from time import sleep, time
 from pathlib import Path
 from hashlib import sha256
@@ -8,8 +8,12 @@ for attempt in range(6):
     try:
         with urlopen(Request(base + '?private=' + str(int(time())), headers={'Cache-Control':'no-cache'}), timeout=20) as response:
             html = response.read().decode()
-        assert 'Private analytics' in html and 'Owner sign-in' in html
-        assert 'dashboard.' not in html and 'id="chart"' not in html
+        assert 'id="owner-login"' in html and 'data-host="pages"' in html
+        assert 'id="owner-dashboard" hidden' in html and 'name="password"' in html
+        manifest = __import__('json').loads((Path(__file__).resolve().parents[1] / 'site/usage/assets.json').read_text())
+        for name, expected in manifest['assets'].items():
+            with urlopen(base + name, timeout=20) as response:
+                assert sha256(response.read()).hexdigest() == expected
         home = 'https://justshivv.github.io/Opentune/'
         with urlopen(Request(home + '?preview=' + str(int(time())), headers={'Cache-Control':'no-cache'}), timeout=20) as response:
             metadata = response.read().decode()
@@ -19,7 +23,7 @@ for attempt in range(6):
             published = response.read()
         local = Path(__file__).resolve().parents[1] / 'site' / image
         assert sha256(published).digest() == sha256(local.read_bytes()).digest()
-        print('Verified private Pages entry and exact social preview image published.')
+        print('Verified Pages login/dashboard assets and exact social preview image published.')
         break
     except Exception:
         if attempt == 5: raise

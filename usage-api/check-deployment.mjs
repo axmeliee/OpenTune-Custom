@@ -17,6 +17,12 @@ for(let attempt=0;;attempt++) {
     break;
   } catch(error) { if(attempt===5) throw error;await new Promise(resolve=>setTimeout(resolve,5000)); }
 }
+const pagesPreflight=await read('/usage/v1/summary',{method:'OPTIONS',headers:{Origin:'https://justshivv.github.io','Access-Control-Request-Headers':'authorization'}});
+assert.equal(pagesPreflight.status,204);
+assert.match(pagesPreflight.headers.get('Access-Control-Allow-Headers'),/Authorization/);
+const blocked=await read('/usage/v1/summary',{headers:{Origin:'https://justshivv.github.io'}});
+assert.equal(blocked.status,401);
+assert.equal(blocked.headers.get('Access-Control-Allow-Origin'),'https://justshivv.github.io');
 const preflight=await read('/v1/activity',{method:'OPTIONS',headers:{Origin:'https://justshivv.github.io'}});
 assert.equal(preflight.status,204);
 if(process.env.USAGE_ADMIN_USERNAME && process.env.USAGE_ADMIN_PASSWORD) {
@@ -27,5 +33,11 @@ if(process.env.USAGE_ADMIN_USERNAME && process.env.USAGE_ADMIN_PASSWORD) {
   for(const path of ['/usage/','/usage/v1/summary']) assert.equal((await read(path,{headers})).status,200);
   const logout=await read('/auth/logout',{method:'POST',headers:{...headers,Origin:base}});
   assert.match(logout.headers.get('set-cookie'),/Max-Age=0/);
-  console.log('Verified login, private dashboard/API, logout and anonymous rejection.');
+  const pagesLogin=await read('/auth/login',{method:'POST',headers:{Origin:'https://justshivv.github.io',Accept:'application/json','Content-Type':'application/x-www-form-urlencoded'},body:new URLSearchParams({username:process.env.USAGE_ADMIN_USERNAME,password:process.env.USAGE_ADMIN_PASSWORD})});
+  assert.equal(pagesLogin.status,200);
+  assert.equal(pagesLogin.headers.get('set-cookie'),null);
+  const {token}=await pagesLogin.json();
+  const pagesRead=await read('/usage/v1/summary',{headers:{Origin:'https://justshivv.github.io',Authorization:'Bearer '+token}});
+  assert.equal(pagesRead.status,200);
+  console.log('Verified Pages bearer login, Worker cookie login, private data and anonymous rejection.');
 } else console.log('Verified login form and anonymous rejection. Add owner credentials to enable sign-in.');

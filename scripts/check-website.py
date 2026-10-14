@@ -17,22 +17,36 @@ summary = {'asOf': iso + 'T12:00:00Z', 'totals': {'installs': 1234, 'plays': 543
            'versions': [], 'downloads': [{'release': '0.4.' + str(i), 'browsers': i + 1} for i in range(12)], 'downloadBrowsers': 99}
 login_html = subprocess.check_output(['node', '--input-type=module', '-e',
     "import {authRoute} from './usage-api/auth.mjs'; console.log(await (await authRoute(new Request('https://usage.test/login'),{})).text());"], text=True, cwd=ROOT.parent)
+backend = 'opentune-usage.create-a-new-site-with-sites.workers.dev'
 mode = 'normal'
 def route(request):
     url = urlparse(request.request.url)
-    if url.netloc == 'usage.test' and url.path.startswith('/usage/v1/'):
+    cors = {'Access-Control-Allow-Origin':'http://opentune.test','Access-Control-Allow-Headers':'Authorization, Content-Type, Accept','Access-Control-Allow-Methods':'GET, POST, OPTIONS'}
+    if url.netloc == backend and request.request.method == 'OPTIONS':
+        request.fulfill(status=204, headers=cors)
+        return
+    if url.netloc == backend and url.path == '/auth/login':
+        values = parse_qs(request.request.post_data or '')
+        valid = values.get('username') == ['owner'] and values.get('password') == ['fixture-password-1234']
+        request.fulfill(status=200 if valid else 401, json={'token':'browser-fixture-token'} if valid else {'error':'incorrect'}, headers=cors)
+        return
+    if url.netloc in ('usage.test', backend) and url.path.startswith('/usage/v1/'):
+        if url.netloc == backend and (request.request.headers.get('authorization') != 'Bearer browser-fixture-token' or mode == 'expired'):
+            request.fulfill(status=401, json={}, headers=cors)
+            return
         if url.path == '/usage/v1/summary':
-            request.fulfill(json=summary)
+            request.fulfill(json=summary, headers=cors)
         elif mode == 'legacy':
-            request.fulfill(status=404, json={})
+            request.fulfill(status=404, json={}, headers=cors)
         elif mode == 'failed':
-            request.fulfill(status=503, json={})
+            request.fulfill(status=503, json={}, headers=cors)
         else:
             args = parse_qs(url.query)
             start, end = args['from'][0], args['to'][0]
             request.fulfill(json={'asOf': summary['asOf'], 'range': {'from': start, 'to': end}, 'coverageSince': '2026-01-01', 'totals': {'active': 12, 'plays': 84},
-                                 'daily': [{'day': end, 'active': 12, 'plays': 84}], 'versions': [{'version': '0.4.13-' + 'verylonglabel' * 9, 'installations': 12, 'plays': 84}]})
+                                 'daily': [{'day': end, 'active': 12, 'plays': 84}], 'versions': [{'version': '0.4.13-' + 'verylonglabel' * 9, 'installations': 12, 'plays': 84}]}, headers=cors)
     elif url.netloc == 'api.github.com':
+        assert 'authorization' not in request.request.headers, 'Owner session must never reach GitHub'
         request.fulfill(json=[{'tag_name': 'v0.4.' + str(i), 'assets': [{'name': 'app.apk', 'download_count': 10}]} for i in range(12)] if '/releases' in url.path else {})
     elif url.netloc == 'usage.test' and url.path == '/login':
         request.fulfill(body=login_html, content_type='text/html')
@@ -79,14 +93,22 @@ with sync_playwright() as p:
         assert page.locator('meta[property="og:image"]').get_attribute('content').endswith('/share-waveform-2026.png')
         page.screenshot(path=str(OUT / f'home-{width}.png'))
         page.goto('http://opentune.test/usage/')
-        expect(page.locator('h1')).to_have_text('Private analytics')
-        expect(page.locator('#chart')).to_have_count(0)
-        page.goto('https://usage.test/login')
-        expect(page.get_by_label('Username')).to_be_visible()
-        expect(page.get_by_label('Password')).to_have_attribute('type', 'password')
+        expect(page.locator('#owner-login')).to_be_visible()
+        expect(page.locator('#owner-dashboard')).to_be_hidden()
+        page.get_by_label('Username').fill('owner')
+        page.get_by_label('Password').fill('wrong')
+        page.get_by_role('button', name='Sign in', exact=True).click()
+        expect(page.locator('#login-error')).to_contain_text('Incorrect username or password')
+        expect(page.get_by_label('Password')).to_have_value('')
         no_overflow(page)
         page.screenshot(path=str(OUT / f'login-{width}.png'))
-        page.goto('https://usage.test/usage/')
+        page.get_by_label('Password').fill('fixture-password-1234')
+        page.get_by_role('button', name='Sign in', exact=True).click()
+        expect(page.locator('#period-plays')).to_have_text('84')
+        assert page.url == 'http://opentune.test/usage/'
+        page.reload()
+        expect(page.locator('#period-plays')).to_have_text('84')
+        expect(page.locator('#owner-login')).to_be_hidden()
         assert re.fullmatch(r'dashboard\.[a-f0-9]{12}\.css', page.locator('link[rel=stylesheet]').get_attribute('href'))
         assert re.fullmatch(r'dashboard\.[a-f0-9]{12}\.js', page.locator('script[type=module]').get_attribute('src'))
         expect(page.locator('#period-plays')).to_have_text('84')
@@ -127,6 +149,10 @@ with sync_playwright() as p:
         page.locator('[data-days="30"]').click()
         expect(page.locator('#daily-table tbody tr')).to_have_count(7)
         page.screenshot(path=str(OUT / f'usage-{width}.png'), full_page=True)
+        page.get_by_role('button', name='Sign out').click()
+        expect(page.locator('#owner-login')).to_be_visible()
+        expect(page.locator('#owner-dashboard')).to_be_hidden()
+        assert page.evaluate("sessionStorage.getItem('opentune.owner.session')") is None
         assert not errors, errors
         context.close()
     context = browser.new_context()
@@ -143,6 +169,20 @@ with sync_playwright() as p:
     page.locator('[data-days="7"]').click()
     expect(page.locator('#period-status')).to_contain_text('Activity unavailable')
     expect(page.locator('#period-plays')).to_have_text('—')
+    context.close()
+    context = browser.new_context()
+    context.route('**/*', route)
+    page = context.new_page()
+    mode = 'normal'
+    page.goto('http://opentune.test/usage/')
+    page.get_by_label('Username').fill('owner')
+    page.get_by_label('Password').fill('fixture-password-1234')
+    page.get_by_role('button', name='Sign in', exact=True).click()
+    expect(page.locator('#period-plays')).to_have_text('84')
+    mode = 'expired'
+    page.get_by_role('button', name='Refresh data').click()
+    expect(page.locator('#owner-login')).to_be_visible()
+    expect(page.locator('#owner-dashboard')).to_be_hidden()
     context.close()
     browser.close()
 print('Passed mobile refresh/header, dashboard dates, expansion, wrapping and API failure checks.')

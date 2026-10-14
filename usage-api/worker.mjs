@@ -74,22 +74,27 @@ export async function analytics(db, range, now = new Date()) {
 
 export default {
   async fetch(request, env) {
-    const authentication = await authRoute(request, env);
-    if (authentication) return authentication;
     const url = new URL(request.url);
     const path = url.pathname.replace(/^\/usage\/v1\/(summary|analytics)$/, '/v1/$1');
-    const reporting = ['/v1/activity', '/v1/download'].includes(path) && ['POST', 'OPTIONS'].includes(request.method);
-    // Authentication precedes every database read and every static asset response.
-    if (!reporting && !(await authorized(request, env))) return locked(request);
     const origin = request.headers.get('Origin');
     const allowed = (env.ALLOWED_ORIGINS || 'https://justshivv.github.io').split(',');
     const headers = { ...privateHeaders, 'Content-Type':'application/json' };
-    if (origin && origin !== url.origin && (!reporting || !allowed.includes(origin))) return new Response('{}', {status:403,headers});
+    if (origin && origin !== url.origin && !allowed.includes(origin)) return new Response('{}', {status:403,headers});
     if (origin) headers['Access-Control-Allow-Origin']=origin;
     headers['Access-Control-Allow-Methods']='GET, POST, OPTIONS';
-    headers['Access-Control-Allow-Headers']='Content-Type';
+    headers['Access-Control-Allow-Headers']='Content-Type, Authorization, Accept';
+    const cors = response => {
+      const result = new Response(response.body,response);
+      if(origin) result.headers.set('Access-Control-Allow-Origin',origin);
+      return result;
+    };
     const json = (body,status=200) => new Response(JSON.stringify(body),{status,headers});
-    if (request.method==='OPTIONS') return new Response(null,{status:204,headers});
+    if(request.method==='OPTIONS' && ['/auth/login','/auth/logout','/v1/activity','/v1/download','/v1/summary','/v1/analytics'].includes(path)) return new Response(null,{status:204,headers});
+    const authentication = await authRoute(request, env);
+    if (authentication) return cors(authentication);
+    const reporting = ['/v1/activity', '/v1/download'].includes(path) && request.method==='POST';
+    // Static Pages contains no private data; every read is authorized here.
+    if (!reporting && !(await authorized(request, env))) return cors(locked(request));
     try {
       if (['GET', 'HEAD'].includes(request.method) && !path.startsWith('/v1/')) {
         if (path === '/') return new Response(null, {status:302, headers:{...privateHeaders, Location:'/usage/'}});

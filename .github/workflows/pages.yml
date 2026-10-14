@@ -5,7 +5,7 @@ name: Website
 on:
   push:
     branches: [main]
-    paths: ["site/**", ".github/workflows/pages.yml", "scripts/prepare-usage-assets.py", "scripts/check-published-usage.py"]
+    paths: ["site/**", "usage-api/dashboard/**", ".github/workflows/pages.yml", "scripts/prepare-usage-assets.py", "scripts/check-published-usage.py"]
   # After every release, so the download buttons name the new build without the
   # page being edited. A release made by the Release workflow's own token doesn't
   # send a release event, hence workflow_run as well.

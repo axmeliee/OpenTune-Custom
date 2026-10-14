@@ -2,7 +2,7 @@ const COOKIE = '__Host-opentune_session';
 const HOURS = 8 * 60 * 60;
 const encoder = new TextEncoder();
 export const privateHeaders = {
-  'Cache-Control':'private, no-store, max-age=0', 'Vary':'Cookie, Origin',
+  'Cache-Control':'private, no-store, max-age=0', 'Vary':'Cookie, Authorization, Origin',
   'X-Robots-Tag':'noindex, nofollow, noarchive', 'X-Content-Type-Options':'nosniff', 'Referrer-Policy':'no-referrer',
   'Content-Security-Policy':"default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; connect-src 'self' https://api.github.com; img-src 'self'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'",
 };
@@ -27,7 +27,8 @@ async function equal(a,b) {
 }
 export async function authorized(request,env) {
   if (!configured(env)) return false;
-  const token=request.headers.get('Cookie')?.split(';').map(s=>s.trim()).find(s=>s.startsWith(COOKIE+'='))?.slice(COOKIE.length+1);
+  const bearer=request.headers.get('Authorization');
+  const token=bearer?.startsWith('Bearer ') ? bearer.slice(7) : request.headers.get('Cookie')?.split(';').map(s=>s.trim()).find(s=>s.startsWith(COOKIE+'='))?.slice(COOKIE.length+1);
   if (!token || token.length>2048) return false;
   try {
     const parts=token.split('.'); if(parts.length!==2) return false;
@@ -52,7 +53,10 @@ export async function authRoute(request,env) {
   if (path==='/login' && request.method==='GET') return await authorized(request,env) ? redirect('/usage/') : page(configured(env)?'':'Owner login is not configured yet.');
   if (!['/auth/login','/auth/logout'].includes(path)) return null;
   if (request.method!=='POST') return new Response('Method not allowed',{status:405,headers:{...privateHeaders,Allow:'POST'}});
-  if (url.protocol!=='https:' || request.headers.get('Origin')!==url.origin) return new Response('Request rejected',{status:403,headers:privateHeaders});
+  const json=request.headers.get('Accept')==='application/json';
+  const origin=request.headers.get('Origin');
+  const trustedPage=json && (env.ALLOWED_ORIGINS || 'https://justshivv.github.io').split(',').includes(origin);
+  if (url.protocol!=='https:' || (origin!==url.origin && !trustedPage)) return new Response('Request rejected',{status:403,headers:privateHeaders});
   if (path==='/auth/logout') return redirect('/login',cookie('',0));
   if (!configured(env) || !env.LOGIN_LIMITER) return page('Owner login is not configured yet.',503);
   // Cloudflare's per-IP limiter stores no IPs in the usage database. Fail closed if unavailable.
@@ -73,5 +77,7 @@ export async function authRoute(request,env) {
     return page('Incorrect username or password.',401);
   const payload=base64(encoder.encode(JSON.stringify({user,exp:Math.floor(Date.now()/1000)+HOURS})));
   const signature=base64(await crypto.subtle.sign('HMAC',await key(env),encoder.encode(payload)));
-  return redirect('/usage/',cookie(payload+'.'+signature,HOURS));
+  const token=payload+'.'+signature;
+  if(json) return Response.json({token,expiresIn:HOURS},{headers:privateHeaders});
+  return redirect('/usage/',cookie(token,HOURS));
 }

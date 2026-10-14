@@ -23,3 +23,5 @@ input,select{font-size:16px}
 .chart-sparse .bar-fill { max-width: 44px; }
 .bar-value { font-size: 12px; line-height: 18px; color: var(--text); white-space: nowrap; }
 .bar.selected .bar-label { color: var(--text); }
+
+[hidden]{display:none!important}#owner-login{min-height:100svh;display:grid;place-items:center;padding:24px}.login-card{width:min(100%,420px);border:1px solid var(--line);border-radius:24px;background:var(--panel);padding:32px}.login-card h1{font-size:30px;letter-spacing:-.03em}.login-card p{color:var(--muted);line-height:1.6}.login-card label{display:block;margin:18px 0 6px}.login-card input,.login-card button{width:100%}.login-card button{margin-top:18px}.login-card .error{color:#ffb6ac;overflow-wrap:anywhere}.login-card a{color:var(--accent)}

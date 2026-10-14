@@ -1,3 +1,4 @@
+import { apiBase, request, start } from './session.mjs';
 import { isoDay, presetRange, rangeError, dailyRows, legacyAnalytics } from './model.mjs';
 const $ = id => document.getElementById(id);
 const fmt = value => Number.isFinite(value) ? value.toLocaleString('en-US', { maximumFractionDigits: 1 }) : '—';
@@ -5,8 +6,7 @@ const dateLabel = day => new Date(day + 'T00:00:00Z').toLocaleDateString('en-GB'
 let apiPromise, summaryPromise, allController, periodController, periodData, selectedDay;
 const node = (tag, text, className) => { const el = document.createElement(tag); if (text != null) el.textContent = text; if (className) el.className = className; return el; };
 async function response(url, signal) {
-  const result = await fetch(url, { cache: 'no-store', signal: AbortSignal.any([signal, AbortSignal.timeout(12000)]) });
-  if (result.status === 401) location.replace('/login');
+  const result = await request(url, signal);
   if (!result.ok) { const error = new Error('HTTP ' + result.status); error.status = result.status; throw error; }
   return result.json();
 }
@@ -122,7 +122,7 @@ async function loadAll() {
   $('lifetime-status').textContent = 'Loading totals…'; $('github-status').textContent = 'Loading GitHub totals…';
   for (const id of ['all-installs', 'all-plays', 'all-browsers', 'all-downloads']) $(id).textContent = '—';
   for (const id of ['downloads-table', 'browser-table']) empty(id, 'Loading…');
-  apiPromise = Promise.resolve(location.origin + '/usage');
+  apiPromise = Promise.resolve(apiBase);
   summaryPromise = apiPromise.then(api => response(api + '/v1/summary', signal));
   await Promise.allSettled([
     loadPeriod(),
@@ -154,4 +154,4 @@ $('refresh').addEventListener('click', loadAll);
 $('from').max = $('to').max = isoDay(new Date());
 const initial = presetRange(30); $('from').value = initial.from; $('to').value = initial.to;
 document.querySelector('.about').addEventListener('toggle', event => { event.currentTarget.querySelector('summary span').textContent = event.currentTarget.open ? 'View less' : 'View more'; });
-loadAll();
+start(loadAll);
