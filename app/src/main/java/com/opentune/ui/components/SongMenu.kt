@@ -27,6 +27,8 @@ import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.Album
 import androidx.compose.material.icons.rounded.Download
 import androidx.compose.material.icons.rounded.DownloadDone
+import androidx.compose.material.icons.rounded.Close
+import androidx.compose.material.icons.rounded.DeleteOutline
 import androidx.compose.material.icons.rounded.Favorite
 import androidx.compose.material.icons.rounded.FavoriteBorder
 import androidx.compose.material.icons.rounded.NotificationsActive
@@ -136,8 +138,8 @@ fun SongMenuSheet(
                 }
                 if (!local) {
                     val (icon, label) = when (download?.state) {
-                        DownloadState.DONE -> Icons.Rounded.DownloadDone to "Saved"
-                        DownloadState.QUEUED, DownloadState.DOWNLOADING -> Icons.Rounded.Download to "${(download.progress * 100).toInt()}%"
+                        DownloadState.DONE -> Icons.Rounded.DeleteOutline to "Remove"
+                        DownloadState.QUEUED, DownloadState.DOWNLOADING -> Icons.Rounded.Close to "Cancel"
                         DownloadState.FAILED -> Icons.Rounded.Download to "Retry"
                         null -> Icons.Rounded.Download to "Download"
                     }
@@ -166,6 +168,14 @@ fun SongMenuSheet(
         val card = LocalFloatingCard.current
         val close: () -> Unit = { card?.close() ?: onDismiss() }
         Column(Modifier.weight(1f).verticalScroll(rememberScrollState())) {
+            if (!local && download != null) {
+                val downloading = download.state == DownloadState.QUEUED || download.state == DownloadState.DOWNLOADING
+                MenuRow(if (downloading) Icons.Rounded.Close else Icons.Rounded.DeleteOutline,
+                    if (downloading) "Cancel download" else "Remove download") {
+                    Downloads.remove(context, song.videoId)
+                    close()
+                }
+            }
             if (actions != null) {
                 MenuRow(Icons.AutoMirrored.Rounded.PlaylistPlay, "Play next") { actions.playNext(song); close() }
                 MenuRow(Icons.AutoMirrored.Rounded.QueueMusic, "Add to queue") { actions.addToQueue(song); close() }

@@ -31,6 +31,8 @@ import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.Download
 import androidx.compose.material.icons.rounded.DownloadDone
+import androidx.compose.material.icons.rounded.Close
+import androidx.compose.material.icons.rounded.DeleteOutline
 import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
@@ -65,6 +67,10 @@ import com.opentune.data.model.artworkAt
 import com.opentune.data.model.ROW_ART_PX
 import com.opentune.ui.components.Artwork
 import com.opentune.ui.components.FloatingCard
+import com.opentune.ui.components.FloatingDialog
+import com.opentune.ui.components.MenuRow
+import com.opentune.ui.components.SheetButton
+import com.opentune.data.download.downloadSelection
 import com.opentune.ui.components.Haptics
 import com.opentune.ui.components.rememberHaptics
 import kotlinx.coroutines.delay
@@ -80,23 +86,57 @@ fun DownloadAllButton(songs: List<Song>, modifier: Modifier = Modifier) {
     val context = LocalContext.current
     val haptics = rememberHaptics()
     val entries by Downloads.entries.collectAsState()
-    val wanted = remember(songs) { songs.filterNot { it.videoId.startsWith("local:") }.distinctBy { it.videoId } }
-    val done = wanted.count { entries[it.videoId]?.state == DownloadState.DONE }
-    val going = wanted.count { entries[it.videoId]?.state.let { s -> s == DownloadState.QUEUED || s == DownloadState.DOWNLOADING } }
+    val selection = remember(songs, entries) { downloadSelection(songs, entries) }
+    val wanted = selection.wanted
+    val done = selection.complete.size
+    val going = selection.active.size
+    var options by remember { mutableStateOf(false) }
+    var confirmRemove by remember { mutableStateOf(false) }
     val all = wanted.isNotEmpty() && done == wanted.size
     var started by remember { mutableStateOf(false) }
     LaunchedEffect(all) { if (all && started) haptics.pattern(Haptics.Pattern.DONE) }
     val progress by animateFloatAsState(if (wanted.isEmpty()) 0f else done.toFloat() / wanted.size, tween(500), label = "downloaded")
     val scheme = MaterialTheme.colorScheme
+    val downloadRemaining = {
+        started = true
+        wanted.forEach { Downloads.enqueue(context, it) }
+    }
+    if (options) FloatingCard(onDismiss = { options = false }, title = "Playlist downloads", icon = Icons.Rounded.Download) {
+        Text("$done of ${wanted.size} songs saved · $going pending", Modifier.padding(horizontal = 24.dp, vertical = 12.dp),
+            style = MaterialTheme.typography.bodyMedium)
+        if (done + going < wanted.size) MenuRow(Icons.Rounded.Download, "Download remaining songs") {
+            downloadRemaining()
+            options = false
+        }
+        if (going > 0) MenuRow(Icons.Rounded.Close, "Cancel downloads") {
+            started = false
+            Downloads.cancelAll(context, wanted)
+            options = false
+        }
+        if (selection.stored.isNotEmpty()) MenuRow(Icons.Rounded.DeleteOutline, "Remove all downloads") {
+            options = false
+            confirmRemove = true
+        }
+    }
+    if (confirmRemove) FloatingDialog(
+        onDismissRequest = { confirmRemove = false },
+        title = { Text("Remove playlist downloads?") },
+        text = { Text("Removes this list’s downloaded audio and cancels unfinished downloads. Your playlist stays in your library. Songs shared with other playlists will also need a connection to play.") },
+        confirmButton = { SheetButton("Remove downloads", onClick = {
+            started = false
+            Downloads.removeAll(context, wanted)
+            confirmRemove = false
+        }) },
+        dismissButton = { SheetButton("Keep downloads", onClick = { confirmRemove = false }, closes = true) },
+    )
     Row(
         modifier
             .height(44.dp)
             .clip(CircleShape)
             .background(scheme.surfaceContainerHighest)
-            .clickable(enabled = !all && wanted.isNotEmpty()) {
+            .clickable(enabled = wanted.isNotEmpty()) {
                 haptics.press()
-                started = true
-                wanted.forEach { s -> if (entries[s.videoId]?.state != DownloadState.DONE) Downloads.enqueue(context, s) }
+                if (selection.stored.isNotEmpty()) options = true else downloadRemaining()
             }
             .padding(horizontal = 16.dp),
         verticalAlignment = Alignment.CenterVertically,
@@ -111,8 +151,8 @@ fun DownloadAllButton(songs: List<Song>, modifier: Modifier = Modifier) {
         Spacer(Modifier.width(8.dp))
         Text(
             when {
-                all -> "Downloaded"
-                going > 0 -> "Downloading ${done + 1} of ${wanted.size}".takeIf { done < wanted.size } ?: "Downloaded"
+                all -> "Downloaded · Manage"
+                going > 0 -> "Downloading · $done/${wanted.size}"
                 done > 0 -> "Download the other ${wanted.size - done}"
                 else -> "Download all"
             },
@@ -243,7 +283,7 @@ private fun AddRow(song: Song, added: Boolean, onAdd: () -> Unit) {
 /** The row under a list's Play and Shuffle: download it all, and for the app's own playlists, add songs. */
 @Composable
 fun ListTools(songs: List<Song>, onAddSongs: (() -> Unit)?, modifier: Modifier = Modifier) {
-    Row(modifier, horizontalArrangement = Arrangement.spacedBy(10.dp, Alignment.CenterHorizontally)) {
+    androidx.compose.foundation.layout.FlowRow(modifier, horizontalArrangement = Arrangement.spacedBy(10.dp, Alignment.CenterHorizontally), verticalArrangement = Arrangement.spacedBy(8.dp)) {
         if (onAddSongs != null) AddSongsButton(onAddSongs)
         if (songs.isNotEmpty()) DownloadAllButton(songs)
     }

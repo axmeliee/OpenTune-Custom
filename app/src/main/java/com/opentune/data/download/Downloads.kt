@@ -40,6 +40,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.debounce
 import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.flow.getAndUpdate
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -73,6 +74,8 @@ data class DownloadEntry(
     /** YouTube's loudness figure, kept so normalization works offline. */
     val loudnessDb: Double? = null,
     val addedAt: Long = System.currentTimeMillis(),
+    /** Identifies the worker allowed to publish updates, including after cancellation/retry. */
+    val workId: String? = null,
 )
 
 /**
@@ -142,45 +145,82 @@ object Downloads {
     fun loudnessFor(videoId: String): Double? = _entries.value[videoId]?.loudnessDb
 
     /** Where a downloaded song's lyrics are kept, if it's downloaded. */
-    fun lyricsFileFor(videoId: String): File? =
-        if (_entries.value[videoId]?.state == DownloadState.DONE) dir?.let { File(it, "$videoId.lyrics.json") } else null
+    fun lyricsFileFor(videoId: String): File? {
+        val entry = _entries.value[videoId]?.takeIf { it.state == DownloadState.DONE } ?: return null
+        val root = dir ?: return null
+        val folder = entry.workId?.let { File(root, "$videoId.$it") } ?: root
+        return File(folder, "$videoId.lyrics.json")
+    }
 
     fun enqueue(context: Context, song: Song) {
-        if (song.videoId.startsWith("local:")) return
+        if (!com.opentune.data.isYouTubeId(song.videoId)) return
         val existing = _entries.value[song.videoId]
-        if (existing?.state == DownloadState.DONE || existing?.state == DownloadState.DOWNLOADING) return
-        put(song.videoId) { DownloadEntry(SongRef.of(song)) }
+        if (existing?.state == DownloadState.DONE || existing?.state == DownloadState.DOWNLOADING || existing?.state == DownloadState.QUEUED) return
         val wifiOnly = AppSettings.library.value.downloadWifiOnly
         val request = OneTimeWorkRequestBuilder<DownloadWorker>()
             .setInputData(workDataOf(DownloadWorker.KEY_ID to song.videoId))
             .setConstraints(Constraints.Builder().setRequiredNetworkType(if (wifiOnly) NetworkType.UNMETERED else NetworkType.CONNECTED).build())
             .addTag(TAG)
             .build()
-        WorkManager.getInstance(context).enqueueUniqueWork(workName(song.videoId), ExistingWorkPolicy.KEEP, request)
+        put(song.videoId) { DownloadEntry(SongRef.of(song), workId = request.id.toString()) }
+        WorkManager.getInstance(context).enqueueUniqueWork(workName(song.videoId), ExistingWorkPolicy.REPLACE, request)
     }
 
-    fun remove(context: Context, videoId: String) {
-        WorkManager.getInstance(context).cancelUniqueWork(workName(videoId))
-        _entries.value[videoId]?.let { e ->
-            e.path?.let { File(it).delete() }
-            e.artPath?.let { File(it).delete() }
-            File(dir, "$videoId.part").delete()
-            File(dir, "$videoId.lyrics.json").delete()
+    fun remove(context: Context, videoId: String) = remove(context, videoId, onlyActive = false)
+
+    private fun remove(context: Context, videoId: String, onlyActive: Boolean) {
+        // Withdraw ownership first: progress, failure and completion callbacks can
+        // never resurrect the row while WorkManager stops its coroutine.
+        fun eligible(entry: DownloadEntry?) = entry != null && (!onlyActive || entry.state == DownloadState.QUEUED || entry.state == DownloadState.DOWNLOADING)
+        val entry = _entries.getAndUpdate { if (eligible(it[videoId])) it - videoId else it }[videoId]
+            ?.takeIf { eligible(it) } ?: return
+        val manager = WorkManager.getInstance(context)
+        val workId = entry.workId?.let { runCatching { java.util.UUID.fromString(it) }.getOrNull() }
+        if (workId != null) manager.cancelWorkById(workId) else manager.cancelUniqueWork(workName(videoId))
+        val directory = dir
+        scope.launch {
+            entry.path?.let { File(it).delete() }
+            entry.artPath?.let { File(it).delete() }
+            directory?.let { d ->
+                entry.workId?.let { File(d, "$videoId.$it").deleteRecursively() }
+                File(d, "$videoId.part").delete()
+                if (entry.workId == null) File(d, "$videoId.lyrics.json").delete()
+            }
         }
-        _entries.update { it - videoId }
     }
+
+    /** Cancel only queued/in-flight songs, preserving completed offline copies. */
+    fun cancelAll(context: Context, songs: List<Song>) {
+        selection(songs).active.forEach { remove(context, it, onlyActive = true) }
+    }
+
+    /** Remove these offline copies, leaving playlist membership and likes intact. */
+    fun removeAll(context: Context, songs: List<Song>) {
+        selection(songs).stored.forEach { remove(context, it) }
+    }
+
+    fun selection(songs: List<Song>): DownloadSelection = downloadSelection(songs, _entries.value)
 
     fun retry(context: Context, videoId: String) {
-        val e = _entries.value[videoId] ?: return
-        _entries.update { it - videoId }
+        val e = _entries.value[videoId]?.takeIf { it.state == DownloadState.FAILED } ?: return
+        remove(context, videoId)
         enqueue(context, e.song.toSong())
+    }
+
+    /** Reject stale callbacks from removed/replaced workers atomically. */
+    internal fun updateWorker(videoId: String, workId: String?, transform: (DownloadEntry) -> DownloadEntry): Boolean {
+        while (true) {
+            val before = _entries.value
+            val entry = before[videoId]?.takeIf { it.workId == workId } ?: return false
+            if (_entries.compareAndSet(before, before + (videoId to transform(entry)))) return true
+        }
     }
 
     /** A legacy download failed the player's extractor; keep the row so it can be repaired. */
     fun markBroken(videoId: String) {
         val entry = _entries.value[videoId] ?: return
         entry.path?.let { File(it).delete() }
-        put(videoId) { (it ?: entry).copy(state = DownloadState.FAILED, path = null, progress = 0f,
+        updateWorker(videoId, entry.workId) { it.copy(state = DownloadState.FAILED, path = null, progress = 0f,
             error = "Saved audio is incomplete. Tap to download again.") }
     }
 
@@ -200,24 +240,29 @@ class DownloadWorker(context: Context, params: WorkerParameters) : CoroutineWork
     override suspend fun doWork(): Result {
         val id = inputData.getString(KEY_ID) ?: return Result.failure()
         val entry = Downloads.entries.value[id] ?: return Result.failure()
+        if (entry.workId != null && entry.workId != this.id.toString()) return Result.success()
         runCatching { setForeground(foregroundInfo(entry.song.title, 0f)) }
-        Downloads.put(id) { (it ?: entry).copy(state = DownloadState.DOWNLOADING, error = null) }
+        fun publish(transform: (DownloadEntry) -> DownloadEntry) {
+            if (!Downloads.updateWorker(id, entry.workId, transform)) throw CancellationException("Download removed or replaced")
+        }
+        val jobDir = File(Downloads.directory(), "$id.${this.id}")
+        publish { it.copy(state = DownloadState.DOWNLOADING, error = null) }
         return try {
             val maxKbps = AppSettings.library.value.downloadQuality.maxKbps
-            val dir = Downloads.directory()
+            val dir = jobDir.apply { mkdirs() }
             // A playlist queues every song at once; a few at a time each get the
             // bandwidth, and YouTube isn't asked for dozens of streams together.
             val target = songsAtOnce.withPermit {
                 val stream = StreamResolver.resolveForDownload(id, maxKbps)
                 File(dir, "$id.${stream.downloadExtension}").also { target ->
                     fetch(stream.url, File(dir, "$id.part"), target, entry.song.title) { p ->
-                        Downloads.put(id) { (it ?: entry).copy(progress = p) }
+                        publish { it.copy(progress = p) }
                     }
                 }
             }
             val art = runCatching { fetchArt(entry.song.thumbnailUrl.artworkAt(PLAYER_ART_PX), File(dir, "$id.jpg")) }.getOrNull()
-            Downloads.put(id) {
-                (it ?: entry).copy(
+            publish {
+                it.copy(
                     state = DownloadState.DONE, progress = 1f, path = target.path, artPath = art?.path,
                     bytes = target.length(), loudnessDb = StreamResolver.loudnessDbFor(id),
                 )
@@ -231,8 +276,13 @@ class DownloadWorker(context: Context, params: WorkerParameters) : CoroutineWork
             throw e
         } catch (e: Exception) {
             Log.w(TAG, "Download of $id failed", e)
-            Downloads.put(id) { (it ?: entry).copy(state = DownloadState.FAILED, error = e.message) }
+            publish { it.copy(state = DownloadState.FAILED, error = e.message) }
             if (runAttemptCount < MAX_ATTEMPTS && e is IOException) Result.retry() else Result.failure()
+        } finally {
+            val current = Downloads.entryNow(id)
+            if (current == null || current.workId != entry.workId || current.state != DownloadState.DONE) {
+                jobDir.deleteRecursively()
+            }
         }
     }
 
