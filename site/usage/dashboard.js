@@ -64,13 +64,18 @@ function chart() {
   if (!periodData) return;
   const metric = $('chart-metric').value, rows = dailyRows(periodData), max = Math.max(1, ...rows.map(row => row[metric] ?? 0));
   const host = $('chart'); host.replaceChildren();
+  host.classList.toggle('chart-single', rows.length === 1);
+  host.classList.toggle('chart-sparse', rows.length <= 7);
   for (const row of rows) {
     const value = row[metric], button = node('button', null, 'bar' + (value == null ? ' unknown' : ''));
     button.type = 'button'; button.dataset.day = row.day;
     const label = `${dateLabel(row.day)}: ${value == null ? 'unavailable' : fmt(value)} ${metric === 'plays' ? 'plays' : 'active installations'}`;
     button.title = label; button.setAttribute('aria-label', label);
     const fill = node('span', null, 'bar-fill'); fill.style.height = `${Math.max(3, (value ?? 0) / max * 118)}px`; fill.setAttribute('aria-hidden', 'true');
-    const tick = node('span', row.day.slice(5), 'bar-label'); tick.setAttribute('aria-hidden', 'true');
+    const tick = node('span', rows.length === 1 ? dateLabel(row.day) : row.day.slice(5), 'bar-label'); tick.setAttribute('aria-hidden', 'true');
+    if (rows.length <= 7) {
+      const count = node('span', fmt(value), 'bar-value'); count.setAttribute('aria-hidden', 'true'); button.append(count);
+    }
     button.append(fill, tick); button.addEventListener('click', () => selectDay(row.day)); host.append(button);
   }
   selectDay(selectedDay && rows.some(row => row.day === selectedDay) ? selectedDay : periodData.range.to);

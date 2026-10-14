@@ -89,6 +89,25 @@ with sync_playwright() as p:
         page.locator('[data-days="1"]').click()
         expect(page.locator('#daily-table tbody tr')).to_have_count(1)
         expect(page.locator('#day-detail')).to_contain_text('84 plays')
+        single_bar = page.locator('#chart .bar')
+        expect(single_bar).to_have_count(1)
+        assert single_bar.bounding_box()['width'] <= 128, 'A single date must not stretch across the chart'
+        expect(single_bar.locator('.bar-value')).to_have_text('84')
+        assert single_bar.locator('.bar-label').evaluate('(el) => getComputedStyle(el).writingMode') == 'horizontal-tb'
+        # The selected label must remain light against the dark selection background.
+        label_color = single_bar.locator('.bar-label').evaluate('(el) => getComputedStyle(el).color')
+        assert all(int(channel) >= 176 for channel in label_color.removeprefix('rgb(').removesuffix(')').split(',')), label_color
+        page.locator('#chart-metric').select_option('active')
+        expect(single_bar.locator('.bar-value')).to_have_text('12')
+        page.locator('#chart-metric').select_option('plays')
+        page.locator('.trend-panel').screenshot(path=str(OUT / f'chart-single-{width}.png'))
+        page.locator('[data-days="7"]').click()
+        expect(page.locator('#chart .bar')).to_have_count(7)
+        page.locator('#chart .bar').first.click()
+        expect(page.locator('#chart .selected .bar-value')).to_have_text('0')
+        expect(page.locator('#day-detail')).to_contain_text('0 plays')
+        no_overflow(page)
+
         page.locator('[data-days="30"]').click()
         expect(page.locator('#daily-table tbody tr')).to_have_count(7)
         page.screenshot(path=str(OUT / f'usage-{width}.png'), full_page=True)
