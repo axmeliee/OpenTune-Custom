@@ -1,33 +1,37 @@
-# Private usage analytics with Google sign-in
+# Private usage analytics with username and password
 
-Dashboard: https://opentune-usage.create-a-new-site-with-sites.workers.dev/usage/
+Open https://opentune-usage.create-a-new-site-with-sites.workers.dev/usage/ to sign in.
+Google sign-in and Cloudflare Access are no longer used. Both the dashboard and read APIs
+require an owner session; anonymous app reporting continues to work.
 
-The Worker verifies Cloudflare Access JWT signatures, issuer, application audience, expiry and owner
-email on every private route, even direct API calls. Missing configuration denies access. Static
-assets use `run_worker_first: true` and no-store responses. Anonymous reporting stays write-only;
-no D1 migration is needed. Google sign-in is managed by Cloudflare Access, not by OpenTune.
+## Set your username and password
 
-## One-time Cloudflare setup
+1. Open [GitHub repository secrets](https://github.com/justshivv/Opentune/settings/secrets/actions).
+2. Add two **Repository secrets**:
+   - `USAGE_ADMIN_USERNAME`: your chosen username (for example `owner`; 3–64 letters, numbers, dots, underscores or hyphens).
+   - `USAGE_ADMIN_PASSWORD`: a unique password or passphrase, 16–256 characters long.
+3. Open **Actions → Usage API → Run workflow**, select **main**, and run it.
+4. Open the dashboard and enter those credentials.
 
-1. In Cloudflare Zero Trust → Integrations → Identity providers, add **Google** using the
-   [official Google setup](https://developers.cloudflare.com/cloudflare-one/integrations/identity-providers/google/).
-   Signing in to the Cloudflare dashboard with Google does not automatically configure Access's Google provider.
-2. Create a self-hosted Access application named **OpenTune owner analytics** for
-   `opentune-usage.create-a-new-site-with-sites.workers.dev/usage` (include all child paths).
-   Protect only `/usage`, not the entire reporting Worker. Select **Google only** as the identity provider.
-3. Add an **Allow** policy with **Include → Emails → your exact Google email**. Do not include Everyone.
-4. Copy the application's Audience (AUD) tag and your team hostname (`your-team.cloudflareaccess.com`).
-5. In GitHub repository Actions secrets, set `ACCESS_TEAM_DOMAIN`, `ACCESS_AUD`, and `ACCESS_OWNER_EMAIL`.
-   Run **Actions → Usage API → Run workflow** on main. The workflow stores these as Worker secrets.
-6. Open the dashboard and sign in with your Google account. A private browser window using a different
-   account must be denied. Data APIs are under `/usage/v1/…`; old `/v1/…` read URLs also require a valid owner JWT.
+The workflow stores credentials in Cloudflare Worker secrets and creates the signing key automatically.
+Do not put passwords in source code or chat. Missing credentials keep data locked.
+If you already created a Cloudflare Access application for this dashboard, remove that application
+so it does not intercept the normal login page. The Worker now handles authentication itself.
+The old `ACCESS_*` secrets are unused and may be deleted.
 
-Never paste Google client secrets, Access cookies or signed tokens in source code or chat.
-The deployment workflow checks anonymous rejection. Only the owner can finish the interactive Google login check.
-To log out, visit the Worker's `/cdn-cgi/access/logout` URL.
+## Sessions and password changes
 
-Build: `python scripts/prepare-usage-assets.py`.
-Tests: `node --test usage-api/worker.test.mjs usage-api/dashboard/model.test.mjs`.
+Sessions expire after eight hours. Cookies are Secure, HttpOnly and SameSite=Strict;
+passwords are never stored in browser storage. Login attempts are limited to five per minute per IP.
+Use **Sign out** to clear the session from this browser. A copied session token remains valid until
+expiry or credential rotation, so rotate credentials if a session is compromised.
+To change or reset credentials, update the two repository secrets and rerun **Usage API**.
+Each run that configures credentials rotates the session key, requiring browsers to sign in again.
+Existing data is preserved. No D1 migration or recreation is needed.
+
+The workflow checks login and logout when credentials are supplied, and always checks that anonymous
+requests cannot read analytics. Build with `python scripts/prepare-usage-assets.py` and run
+`node --test usage-api/worker.test.mjs usage-api/dashboard/model.test.mjs`.
 
 ## Reporting and aggregation reference
 

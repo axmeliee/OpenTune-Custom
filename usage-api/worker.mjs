@@ -1,4 +1,4 @@
-import { authorized, locked, privateHeaders } from './auth.mjs';
+import { authorized, locked, privateHeaders, authRoute } from './auth.mjs';
 const UUID = /^[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/i;
 const VERSION = /^\d+\.\d+\.\d+(?:-[a-zA-Z0-9.-]{1,32})?$/;
 const DAY = 86400000;
@@ -74,11 +74,13 @@ export async function analytics(db, range, now = new Date()) {
 
 export default {
   async fetch(request, env) {
+    const authentication = await authRoute(request, env);
+    if (authentication) return authentication;
     const url = new URL(request.url);
     const path = url.pathname.replace(/^\/usage\/v1\/(summary|analytics)$/, '/v1/$1');
     const reporting = ['/v1/activity', '/v1/download'].includes(path) && ['POST', 'OPTIONS'].includes(request.method);
     // Authentication precedes every database read and every static asset response.
-    if (!reporting && !(await authorized(request, env))) return locked();
+    if (!reporting && !(await authorized(request, env))) return locked(request);
     const origin = request.headers.get('Origin');
     const allowed = (env.ALLOWED_ORIGINS || 'https://justshivv.github.io').split(',');
     const headers = { ...privateHeaders, 'Content-Type':'application/json' };

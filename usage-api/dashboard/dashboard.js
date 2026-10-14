@@ -6,6 +6,7 @@ let apiPromise, summaryPromise, allController, periodController, periodData, sel
 const node = (tag, text, className) => { const el = document.createElement(tag); if (text != null) el.textContent = text; if (className) el.className = className; return el; };
 async function response(url, signal) {
   const result = await fetch(url, { cache: 'no-store', signal: AbortSignal.any([signal, AbortSignal.timeout(12000)]) });
+  if (result.status === 401) location.replace('/login');
   if (!result.ok) { const error = new Error('HTTP ' + result.status); error.status = result.status; throw error; }
   return result.json();
 }

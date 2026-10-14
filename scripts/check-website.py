@@ -1,6 +1,7 @@
 """Browser regressions using local files and fixtures; never sends usage reports."""
 import json
 import re
+import subprocess
 from datetime import date, timedelta
 from pathlib import Path
 from urllib.parse import urlparse, parse_qs
@@ -14,6 +15,8 @@ iso = today.isoformat()
 summary = {'asOf': iso + 'T12:00:00Z', 'totals': {'installs': 1234, 'plays': 54321, 'since': '2026-01-01'}, 'today': {'active': 12, 'plays': 42}, 'week': 100, 'month': 300,
            'daily': [{'day': (today - timedelta(days=i)).isoformat(), 'active': 12, 'plays': 42} for i in range(30)],
            'versions': [], 'downloads': [{'release': '0.4.' + str(i), 'browsers': i + 1} for i in range(12)], 'downloadBrowsers': 99}
+login_html = subprocess.check_output(['node', '--input-type=module', '-e',
+    "import {authRoute} from './usage-api/auth.mjs'; console.log(await (await authRoute(new Request('https://usage.test/login'),{})).text());"], text=True, cwd=ROOT.parent)
 mode = 'normal'
 def route(request):
     url = urlparse(request.request.url)
@@ -31,6 +34,8 @@ def route(request):
                                  'daily': [{'day': end, 'active': 12, 'plays': 84}], 'versions': [{'version': '0.4.13-' + 'verylonglabel' * 9, 'installations': 12, 'plays': 84}]})
     elif url.netloc == 'api.github.com':
         request.fulfill(json=[{'tag_name': 'v0.4.' + str(i), 'assets': [{'name': 'app.apk', 'download_count': 10}]} for i in range(12)] if '/releases' in url.path else {})
+    elif url.netloc == 'usage.test' and url.path == '/login':
+        request.fulfill(body=login_html, content_type='text/html')
     elif url.netloc in ('opentune.test', 'usage.test'):
         if url.path == '/usage-config.json':
             request.fulfill(json={'apiBase': 'https://usage.test'})
@@ -76,6 +81,11 @@ with sync_playwright() as p:
         page.goto('http://opentune.test/usage/')
         expect(page.locator('h1')).to_have_text('Private analytics')
         expect(page.locator('#chart')).to_have_count(0)
+        page.goto('https://usage.test/login')
+        expect(page.get_by_label('Username')).to_be_visible()
+        expect(page.get_by_label('Password')).to_have_attribute('type', 'password')
+        no_overflow(page)
+        page.screenshot(path=str(OUT / f'login-{width}.png'))
         page.goto('https://usage.test/usage/')
         assert re.fullmatch(r'dashboard\.[a-f0-9]{12}\.css', page.locator('link[rel=stylesheet]').get_attribute('href'))
         assert re.fullmatch(r'dashboard\.[a-f0-9]{12}\.js', page.locator('script[type=module]').get_attribute('src'))
