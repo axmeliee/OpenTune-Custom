@@ -57,6 +57,8 @@ function selectDay(day) {
   const detail = $('day-detail'); detail.replaceChildren(node('strong', dateLabel(day) + ' · UTC'));
   detail.append(node('span', row?.active == null ? ' — No activity history available for this date.' : ` — ${fmt(row.active)} active installations · ${fmt(row.plays)} plays · ${fmt(row.active ? row.plays / row.active : null)} plays per active installation`));
   for (const bar of $('chart').children) { const selected = bar.dataset.day === day; bar.classList.toggle('selected', selected); bar.setAttribute('aria-pressed', String(selected)); }
+  const activeBar = $('chart').querySelector('.selected');
+  if (activeBar) $('chart').scrollLeft = activeBar.offsetLeft - $('chart').clientWidth / 2 + activeBar.clientWidth / 2;
 }
 function chart() {
   if (!periodData) return;

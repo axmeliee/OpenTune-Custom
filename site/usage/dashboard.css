@@ -3,3 +3,6 @@
 
 /* Avoid focus-triggered zoom in mobile Safari; retain user pinch zoom. */
 input,select{font-size:16px}
+.panel-head>div{min-width:0}.download-total{flex-shrink:0;white-space:nowrap}.chart{position:relative}
+@media(max-width:760px){.metrics{grid-template-columns:repeat(2,minmax(0,1fr))}.metrics .metric:last-child{grid-column:1/-1}.metric strong{font-size:30px}.trend-panel .panel-head{flex-direction:column}.metric-select{width:100%}.metric h3{font-size:12px}.metric p{font-size:12px}}
+@media(max-width:380px){.metrics{grid-template-columns:1fr}.metric strong{font-size:28px}}

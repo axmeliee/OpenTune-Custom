@@ -75,6 +75,9 @@ with sync_playwright() as p:
         page.goto('http://opentune.test/usage/')
         expect(page.locator('#period-plays')).to_have_text('84')
         expect(page.locator('#period-average')).to_have_text('7')
+        active_bar = page.locator('#chart .selected').bounding_box()
+        chart_box = page.locator('#chart').bounding_box()
+        assert active_bar['x'] >= chart_box['x'] - 1 and active_bar['x'] + active_bar['width'] <= chart_box['x'] + chart_box['width'] + 1
         no_overflow(page)
         assert page.locator('#daily-table tbody tr').count() == 7
         page.locator('#daily-table .view-more').click()
