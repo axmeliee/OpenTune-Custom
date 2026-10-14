@@ -14,6 +14,7 @@ import com.opentune.data.model.ShelfItem
 import com.opentune.ui.ScreenCache
 import com.opentune.ui.browse.SongActions
 import java.io.File
+import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -39,6 +40,13 @@ class HomePicksTest {
         compose.onNodeWithText("Quick picks").assertExists()
         compose.onNodeWithText("Song 1").assertExists()
         compose.waitForIdle()
+        val heading = compose.onNodeWithText("Quick picks").fetchSemanticsNode().boundsInRoot
+        val history = compose.onNodeWithContentDescription("Recently played").fetchSemanticsNode().boundsInRoot
+        val recognize = compose.onNodeWithContentDescription("Name a song playing nearby").fetchSemanticsNode().boundsInRoot
+        val account = compose.onNodeWithContentDescription("Account and settings").fetchSemanticsNode().boundsInRoot
+        assertTrue("History must align with Quick picks", kotlin.math.abs(heading.center.y - history.center.y) < 2f)
+        assertTrue("Top actions must be separated", recognize.right < account.left)
+        assertTrue("History must be below the top actions", history.top > recognize.bottom)
         val view = compose.activity.window.decorView
         val bitmap = Bitmap.createBitmap(view.width, view.height, Bitmap.Config.ARGB_8888)
         view.draw(android.graphics.Canvas(bitmap))
