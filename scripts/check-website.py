@@ -17,7 +17,7 @@ summary = {'asOf': iso + 'T12:00:00Z', 'totals': {'installs': 1234, 'plays': 543
 mode = 'normal'
 def route(request):
     url = urlparse(request.request.url)
-    if url.netloc == 'usage.test':
+    if url.netloc == 'usage.test' and url.path.startswith('/v1/'):
         if url.path == '/v1/summary':
             request.fulfill(json=summary)
         elif mode == 'legacy':
@@ -31,11 +31,11 @@ def route(request):
                                  'daily': [{'day': end, 'active': 12, 'plays': 84}], 'versions': [{'version': '0.4.13-' + 'verylonglabel' * 9, 'installations': 12, 'plays': 84}]})
     elif url.netloc == 'api.github.com':
         request.fulfill(json=[{'tag_name': 'v0.4.' + str(i), 'assets': [{'name': 'app.apk', 'download_count': 10}]} for i in range(12)] if '/releases' in url.path else {})
-    elif url.netloc == 'opentune.test':
+    elif url.netloc in ('opentune.test', 'usage.test'):
         if url.path == '/usage-config.json':
             request.fulfill(json={'apiBase': 'https://usage.test'})
         else:
-            path = ROOT / url.path.lstrip('/')
+            path = (ROOT.parent / 'usage-api' / 'public' if url.netloc == 'usage.test' else ROOT) / url.path.lstrip('/')
             if path.is_dir(): path = path / 'index.html'
             if path.is_file():
                 mime = {'.html': 'text/html', '.js': 'text/javascript', '.mjs': 'text/javascript', '.css': 'text/css', '.json': 'application/json', '.png': 'image/png', '.jpg': 'image/jpeg'}.get(path.suffix, 'text/plain')
@@ -74,6 +74,9 @@ with sync_playwright() as p:
         assert page.locator('meta[property="og:image"]').get_attribute('content').endswith('/opentune-logo-current.png')
         page.screenshot(path=str(OUT / f'home-{width}.png'))
         page.goto('http://opentune.test/usage/')
+        expect(page.locator('h1')).to_have_text('Private analytics')
+        expect(page.locator('#chart')).to_have_count(0)
+        page.goto('https://usage.test/usage/')
         assert re.fullmatch(r'dashboard\.[a-f0-9]{12}\.css', page.locator('link[rel=stylesheet]').get_attribute('href'))
         assert re.fullmatch(r'dashboard\.[a-f0-9]{12}\.js', page.locator('script[type=module]').get_attribute('src'))
         expect(page.locator('#period-plays')).to_have_text('84')
@@ -120,7 +123,7 @@ with sync_playwright() as p:
     context.route('**/*', route)
     page = context.new_page()
     mode = 'legacy'
-    page.goto('http://opentune.test/usage/')
+    page.goto('https://usage.test/usage/')
     expect(page.locator('#period-status')).to_contain_text('Limited server')
     expect(page.locator('#period-active')).to_have_text('—')
     expect(page.locator('#period-plays')).to_have_text('1,260')

@@ -14,3 +14,4 @@ CREATE TABLE IF NOT EXISTS downloads (
   first_requested_at TEXT NOT NULL,
   PRIMARY KEY (browser, release)
 );
+

@@ -25,8 +25,8 @@ jobs:
 
       - name: Usage deduplication and website scripts
         run: |
-          node --test usage-api/worker.test.mjs site/usage/model.test.mjs
-          node --check site/usage/dashboard.js
+          node --test usage-api/worker.test.mjs usage-api/dashboard/model.test.mjs
+          node --check usage-api/dashboard/dashboard.js
           node --check site/download-tracking.js
 
       - uses: actions/setup-java@v4

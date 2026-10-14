@@ -1,3 +1,4 @@
+import { authorized, locked, privateHeaders } from './auth.mjs';
 const UUID = /^[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/i;
 const VERSION = /^\d+\.\d+\.\d+(?:-[a-zA-Z0-9.-]{1,32})?$/;
 const DAY = 86400000;
@@ -46,7 +47,7 @@ export async function summary(db, now = new Date()) {
     downloadBrowsers: results[7].results[0].browsers };
 }
 
-// Inclusive UTC dates; bounded to keep public dashboard queries predictable.
+// Inclusive UTC dates; bounded to keep dashboard queries predictable.
 export function validateRange(params, now = new Date()) {
   const from = params.get('from'), to = params.get('to');
   const valid = value => /^\d{4}-\d{2}-\d{2}$/.test(value || '') &&
@@ -73,18 +74,29 @@ export async function analytics(db, range, now = new Date()) {
 
 export default {
   async fetch(request, env) {
+    const url = new URL(request.url);
+    const path = url.pathname;
+    const reporting = ['/v1/activity', '/v1/download'].includes(path) && ['POST', 'OPTIONS'].includes(request.method);
+    // Authentication precedes every database read and every static asset response.
+    if (!reporting && !(await authorized(request, env))) return locked();
     const origin = request.headers.get('Origin');
     const allowed = (env.ALLOWED_ORIGINS || 'https://justshivv.github.io').split(',');
-    const headers = { 'Content-Type':'application/json', 'Cache-Control':'no-store', 'Vary':'Origin' };
-    if (origin && !allowed.includes(origin)) return new Response('{}', {status:403,headers});
+    const headers = { ...privateHeaders, 'Content-Type':'application/json' };
+    if (origin && origin !== url.origin && (!reporting || !allowed.includes(origin))) return new Response('{}', {status:403,headers});
     if (origin) headers['Access-Control-Allow-Origin']=origin;
     headers['Access-Control-Allow-Methods']='GET, POST, OPTIONS';
     headers['Access-Control-Allow-Headers']='Content-Type';
     const json = (body,status=200) => new Response(JSON.stringify(body),{status,headers});
     if (request.method==='OPTIONS') return new Response(null,{status:204,headers});
-    const url = new URL(request.url);
-    const path = url.pathname;
     try {
+      if (['GET', 'HEAD'].includes(request.method) && !path.startsWith('/v1/')) {
+        if (path === '/') return new Response(null, {status:302, headers:{...privateHeaders, Location:'/usage/'}});
+        if (!env.ASSETS) return json({error:'Dashboard unavailable'},503);
+        const asset = await env.ASSETS.fetch(request);
+        const secured = new Response(asset.body, asset);
+        for (const [name,value] of Object.entries(privateHeaders)) secured.headers.set(name,value);
+        return secured;
+      }
       if (request.method==='GET' && path==='/v1/analytics') {
         let range;
         try { range = validateRange(url.searchParams); } catch(e) { return json({error:e.message},400); }

@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="robots" content="noindex,nofollow">
+  <meta name="theme-color" content="#101113">
+  <title>Usage & analytics · OpenTune</title>
+  <link rel="stylesheet" href="dashboard.css">
+</head>
+<body>
+  <main>
+    <nav aria-label="Breadcrumb"><a href="https://justshivv.github.io/Opentune/">← OpenTune</a><span>Usage & analytics</span></nav>
+    <header><div><p class="eyebrow">THE LISTENING PICTURE</p><h1>Every day, in tune.</h1><p class="intro">Explore listening activity, app versions and downloads, with a clear view of each day.</p></div><button id="refresh" type="button">↻ Refresh data</button></header>
+    <form id="filters" class="panel filters" aria-label="Activity date range">
+      <div class="filter-top"><h2>Explore activity</h2><span class="tag">All dates in UTC</span></div>
+      <div class="presets" aria-label="Quick date ranges"><button type="button" data-days="1" aria-pressed="false">Today</button><button type="button" data-days="7" aria-pressed="false">7 days</button><button type="button" data-days="30" aria-pressed="true">30 days</button><button type="button" data-days="90" aria-pressed="false">90 days</button></div>
+      <div class="date-fields"><label>From<input id="from" type="date" required></label><span class="date-arrow" aria-hidden="true">→</span><label>To<input id="to" type="date" required></label><button class="primary" type="submit">Apply dates</button></div>
+      <p id="filter-error" class="error" role="alert"></p>
+    </form>
+    <section aria-labelledby="period-title" id="period" aria-busy="true">
+      <div class="section-head"><div><p class="eyebrow">SELECTED PERIOD</p><h2 id="period-title">Loading activity…</h2></div><p id="period-status" role="status"></p></div>
+      <div class="metrics">
+        <article class="metric"><h3>Active installations</h3><strong id="period-active">—</strong><p>Unique across this entire period</p></article>
+        <article class="metric"><h3>Plays reported</h3><strong id="period-plays">—</strong><p>Total reported within these dates</p></article>
+        <article class="metric"><h3>Plays per active installation</h3><strong id="period-average">—</strong><p>Period plays ÷ unique active installations</p></article>
+      </div>
+      <div class="panel trend-panel"><div class="panel-head"><div><h2>Daily rhythm</h2><p id="chart-hint">Select a day to see its exact counts. Scroll for longer periods.</p></div><label class="metric-select">Show<select id="chart-metric"><option value="plays">Plays</option><option value="active">Active installations</option></select></label></div><div id="chart" class="chart" role="group" aria-label="Daily activity"></div><div id="day-detail" class="day-detail" aria-live="polite">Select a day above or in the table below.</div></div>
+      <div class="columns"><article class="panel"><div class="panel-head"><div><h2>Day by day</h2><p>Newest first · select a date for details</p></div></div><div id="daily-table"></div></article><article class="panel"><div class="panel-head"><div><h2>Versions in use</h2><p>Active installations in the selected period</p></div></div><div id="versions-table"></div><p class="footnote">An installation can use multiple versions. Version counts should not be added together.</p></article></div>
+    </section>
+    <section aria-labelledby="lifetime-title"><div class="section-head"><div><p class="eyebrow">THE BIGGER PICTURE</p><h2 id="lifetime-title">All-time overview</h2></div><p id="lifetime-status" role="status"></p></div><div class="metrics">
+      <article class="metric"><h3>Reporting installations</h3><strong id="all-installs">—</strong><p>Unique app installations recorded</p></article><article class="metric"><h3>Plays reported</h3><strong id="all-plays">—</strong><p>Across all recorded dates</p></article><article class="metric"><h3>Website download browsers</h3><strong id="all-browsers">—</strong><p>Unique browsers that requested a download</p></article>
+    </div></section>
+    <section aria-labelledby="downloads-title"><div class="section-head"><div><p class="eyebrow">DISTRIBUTION</p><h2 id="downloads-title">Downloads by release</h2></div><span class="tag">All time · not date filtered</span></div><div class="columns"><article class="panel"><div class="panel-head"><div><h2>GitHub APK downloads</h2><p id="github-status" role="status">Loading…</p></div><strong class="download-total" id="all-downloads">—</strong></div><div id="downloads-table"></div><p class="footnote">Download events, not unique people. GitHub exposes cumulative totals, so daily download counts are unavailable.</p></article><article class="panel"><div class="panel-head"><div><h2>Website download requests</h2><p>Unique browsers per release · all time</p></div></div><div id="browser-table"></div><p class="footnote">A browser may appear in more than one release. Requests do not confirm a completed download or installation.</p></article></div></section>
+    <details class="panel about"><summary>About these counts <span>View more</span></summary><div><p>Activity is based on reports received from participating OpenTune installations. It is not a count of unique people. Reinstalling or clearing app data creates a new installation identity. Offline, older or non-reporting apps may be missing; recent reports can arrive later.</p><p>All dates use UTC and both range endpoints are included. Zero means no reports received for that date during the recorded period. Dates before the first activity report are shown as unavailable, not zero. A failed request is also shown as unavailable.</p><p>Plays per active installation divides plays by distinct installations in the selected period. Daily active counts cannot be added to calculate unique users over a longer period.</p><p>Only aggregate counts are shown here. No song history, accounts, device names, IP addresses or installation identifiers are exposed by this dashboard. Website counters and GitHub download events are separate measures and should not be combined.</p></div></details>
+    <footer>OpenTune · Music without ads. <span id="updated"></span></footer>
+  </main>
+  <script type="module" src="dashboard.js"></script>
+</body>
+</html>

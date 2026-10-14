@@ -1,3 +1,29 @@
+# Private usage analytics
+
+The dashboard is served at https://opentune-usage.create-a-new-site-with-sites.workers.dev/usage/.
+Both the dashboard/assets and aggregate read APIs require HTTP Basic authentication over HTTPS.
+Username: `owner`. Public Pages only links to owner sign-in. Android activity reports and website
+download reports remain anonymous, write-only endpoints.
+
+## Owner password setup
+
+Create a random password of at least 32 printable ASCII characters (no spaces) in a password manager.
+Add it as the repository Actions secret `USAGE_ADMIN_PASSWORD` at
+https://github.com/justshivv/Opentune/settings/secrets/actions.
+Run **Actions → Usage API → Run workflow** on `main`. The workflow deploys the existing Worker,
+stores the password as a Worker secret and checks unauthenticated rejection plus authenticated reads.
+Do not put the password in source code, URLs, issue comments or chat. Store it in your password manager.
+Changing the secret and rerunning this workflow rotates the password. Close the private browser window
+to discard the browser's cached Basic login. Missing or invalid server credentials lock all read access.
+The workflow preserves an existing Worker password if the repository secret is absent.
+
+Build assets with `python scripts/prepare-usage-assets.py`; test with
+`node --test usage-api/worker.test.mjs usage-api/dashboard/model.test.mjs`.
+`run_worker_first: true` is essential: assets must never bypass authentication.
+No database migration or deletion is required. Existing reporting history is preserved.
+
+## Reporting and aggregation reference
+
 # Free usage backend
 
 This Worker + D1 database replaces Abacus increment counters. The website remains on GitHub Pages.

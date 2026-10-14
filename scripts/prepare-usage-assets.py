@@ -3,7 +3,9 @@ from hashlib import sha256
 import json
 from pathlib import Path
 
-root = Path(__file__).resolve().parents[1] / 'site' / 'usage'
+source = Path(__file__).resolve().parents[1] / 'usage-api' / 'dashboard'
+root = source.parent / 'public' / 'usage'
+root.mkdir(parents=True, exist_ok=True)
 assets = {}
 def fingerprint(name, content):
     source = Path(name)
@@ -13,13 +15,13 @@ def fingerprint(name, content):
     assets[filename] = digest
     return filename
 
-model = fingerprint('model.mjs', (root / 'model.mjs').read_bytes())
-script = (root / 'dashboard.js').read_text()
+model = fingerprint('model.mjs', (source / 'model.mjs').read_bytes())
+script = (source / 'dashboard.js').read_text()
 assert "'./model.mjs'" in script, 'Update the module rewrite when the entrypoint changes'
 script = script.replace("'./model.mjs'", f"'./{model}'")
 js = fingerprint('dashboard.js', script.encode())
-css = fingerprint('dashboard.css', (root / 'dashboard.css').read_bytes())
-html = (root / 'index.html').read_text()
+css = fingerprint('dashboard.css', (source / 'dashboard.css').read_bytes())
+html = (source / 'index.html').read_text()
 assert 'href="dashboard.css"' in html and 'src="dashboard.js"' in html, 'Expected unprocessed dashboard HTML'
 html = html.replace('href="dashboard.css"', f'href="{css}"').replace('src="dashboard.js"', f'src="{js}"')
 (root / 'index.html').write_text(html)

@@ -121,12 +121,7 @@ async function loadAll() {
   $('lifetime-status').textContent = 'Loading totals…'; $('github-status').textContent = 'Loading GitHub totals…';
   for (const id of ['all-installs', 'all-plays', 'all-browsers', 'all-downloads']) $(id).textContent = '—';
   for (const id of ['downloads-table', 'browser-table']) empty(id, 'Loading…');
-  apiPromise = response('../usage-config.json', signal).then(config => {
-    if (!config.apiBase) throw new Error('Usage reporting is not connected.');
-    const api = new URL(config.apiBase);
-    if (api.protocol !== 'https:' || api.username || api.password || api.search || api.hash) throw new Error('Invalid usage API address.');
-    return api.href.replace(/\/$/, '');
-  });
+  apiPromise = Promise.resolve(location.origin);
   summaryPromise = apiPromise.then(api => response(api + '/v1/summary', signal));
   await Promise.allSettled([
     loadPeriod(),
