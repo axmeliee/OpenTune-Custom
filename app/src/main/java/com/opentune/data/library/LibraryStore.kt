@@ -93,6 +93,7 @@ object LibraryStore {
         doc.value = d
         _liked.value = d.liked
         _playlists.value = d.playlists
+        LibraryArtwork.keep(d.liked.map { it.thumbnailUrl } + d.playlists.flatMap { p -> p.songs.map { it.thumbnailUrl } })
     }
 
     private fun update(t: (LibraryDocument) -> LibraryDocument) = publish(t(doc.value))

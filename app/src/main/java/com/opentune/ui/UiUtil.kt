@@ -72,7 +72,7 @@ internal object ScreenCache {
  * refreshed. [refreshing] is a reload that keeps the old content on screen.
  * A page seen recently starts from [ScreenCache] and refreshes quietly.
  */
-class LoaderViewModel<T>(private val key: String, private val load: suspend () -> T) : ViewModel() {
+class LoaderViewModel<T>(private val key: String, private val load: suspend () -> T, private val saved: suspend () -> T? = { null }) : ViewModel() {
     private val _state = MutableStateFlow<UiState<T>>(UiState.Loading)
     val state = _state.asStateFlow()
 
@@ -86,7 +86,10 @@ class LoaderViewModel<T>(private val key: String, private val load: suspend () -
             _state.value = UiState.Success(cached.first as T)
             if (System.currentTimeMillis() - cached.second > ScreenCache.FRESH_MS) reload(keepContent = true, quiet = true)
         } else {
-            reload()
+            viewModelScope.launch {
+                saved()?.let { _state.value = UiState.Success(it) }
+                reload(keepContent = true, quiet = true)
+            }
         }
     }
 
@@ -111,5 +114,5 @@ class LoaderViewModel<T>(private val key: String, private val load: suspend () -
 }
 
 @Composable
-fun <T> rememberLoader(key: String, load: suspend () -> T): LoaderViewModel<T> =
-    viewModel(key = key) { LoaderViewModel(key, load) }
+fun <T> rememberLoader(key: String, saved: suspend () -> T? = { null }, load: suspend () -> T): LoaderViewModel<T> =
+    viewModel(key = key) { LoaderViewModel(key, load, saved) }

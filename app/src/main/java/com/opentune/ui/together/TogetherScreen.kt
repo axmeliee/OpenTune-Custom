@@ -102,6 +102,28 @@ import com.opentune.ui.components.SectionHeader
 fun TogetherScreen(contentPadding: PaddingValues, code: String?, onBack: () -> Unit) {
     val room by Together.room.collectAsState()
     val r = room
+    var handled by rememberSaveable(code) { mutableStateOf(false) }
+    var switchRoom by rememberSaveable(code) { mutableStateOf(false) }
+    val invite = RoomCode.parse(code)
+    val inviteName = Together.savedName.ifBlank { com.opentune.data.account.AccountStore.account.value?.name.orEmpty() }
+    LaunchedEffect(code) {
+        if (!handled && invite != null) {
+            handled = true
+            if (r != null && r.code != invite) switchRoom = true
+        }
+    }
+    if (switchRoom && invite != null) {
+        androidx.compose.material3.AlertDialog(
+            onDismissRequest = { switchRoom = false },
+            title = { Text("Join the invited room?") },
+            text = { Text("This leaves your current room.") },
+            confirmButton = { androidx.compose.material3.TextButton(onClick = {
+                switchRoom = false
+                Together.join(invite, inviteName.ifBlank { "Listener" })
+            }) { Text("Join room") } },
+            dismissButton = { androidx.compose.material3.TextButton(onClick = { switchRoom = false }) { Text("Stay here") } },
+        )
+    }
     Box(Modifier.fillMaxSize().padding(contentPadding)) {
         if (r == null) StartRoom(code, onBack) else RoomView(r, onBack)
     }
@@ -109,11 +131,16 @@ fun TogetherScreen(contentPadding: PaddingValues, code: String?, onBack: () -> U
 
 @Composable
 internal fun StartRoom(code: String?, onBack: () -> Unit) {
-    var name by rememberSaveable { mutableStateOf(Together.savedName) }
+    val invite = remember(code) { RoomCode.parse(code) }
+    var name by rememberSaveable {
+        mutableStateOf(Together.savedName.ifBlank {
+            com.opentune.data.account.AccountStore.account.value?.name.orEmpty()
+        }.ifBlank { if (invite != null) "Listener" else "" })
+    }
     var typed by rememberSaveable(code) { mutableStateOf(RoomCode.parse(code)?.pretty ?: "") }
     val parsed = RoomCode.parse(typed)
     LazyColumn(Modifier.fillMaxSize()) {
-        item { PageHeader("Listen together", onBack = onBack) }
+        item { PageHeader(if (invite != null) "You’re invited" else "Listen together", onBack = onBack) }
         item {
             Column(Modifier.padding(horizontal = 24.dp, vertical = 8.dp)) {
                 Box(
@@ -122,7 +149,8 @@ internal fun StartRoom(code: String?, onBack: () -> Unit) {
                 ) { Icon(Icons.Rounded.Groups, null, Modifier.size(38.dp), tint = MaterialTheme.colorScheme.onPrimaryContainer) }
                 Spacer(Modifier.height(16.dp))
                 Text(
-                    "Start a room and friends hear what you play, in step, on their own phones. Or join a friend's room with their code.",
+                    if (invite != null) "Listen with your friends in OpenTune. Tap Join when you’re ready."
+                    else "Start a room and friends hear what you play, in step, on their own phones. Or join a friend's room with their code.",
                     style = MaterialTheme.typography.bodyLarge,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -135,31 +163,37 @@ internal fun StartRoom(code: String?, onBack: () -> Unit) {
                     modifier = Modifier.fillMaxWidth(),
                 )
                 Spacer(Modifier.height(16.dp))
-                Button(
-                    onClick = { Together.create(name) },
-                    enabled = name.isNotBlank(),
-                    modifier = Modifier.fillMaxWidth().height(52.dp),
-                ) { Text("Start a room") }
+                if (invite != null) {
+                    Text("Room", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text(invite.pretty, style = MaterialTheme.typography.titleLarge.copy(fontFamily = FontFamily.Monospace),
+                        modifier = Modifier.padding(vertical = 12.dp))
+                } else {
+                    Button(
+                        onClick = { Together.create(name) },
+                        enabled = name.isNotBlank(),
+                        modifier = Modifier.fillMaxWidth().height(52.dp),
+                    ) { Text("Start a room") }
 
-                Row(Modifier.padding(vertical = 22.dp), verticalAlignment = Alignment.CenterVertically) {
-                    HorizontalDivider(Modifier.weight(1f))
-                    Text("or join one", Modifier.padding(horizontal = 12.dp), color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    HorizontalDivider(Modifier.weight(1f))
+                    Row(Modifier.padding(vertical = 22.dp), verticalAlignment = Alignment.CenterVertically) {
+                        HorizontalDivider(Modifier.weight(1f))
+                        Text("or join one", Modifier.padding(horizontal = 12.dp), color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        HorizontalDivider(Modifier.weight(1f))
+                    }
+                    OutlinedTextField(
+                        typed, { typed = RoomCode.parse(it)?.pretty ?: it.take(256) },
+                        label = { Text("Room code") },
+                        placeholder = { Text("K7QX-M2PA-9DTE") },
+                        singleLine = true,
+                        textStyle = MaterialTheme.typography.titleMedium.copy(fontFamily = FontFamily.Monospace, letterSpacing = 2.sp),
+                        keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Characters, imeAction = ImeAction.Go),
+                        keyboardActions = KeyboardActions(onGo = { parsed?.let { if (name.isNotBlank()) Together.join(it, name) } }),
+                        isError = typed.length >= 12 && parsed == null,
+                        supportingText = { if (typed.length >= 12 && parsed == null) Text("That isn't a room code") },
+                        modifier = Modifier.fillMaxWidth(),
+                    )
                 }
-                OutlinedTextField(
-                    typed, { typed = it.uppercase().take(16) },
-                    label = { Text("Room code") },
-                    placeholder = { Text("K7QX-M2PA-9DTE") },
-                    singleLine = true,
-                    textStyle = MaterialTheme.typography.titleMedium.copy(fontFamily = FontFamily.Monospace, letterSpacing = 2.sp),
-                    keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Characters, imeAction = ImeAction.Go),
-                    keyboardActions = KeyboardActions(onGo = { parsed?.let { if (name.isNotBlank()) Together.join(it, name) } }),
-                    isError = typed.length >= 12 && parsed == null,
-                    supportingText = { if (typed.length >= 12 && parsed == null) Text("That isn't a room code") },
-                    modifier = Modifier.fillMaxWidth(),
-                )
                 Spacer(Modifier.height(8.dp))
-                FilledTonalButton(
+                Button(
                     onClick = { parsed?.let { Together.join(it, name) } },
                     enabled = parsed != null && name.isNotBlank(),
                     modifier = Modifier.fillMaxWidth().height(52.dp),
@@ -170,7 +204,7 @@ internal fun StartRoom(code: String?, onBack: () -> Unit) {
                     Spacer(Modifier.width(10.dp))
                     Text(
                         "Rooms run over public Nostr relays, which only pass messages along and don't keep them. " +
-                            "The code lets someone knock; the host lets them in, and only then does their phone get the key the room's music, chat and voice are encrypted with. " +
+                            "If the host has approval enabled, you’ll wait for them to let you in. Music, chat and voice messages are encrypted. " +
                             "Each phone plays the music itself.",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,

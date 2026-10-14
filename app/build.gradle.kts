@@ -40,6 +40,8 @@ android {
         }
     }
 
+    val unsignedRelease = providers.gradleProperty("unsignedRelease").map { it.toBoolean() }.getOrElse(false)
+
     buildTypes {
         release {
             // Shrinking only: nothing renamed or optimized (see proguard-rules.pro),
@@ -51,7 +53,7 @@ android {
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro",
             )
-            signingConfig = signingConfigs.findByName("release") ?: signingConfigs.getByName("debug")
+            signingConfig = if (unsignedRelease) null else (signingConfigs.findByName("release") ?: signingConfigs.getByName("debug"))
         }
     }
 
@@ -59,7 +61,7 @@ android {
     // that runs anywhere.
     splits {
         abi {
-            isEnable = true
+            isEnable = !providers.gradleProperty("universalOnly").map { it.toBoolean() }.getOrElse(false)
             reset()
             include("arm64-v8a", "armeabi-v7a", "x86_64")
             isUniversalApk = true

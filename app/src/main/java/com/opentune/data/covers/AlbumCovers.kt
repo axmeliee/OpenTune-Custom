@@ -81,6 +81,14 @@ object AlbumCovers {
         return "ytimg.com" in art || art.startsWith(LOCAL_ART)
     }
 
+    /** A previously resolved cover, ready before the player displays anything. */
+    fun cached(song: Song): String? {
+        if (!wants(song)) return null
+        val cleaned = TrackNameCleaner.clean(song.title, song.artist)
+        val key = "${primaryArtist(cleaned.artist).lowercase(Locale.ROOT)}|${cleaned.title.lowercase(Locale.ROOT)}"
+        return cache[key]?.ifEmpty { null }
+    }
+
     /** A local file's album art, if the phone actually has an image for it. */
     private suspend fun hasLocalArt(uri: String): Boolean = withContext(Dispatchers.IO) {
         val resolver = resolver ?: return@withContext true

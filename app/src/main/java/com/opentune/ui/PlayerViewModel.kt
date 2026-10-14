@@ -10,6 +10,7 @@ import com.opentune.data.together.Together
 import com.opentune.playback.PlayerConnection
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.combine
@@ -34,7 +35,10 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
 
     val player = PlayerConnection(application)
 
-    val currentSong = player.currentSong
+    private val artwork = com.opentune.data.covers.PlaybackArtwork()
+    val currentSong = player.currentSong.map { song ->
+        song?.copy(thumbnailUrl = artwork.choose(song)) ?: run { artwork.clear(); null }
+    }.stateIn(viewModelScope, kotlinx.coroutines.flow.SharingStarted.Eagerly, null)
     val queue = player.queue
     val currentIndex = player.currentIndex
     val upNext = player.upNext
@@ -55,6 +59,12 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
         Together.attach(player)
         viewModelScope.launch { player.connect() }
         viewModelScope.launch { watchLyrics() }
+        viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+            player.currentSong.distinctUntilChangedBy { it?.videoId }.collectLatest { song ->
+                // Resolve missing covers for the next listen, without replacing one already shown.
+                if (song != null && AppSettings.ui.value.albumCovers) com.opentune.data.covers.AlbumCovers.coverFor(song)
+            }
+        }
     }
 
     @OptIn(ExperimentalCoroutinesApi::class)

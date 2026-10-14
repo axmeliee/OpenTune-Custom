@@ -119,19 +119,10 @@ fun LibraryScreen(contentPadding: PaddingValues, actions: SongActions, nav: Libr
     }
     val year = remember { Calendar.getInstance().get(Calendar.YEAR) }
     val summary = remember(records) { History.replay(records, yearStart) }
-    // Starts from the last copy, so coming back doesn't drop the list and
-    // shift everything under the restored scroll position.
-    @Suppress("UNCHECKED_CAST")
-    var ytPlaylists by remember { mutableStateOf(ScreenCache.get(YT_PLAYLISTS)?.first as? List<ShelfItem> ?: emptyList()) }
-    LaunchedEffect(signedIn) {
-        ytPlaylists = if (signedIn) {
-            runCatching { MusicRepository.libraryPlaylists() }.getOrNull()
-                ?.also { ScreenCache.put(YT_PLAYLISTS, it) }
-                ?: ytPlaylists
-        } else {
-            ScreenCache.put(YT_PLAYLISTS, emptyList<ShelfItem>())
-            emptyList()
-        }
+    val cachedPlaylists by com.opentune.data.library.LibraryCache.playlists.collectAsState()
+    val ytPlaylists = if (signedIn) cachedPlaylists else emptyList()
+    LaunchedEffect(signedIn, account?.email) {
+        if (signedIn) runCatching { MusicRepository.libraryPlaylists() }
     }
     var naming by remember { mutableStateOf(false) }
     if (naming) NameDialog("New playlist", "", onDismiss = { naming = false }) { name -> naming = false; nav.playlist(LibraryStore.createPlaylist(name)) }

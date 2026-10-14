@@ -214,7 +214,12 @@ fun CollectionScreen(
     actions: SongActions,
     onBack: () -> Unit,
 ) {
-    val loader = rememberLoader("collection:$browseId") { MusicRepository.collection(browseId) }
+    val owner = com.opentune.data.library.LibraryCache.owner()
+    val loader = rememberLoader("collection:$owner:$browseId", saved = {
+        kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+            com.opentune.data.library.LibraryCache.collection(browseId, owner)?.let { it.copy(songs = com.opentune.data.ContentFilter.songs(it.songs)) }
+        }
+    }) { MusicRepository.collection(browseId) }
     val state by loader.state.collectAsState()
     val listState = rememberLazyListState()
     val isAlbum = MusicRepository.typeOf(browseId) == BrowseType.ALBUM

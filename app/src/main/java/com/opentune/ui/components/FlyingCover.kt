@@ -41,15 +41,19 @@ object FlyingCover {
     internal var target by mutableStateOf<Rect?>(null)
     internal var cardBounds: Rect? = null
     private var tapAt = Offset.Unspecified
-    private var tapTime = 0L
+    private var tapTime = -1L
 
     /** Notes each tap on the screen without taking it. */
     fun Modifier.watchTaps(): Modifier = pointerInput(Unit) {
         awaitEachGesture {
             val down = awaitFirstDown(requireUnconsumed = false, pass = PointerEventPass.Initial)
-            tapAt = down.position
-            tapTime = SystemClock.uptimeMillis()
+            recordTap(down.position)
         }
+    }
+
+    internal fun recordTap(position: Offset) {
+        tapAt = position
+        tapTime = SystemClock.uptimeMillis()
     }
 
     /** On the now-playing card's cover: where flights land. */
@@ -60,9 +64,9 @@ object FlyingCover {
 
     /** Where a flight for a song starting now begins, or null if no tap just led to it. */
     internal fun takeStart(): Offset? {
-        val recent = SystemClock.uptimeMillis() - tapTime < TAP_WINDOW_MS
+        val recent = tapTime >= 0L && SystemClock.uptimeMillis() - tapTime < TAP_WINDOW_MS
         val at = tapAt
-        tapTime = 0L
+        tapTime = -1L
         if (!recent || at == Offset.Unspecified) return null
         if (cardBounds?.inflate(12f)?.contains(at) == true) return null
         return at
@@ -112,13 +116,16 @@ fun CoverExpand(url: String?, smallUrl: String? = null) {
     val expanding = FlyingCover.expanding
     LaunchedEffect(expanding) {
         if (!expanding) return@LaunchedEffect
-        // The player lays out its cover in a frame or two; without one (another layout), skip it.
-        var tries = 0
-        while (FlyingCover.playerCover == null && tries++ < 25) kotlinx.coroutines.delay(16)
-        if (FlyingCover.playerCover == null) { FlyingCover.endExpand(); return@LaunchedEffect }
-        t.snapTo(0f)
-        t.animateTo(1f, tween(460, easing = CubicBezierEasing(0.2f, 0f, 0f, 1f)))
-        FlyingCover.endExpand()
+        try {
+            // Also clear the hidden-cover flag when cancelled while waiting for layout.
+            var tries = 0
+            while (FlyingCover.playerCover == null && tries++ < 25) kotlinx.coroutines.delay(16)
+            if (FlyingCover.playerCover == null) return@LaunchedEffect
+            t.snapTo(0f)
+            t.animateTo(1f, tween(460, easing = CubicBezierEasing(0.2f, 0f, 0f, 1f)))
+        } finally {
+            FlyingCover.endExpand()
+        }
     }
     if (!expanding) return
     val from = FlyingCover.expandStart() ?: return
@@ -150,15 +157,30 @@ fun CoverExpand(url: String?, smallUrl: String? = null) {
     }
 }
 
+/** Owns the transient cover, including cancellation before the next tap arrives. */
+internal class CoverFlightState {
+    var current by mutableStateOf<Triple<String?, Offset, Rect>?>(null)
+        private set
+    fun clear() { current = null }
+    suspend fun run(cover: Triple<String?, Offset, Rect>, animate: suspend () -> Unit) {
+        current = cover
+        try { animate() } finally {
+            // An old coroutine must not erase a newer flight if cancellation overlaps.
+            if (current === cover) current = null
+        }
+    }
+}
+
 /**
  * The flight itself, over everything: started when [songKey] changes with
  * [url] as its cover. Draws nothing between flights.
  */
 @Composable
 fun CoverFlight(songKey: String?, url: String?, enabled: Boolean) {
-    var flight by remember { mutableStateOf<Triple<String?, Offset, Rect>?>(null) }
+    val flight = remember { CoverFlightState() }
     val t = remember { Animatable(0f) }
-    LaunchedEffect(songKey) {
+    LaunchedEffect(songKey, enabled) {
+        flight.clear()
         if (!enabled || songKey == null) return@LaunchedEffect
         val start = FlyingCover.takeStart() ?: return@LaunchedEffect
         // The card may still be arriving for a first song; wait a moment for it.
@@ -166,12 +188,12 @@ fun CoverFlight(songKey: String?, url: String?, enabled: Boolean) {
         var tries = 0
         while (end == null && tries++ < 20) { kotlinx.coroutines.delay(16); end = FlyingCover.target }
         end ?: return@LaunchedEffect
-        flight = Triple(url, start, end)
-        t.snapTo(0f)
-        t.animateTo(1f, tween(720, easing = CubicBezierEasing(0.3f, 0f, 0.15f, 1f)))
-        flight = null
+        flight.run(Triple(url, start, end)) {
+            t.snapTo(0f)
+            t.animateTo(1f, tween(720, easing = CubicBezierEasing(0.3f, 0f, 0.15f, 1f)))
+        }
     }
-    val f = flight ?: return
+    val f = flight.current ?: return
     val density = LocalDensity.current
     val startSize = with(density) { 72.dp.toPx() }
     val p = t.value

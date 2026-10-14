@@ -9,6 +9,11 @@ import androidx.compose.material3.darkColorScheme
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
+import androidx.compose.ui.test.onNodeWithText
+import androidx.compose.ui.test.assertIsEnabled
+import androidx.compose.foundation.layout.PaddingValues
+import org.junit.Assert.assertNull
+import com.opentune.ui.together.TogetherScreen
 import com.opentune.data.together.Member
 import com.opentune.data.together.RoomCode
 import com.opentune.data.together.Together
@@ -46,6 +51,18 @@ class TogetherScreenshotTest {
     }
 
     @Test fun start() = shoot("together-start") { StartRoom(code = null, onBack = {}) }
+
+    @Test fun inviteWaitsForJoinAndDoesNotAskForTheCodeAgain() {
+        shoot("together-invite") {
+            TogetherScreen(PaddingValues(), "K7QXM2PA9DTE", onBack = {})
+        }
+        compose.onNodeWithText("You’re invited").assertExists()
+        compose.onNodeWithText("K7QX-M2PA-9DTE").assertExists()
+        compose.onNodeWithText("Join").assertIsEnabled()
+        compose.onNodeWithText("Start a room").assertDoesNotExist()
+        compose.onNodeWithText("Room code").assertDoesNotExist()
+        assertNull("Opening an invite must not join before confirmation", Together.room.value)
+    }
 
     @Test fun room() {
         val code = RoomCode.parse("K7QX-M2PA-9DTE")!!

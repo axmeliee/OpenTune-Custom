@@ -1,0 +1,36 @@
+# Submission draft generated from the selected source commit; run F-Droid lint/build before submitting.
+Categories:
+  - Multimedia
+License: GPL-3.0-only
+WebSite: https://justshivv.github.io/Opentune/
+SourceCode: https://github.com/justshivv/Opentune
+IssueTracker: https://github.com/justshivv/Opentune/issues
+Changelog: https://github.com/justshivv/Opentune/releases
+AutoName: OpenTune
+Summary: Ad-free music, synced lyrics and listening together
+Description: |-
+  Free, open-source music player for Android with synced lyrics, downloads,
+  playlists, radio, podcasts and listening rooms. No account is required for
+  basic listening. Optional usage counting can be disabled in Settings > About.
+  Uses third-party music services, including YouTube Music and JioSaavn.
+AntiFeatures:
+  NonFreeNet:
+    en-US: Streams and some optional features depend on third-party services.
+  Tracking:
+    en-US: Optional usage counting is enabled by default and sends a random installation identifier, app version and daily play totals. It can be disabled in Settings > About.
+RepoType: git
+Repo: https://github.com/justshivv/Opentune.git
+Builds:
+  - versionName: '@VERSION@'
+    versionCode: @VERSION_CODE@
+    commit: '@COMMIT@'
+    subdir: app
+    gradle:
+      - 'yes'
+    gradleprops:
+      - unsignedRelease=true
+      - universalOnly=true
+AutoUpdateMode: None
+UpdateCheckMode: None
+CurrentVersion: '@VERSION@'
+CurrentVersionCode: @VERSION_CODE@
