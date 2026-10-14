@@ -281,6 +281,7 @@ private fun AddRow(song: Song, added: Boolean, onAdd: () -> Unit) {
 }
 
 /** The row under a list's Play and Shuffle: download it all, and for the app's own playlists, add songs. */
+@OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
 @Composable
 fun ListTools(songs: List<Song>, onAddSongs: (() -> Unit)?, modifier: Modifier = Modifier) {
     androidx.compose.foundation.layout.FlowRow(modifier, horizontalArrangement = Arrangement.spacedBy(10.dp, Alignment.CenterHorizontally), verticalArrangement = Arrangement.spacedBy(8.dp)) {

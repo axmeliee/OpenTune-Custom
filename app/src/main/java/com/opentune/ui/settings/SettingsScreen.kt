@@ -351,6 +351,7 @@ private fun settingsSections(
     var listenBrainzDialog by remember { mutableStateOf(false) }
     var sponsorBlockDialog by remember { mutableStateOf(false) }
     var update by remember { mutableStateOf<UpdateCheck.Release?>(null) }
+    var showWhatsNew by remember { mutableStateOf(false) }
     var supportDialog by remember { mutableStateOf(false) }
     val pendingUpdate by UpdateCheck.pending.collectAsState()
     var updateBytes by remember { mutableStateOf(0L) }
@@ -442,6 +443,10 @@ private fun settingsSections(
     if (listenBrainzDialog) ListenBrainzDialog(onDismiss = { listenBrainzDialog = false })
     if (sponsorBlockDialog) SponsorBlockDialog(onDismiss = { sponsorBlockDialog = false })
     update?.let { UpdateDialog(it, onDismiss = { update = null }) }
+    if (showWhatsNew) com.opentune.ui.components.WhatsNewSheet(
+        com.opentune.ui.components.WhatsNew.since(null, BuildConfig.VERSION_NAME, BuildConfig.CHANGELOG),
+        BuildConfig.VERSION_NAME, onDismiss = { showWhatsNew = false },
+    )
     if (supportDialog) com.opentune.ui.components.SupportDialog(onDismiss = { supportDialog = false })
     if (followedDialog) FollowedArtistsDialog(onDismiss = { followedDialog = false })
     if (playerStyleDialog) {
@@ -1201,6 +1206,9 @@ private fun settingsSections(
         Section(
             "Advanced",
             listOf(
+                Entry("What's new", "release notes changelog version highlights") {
+                    NavRow("What's new", { showWhatsNew = true }, summary = "Highlights and improvements in ${BuildConfig.VERSION_NAME}", icon = Icons.Rounded.SystemUpdate)
+                },
                 Entry("Check for updates", "new version release download github") {
                     NavRow("Check for updates", {
                         // A release already found opens at once; Update still looks for a newer one first.

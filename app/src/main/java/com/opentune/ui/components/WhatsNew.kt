@@ -47,6 +47,17 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.rounded.ExpandMore
+import androidx.compose.material.icons.rounded.ExpandLess
+import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -184,42 +195,58 @@ object WhatsNew {
     }
 }
 
-/** The sheet itself: each note slides in a moment after the one above it. */
+/** A release cover, readable feature cards, and older changes tucked into version groups. */
 @Composable
 fun WhatsNewSheet(notes: List<Pair<String, List<WhatsNew.Note>>>, version: String, onDismiss: () -> Unit) {
-    // Titled with the version installed. A version released without notes of its own
-    // shows the latest ones there are, each under its own number.
-    val ownNotes = notes.first().first == version
+    val ownNotes = notes.firstOrNull()?.first == version
     FloatingCard(
         onDismiss = onDismiss,
         title = "What's new in $version",
-        icon = Icons.Rounded.NewReleases,
+        actions = {
+            Button(onClick = onDismiss, modifier = Modifier.fillMaxWidth().padding(horizontal = 6.dp)) { Text("Start listening") }
+        },
     ) {
-        Column(Modifier.verticalScroll(rememberScrollState()).padding(horizontal = 6.dp, vertical = 4.dp)) {
-            var index = 0
-            notes.forEachIndexed { v, (version, list) ->
-                if (v > 0 || !ownNotes) {
-                    Text(
-                        if (ownNotes) "Also in $version" else "In $version",
-                        style = MaterialTheme.typography.labelLarge,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.padding(start = 4.dp, top = 12.dp, bottom = 4.dp),
-                    )
+        Column(Modifier.weight(1f, fill = false).verticalScroll(rememberScrollState())
+            .padding(horizontal = 4.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            ReleaseHero(version, "Installed · ready to listen")
+            if (notes.isEmpty()) Text("You're up to date. Enjoy your music.", Modifier.padding(16.dp))
+            notes.forEachIndexed { group, (releaseVersion, list) ->
+                if (group == 0) {
+                    Text(if (ownNotes) "The highlights" else "In $releaseVersion",
+                        style = MaterialTheme.typography.titleLarge,
+                        modifier = Modifier.padding(top = 8.dp, start = 4.dp).semantics { heading() })
+                    list.forEachIndexed { index, note -> NoteRow(note, index) }
+                } else {
+                    var expanded by rememberSaveable(releaseVersion) { mutableStateOf(false) }
+                    Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(22.dp))
+                        .background(MaterialTheme.colorScheme.surfaceContainer)) {
+                        Row(Modifier.fillMaxWidth().clickable { expanded = !expanded }.padding(18.dp),
+                            verticalAlignment = Alignment.CenterVertically) {
+                            Column(Modifier.weight(1f)) {
+                                Text(if (ownNotes) "Also in $releaseVersion" else "In $releaseVersion", style = MaterialTheme.typography.titleMedium)
+                                Text("${list.size} changes", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            }
+                            Icon(if (expanded) Icons.Rounded.ExpandLess else Icons.Rounded.ExpandMore,
+                                if (expanded) "Collapse changes" else "Expand changes")
+                        }
+                        if (expanded) list.forEachIndexed { index, note -> NoteRow(note, index) }
+                    }
                 }
-                list.forEach { note -> NoteRow(note, index++) }
             }
-            Spacer(Modifier.size(12.dp))
-            Button(onClick = onDismiss, modifier = Modifier.fillMaxWidth().padding(bottom = 10.dp)) { Text("Let's go") }
+            Spacer(Modifier.size(8.dp))
         }
     }
 }
 
 @Composable
 private fun NoteRow(note: WhatsNew.Note, index: Int) {
-    val shown = remember { Animatable(0f) }
-    LaunchedEffect(Unit) {
-        delay(120L + index * 70L)
-        shown.animateTo(1f, spring(dampingRatio = 0.75f, stiffness = 260f))
+    val ui by com.opentune.data.settings.AppSettings.ui.collectAsState()
+    val shown = remember { Animatable(if (ui.reduceAnimation) 1f else 0f) }
+    LaunchedEffect(ui.reduceAnimation) {
+        if (ui.reduceAnimation) shown.snapTo(1f) else {
+            delay(60L + index.coerceAtMost(5) * 45L)
+            shown.animateTo(1f, spring(dampingRatio = 0.9f, stiffness = 300f))
+        }
     }
     Row(
         Modifier
@@ -228,7 +255,9 @@ private fun NoteRow(note: WhatsNew.Note, index: Int) {
                 alpha = shown.value.coerceIn(0f, 1f)
                 translationY = (1f - shown.value) * 24.dp.toPx()
             }
-            .padding(vertical = 8.dp),
+            .clip(RoundedCornerShape(22.dp))
+            .background(MaterialTheme.colorScheme.surfaceContainer)
+            .padding(18.dp),
         horizontalArrangement = Arrangement.Start,
         verticalAlignment = Alignment.Top,
     ) {
@@ -240,8 +269,8 @@ private fun NoteRow(note: WhatsNew.Note, index: Int) {
         }
         Spacer(Modifier.width(14.dp))
         Column(Modifier.weight(1f)) {
-            Text(note.title, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
-            if (note.line.isNotEmpty()) Text(note.line, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text(note.title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+            if (note.line.isNotEmpty()) Text(note.line, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = 6.dp))
         }
     }
 }

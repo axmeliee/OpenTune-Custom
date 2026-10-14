@@ -109,7 +109,7 @@ internal val SETTINGS_CATEGORIES = listOf(
     SettingsCategory(
         "about", "About", "Updates, source code and diagnostics", Icons.Rounded.Info,
         listOf(
-            "Updates" to listOf("Check for updates", "Check for updates automatically"),
+            "Updates" to listOf("What's new", "Check for updates", "Check for updates automatically"),
             "OpenTune" to listOf("Support OpenTune", "Star on GitHub", "Count this phone in usage numbers", "Source code", "Export diagnostics"),
         ),
     ),

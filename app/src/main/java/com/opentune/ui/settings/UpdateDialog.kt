@@ -4,6 +4,23 @@ import android.content.Intent
 import android.text.format.Formatter
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.background
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.Alignment
+import androidx.compose.material3.Button
+import androidx.compose.material3.TextButton
+import androidx.compose.material3.Icon
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.Android
+import com.opentune.ui.components.FloatingCard
+import com.opentune.ui.components.ReleaseHero
+import com.opentune.ui.components.ReleaseNotes
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
@@ -73,54 +90,58 @@ fun UpdateDialog(found: UpdateCheck.Release, onDismiss: () -> Unit, onNotNow: (U
         }
     }
 
-    FloatingDialog(
-        onDismissRequest = { if (progress == null) onDismiss() },
-        title = { Text("OpenTune ${release.version}") },
-        text = {
-            Column {
-                Text(
-                    "You have ${BuildConfig.VERSION_NAME}." + (apk?.takeIf { it.bytes > 0 }?.let { " The update is ${Formatter.formatShortFileSize(context, it.bytes)}." } ?: ""),
-                    style = MaterialTheme.typography.bodyMedium,
-                )
-                if (release.notes.isNotBlank()) {
-                    Text(
-                        release.notes.trim(),
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.padding(top = 10.dp).heightIn(max = 220.dp).verticalScroll(rememberScrollState()),
-                    )
+    FloatingCard(
+        onDismiss = onDismiss,
+        title = "A new OpenTune",
+        dismissible = progress == null,
+        actions = {
+            Column(Modifier.fillMaxWidth().padding(horizontal = 6.dp)) {
+                Button(enabled = progress == null, onClick = {
+                    if (apk == null) {
+                        runCatching { context.startActivity(Intent(Intent.ACTION_VIEW, release.page.toUri())) }
+                        onDismiss()
+                    } else start()
+                }, modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp)) {
+                    Text(if (progress != null) "Downloading…" else if (apk == null) "Open release page" else "Update OpenTune")
                 }
-                progress?.let { p ->
-                    LinearProgressIndicator(progress = { p }, modifier = Modifier.fillMaxWidth().padding(top = 14.dp))
-                    Text("Downloading… ${(p * 100).toInt()}%", style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(top = 4.dp))
-                }
-                if (progress == null && kept > 0) {
-                    Text(
-                        "Delete the downloaded update (${Formatter.formatShortFileSize(context, kept)})",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.primary,
-                        modifier = Modifier.padding(top = 10.dp).clickable { Updater.deleteCached(context); kept = 0 },
-                    )
-                }
-                error?.let { Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(top = 10.dp)) }
+                TextButton(onClick = {
+                    if (progress != null) job?.cancel() else onNotNow(release)
+                }, modifier = Modifier.fillMaxWidth()) { Text(if (progress != null) "Cancel download" else "Not now") }
             }
         },
-        confirmButton = {
-            if (apk == null) {
-                SheetButton("Open release page", onClick = {
-                    runCatching { context.startActivity(Intent(Intent.ACTION_VIEW, release.page.toUri())) }
-                    onDismiss()
-                })
-            } else {
-                SheetButton("Update", enabled = progress == null, onClick = ::start)
+    ) {
+        Column(Modifier.weight(1f, fill = false).verticalScroll(rememberScrollState())
+            .padding(horizontal = 4.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
+            ReleaseHero(release.version, "Update available · you have ${BuildConfig.VERSION_NAME}")
+            ReleaseNotes(release.notes)
+            if (apk != null) {
+                Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(24.dp))
+                    .background(MaterialTheme.colorScheme.surfaceContainer).padding(20.dp),
+                    verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Text("Ready for your phone", style = MaterialTheme.typography.titleMedium)
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+                        Icon(Icons.Rounded.Android, null, Modifier.size(28.dp), tint = MaterialTheme.colorScheme.primary)
+                        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                            Text(apk.name, style = MaterialTheme.typography.bodyMedium)
+                            Text(if (apk.bytes > 0) "Android app · ${Formatter.formatShortFileSize(context, apk.bytes)}" else "Android app",
+                                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                    }
+                    progress?.let { p ->
+                        LinearProgressIndicator(progress = { p }, modifier = Modifier.fillMaxWidth())
+                        Text("Downloading · ${(p * 100).toInt()}%", style = MaterialTheme.typography.labelMedium)
+                    }
+                    if (progress == null && kept > 0) TextButton(onClick = { Updater.deleteCached(context); kept = 0 }) {
+                        Text("Remove saved update (${Formatter.formatShortFileSize(context, kept)})")
+                    }
+                }
             }
-        },
-        dismissButton = {
-            if (progress != null) {
-                SheetButton("Cancel", onClick = { job?.cancel() })
-            } else {
-                SheetButton("Not now", onClick = { onNotNow(release) }, closes = true)
+            error?.let {
+                Text(it, color = MaterialTheme.colorScheme.onErrorContainer, style = MaterialTheme.typography.bodyMedium,
+                    modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(18.dp))
+                        .background(MaterialTheme.colorScheme.errorContainer).padding(16.dp))
             }
-        },
-    )
+            Spacer(Modifier.height(4.dp))
+        }
+    }
 }
