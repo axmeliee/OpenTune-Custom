@@ -1318,6 +1318,17 @@ class PlaybackService : MediaLibraryService() {
         val item = player.currentMediaItem ?: return
         val mediaId = item.mediaId
         val uri = item.localConfiguration?.uri?.let(::selectedUri)
+        if (uri?.scheme == "file" && error.errorCode == PlaybackException.ERROR_CODE_IO_FILE_NOT_FOUND &&
+            com.opentune.data.isYouTubeId(mediaId) && com.opentune.data.download.Downloads.entryNow(mediaId) == null) {
+            // The user removed an offline copy after it was queued. Stream it
+            // without recreating the download they deliberately removed.
+            val index = player.currentMediaItemIndex
+            val position = player.currentPosition
+            player.replaceMediaItem(index, item.buildUpon().setUri(streamUri(mediaId, upgraded = false)).build())
+            player.seekTo(index, position)
+            player.prepare()
+            return
+        }
         if (uri?.scheme == "file" &&
             error.errorCode in setOf(PlaybackException.ERROR_CODE_PARSING_CONTAINER_UNSUPPORTED, PlaybackException.ERROR_CODE_PARSING_CONTAINER_MALFORMED) &&
             com.opentune.data.download.Downloads.entryNow(mediaId)?.path == uri.path) {

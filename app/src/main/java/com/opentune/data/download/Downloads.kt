@@ -276,8 +276,10 @@ class DownloadWorker(context: Context, params: WorkerParameters) : CoroutineWork
             throw e
         } catch (e: Exception) {
             Log.w(TAG, "Download of $id failed", e)
-            publish { it.copy(state = DownloadState.FAILED, error = e.message) }
-            if (runAttemptCount < MAX_ATTEMPTS && e is IOException) Result.retry() else Result.failure()
+            val retrying = runAttemptCount < MAX_ATTEMPTS && e is IOException
+            publish { it.copy(state = if (retrying) DownloadState.QUEUED else DownloadState.FAILED,
+                progress = 0f, error = e.message) }
+            if (retrying) Result.retry() else Result.failure()
         } finally {
             val current = Downloads.entryNow(id)
             if (current == null || current.workId != entry.workId || current.state != DownloadState.DONE) {
