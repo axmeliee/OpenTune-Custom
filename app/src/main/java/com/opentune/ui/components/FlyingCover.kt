@@ -157,16 +157,30 @@ fun CoverExpand(url: String?, smallUrl: String? = null) {
     }
 }
 
+/** Owns the transient cover, including cancellation before the next tap arrives. */
+internal class CoverFlightState {
+    var current by mutableStateOf<Triple<String?, Offset, Rect>?>(null)
+        private set
+    fun clear() { current = null }
+    suspend fun run(cover: Triple<String?, Offset, Rect>, animate: suspend () -> Unit) {
+        current = cover
+        try { animate() } finally {
+            // An old coroutine must not erase a newer flight if cancellation overlaps.
+            if (current === cover) current = null
+        }
+    }
+}
+
 /**
  * The flight itself, over everything: started when [songKey] changes with
  * [url] as its cover. Draws nothing between flights.
  */
 @Composable
-fun CoverFlight(songKey: String?, url: String?, enabled: Boolean, modifier: Modifier = Modifier) {
-    var flight by remember { mutableStateOf<Triple<String?, Offset, Rect>?>(null) }
+fun CoverFlight(songKey: String?, url: String?, enabled: Boolean) {
+    val flight = remember { CoverFlightState() }
     val t = remember { Animatable(0f) }
     LaunchedEffect(songKey, enabled) {
-        flight = null
+        flight.clear()
         if (!enabled || songKey == null) return@LaunchedEffect
         val start = FlyingCover.takeStart() ?: return@LaunchedEffect
         // The card may still be arriving for a first song; wait a moment for it.
@@ -174,16 +188,12 @@ fun CoverFlight(songKey: String?, url: String?, enabled: Boolean, modifier: Modi
         var tries = 0
         while (end == null && tries++ < 20) { kotlinx.coroutines.delay(16); end = FlyingCover.target }
         end ?: return@LaunchedEffect
-        flight = Triple(url, start, end)
-        try {
+        flight.run(Triple(url, start, end)) {
             t.snapTo(0f)
             t.animateTo(1f, tween(720, easing = CubicBezierEasing(0.3f, 0f, 0.15f, 1f)))
-        } finally {
-            // A skip can cancel this effect before another tap starts a flight.
-            flight = null
         }
     }
-    val f = flight ?: return
+    val f = flight.current ?: return
     val density = LocalDensity.current
     val startSize = with(density) { 72.dp.toPx() }
     val p = t.value
@@ -194,7 +204,7 @@ fun CoverFlight(songKey: String?, url: String?, enabled: Boolean, modifier: Modi
     val y = from.y + (to.center.y - from.y) * p - with(density) { 90.dp.toPx() } * sin(Math.PI.toFloat() * p) * 0.6f
     val lift = 1f + 0.12f * sin(Math.PI.toFloat() * p)
     Box(
-        modifier
+        Modifier
             .offset { IntOffset((x - size / 2f).roundToInt(), (y - size / 2f).roundToInt()) }
             .size(with(density) { size.toDp() })
             .graphicsLayer {
