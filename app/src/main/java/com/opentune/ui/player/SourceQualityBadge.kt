@@ -56,7 +56,7 @@ internal fun SourceQualityBadge(mediaId: String, format: AudioFormatInfo?, onCli
     TextButton(
         onClick = onClick,
         modifier = modifier.padding(vertical = 4.dp).heightIn(min = 40.dp)
-            .lightBeam(isHighestQuality(source, if (source != null) format else null), still = ui.reduceAnimation, color = colors.primary)
+            .lightBeam(source?.provider == "JioSaavn" || isHighestQuality(source, if (source != null) format else null), still = ui.reduceAnimation, color = colors.primary)
             .semantics {
             contentDescription = "$label. Open signal path"
         },
