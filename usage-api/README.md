@@ -37,26 +37,13 @@ This Worker + D1 database replaces Abacus increment counters. The website remain
 Deployed on Cloudflare's Free plan at `https://opentune-usage.create-a-new-site-with-sites.workers.dev`.
 The public API URL and D1 binding are configured in this repository; credentials are kept outside it.
 
-## Deploy
+## Deploy the existing backend
 
-Use a free Cloudflare account, Node 22+ and Wrangler 4. Run from `usage-api`:
-
-```sh
-npx wrangler@4 login
-npx wrangler@4 d1 create opentune-usage
-# Copy the returned database_id into wrangler.jsonc. Keep the DB binding name.
-npx wrangler@4 d1 execute opentune-usage --remote --file=schema.sql
-npx wrangler@4 deploy
-```
-
-Put the returned HTTPS Workers URL in `site/usage-config.json` as `apiBase`, without a trailing path.
-Publish the GitHub Pages site. Both Android and the website read this configuration; no API key is shipped in the APK.
-If the website origin changes, update `ALLOWED_ORIGINS` (comma-separated exact origins) and redeploy.
-Never put Cloudflare account tokens into the website or app.
-
-Before enabling collection, check `GET /v1/summary` returns zero aggregates and that the
-dashboard reads them. Test with a separate local database, not fabricated production installations.
-Android debug builds do not upload. Release builds honor Settings > About > Count this phone in usage numbers.
+Use **Actions → Usage API → Run workflow** on main. It builds private assets and deploys the existing
+Worker and D1 binding using `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID`. Do not recreate the
+production database. For local tests, use a separate SQLite database rather than fabricated production reports.
+Android release builds honor Settings → About → Count this phone in usage numbers; debug builds do not upload.
+The public ingestion URL stays in `site/usage-config.json`; no authentication credential is shipped in the APK.
 
 ## What the metrics actually mean
 
@@ -74,8 +61,8 @@ Android debug builds do not upload. Release builds honor Settings > About > Coun
   These are kept separate. Historical events cannot be converted to unique people.
 
 There is no account-based identity, hardware identifier, listening history, song title or stored IP in these tables.
-Hosting infrastructure still handles IPs for network requests. The public dashboard returns aggregate data only.
-The API is an anonymous reporting endpoint: input validation and deduplication prevent accidental inflation,
+Hosting infrastructure still handles IPs for network requests. The private owner dashboard returns aggregate data only.
+The write API is an anonymous reporting endpoint: input validation and deduplication prevent accidental inflation,
 but a modified client can invent IDs or reports. These are measured reports, not fraud-proof human counts.
 Cloudflare WAF/rate limiting can mitigate abuse if needed; never claim precise unique people without sign-in.
 Do not combine legacy Abacus data with these new unique metrics.
@@ -107,9 +94,10 @@ updates, unique periods, repeated downloads, invalid input and request-size/orig
 activity totals, daily counts, version counts and the first recorded activity date.
 Ranges may cover up to 366 days and cannot end in the future. Unique installations
 are deduplicated across the entire period; they are not the sum of daily counts.
-The existing `/v1/summary` and ingestion contracts are unchanged. No migration is needed.
+The aggregate response formats and ingestion contracts are unchanged. Read endpoints now require owner authentication. No migration is needed.
 
-Update the existing Worker with `npx wrangler@4 deploy` from this directory; do not
+Build assets first with `python scripts/prepare-usage-assets.py` from the repository root, then deploy
+with `npx wrangler@4 deploy` from this directory; do not
 recreate the production D1 database. The Usage API workflow can do this with repository
 secrets `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID`. The token needs permission
 to deploy this Worker and access its existing D1 binding. It must not be committed.
