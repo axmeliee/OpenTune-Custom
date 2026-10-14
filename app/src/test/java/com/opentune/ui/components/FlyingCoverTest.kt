@@ -27,7 +27,7 @@ class FlyingCoverTest {
         compose.mainClock.autoAdvance = false
         compose.setContent {
             MaterialTheme {
-                Box(with(FlyingCover) { Modifier.fillMaxSize().testTag("page").watchTaps() }.clickable { song.value = "one" }) {
+                Box(Modifier.fillMaxSize()) {
                     CoverFlight(song.value, null, true, Modifier.testTag("flight"))
                 }
             }
@@ -36,7 +36,10 @@ class FlyingCoverTest {
             FlyingCover.target = Rect(0f, 700f, 50f, 750f)
             FlyingCover.cardBounds = null
         }
-        compose.onNodeWithTag("page").performTouchInput { click() }
+        compose.runOnIdle {
+            FlyingCover.recordTap(androidx.compose.ui.geometry.Offset(100f, 100f))
+            song.value = "one"
+        }
         compose.mainClock.advanceTimeBy(180)
         compose.onNodeWithTag("flight", useUnmergedTree = true).assertExists()
         // A queue advance has no second tap to begin a new flight.

@@ -41,15 +41,19 @@ object FlyingCover {
     internal var target by mutableStateOf<Rect?>(null)
     internal var cardBounds: Rect? = null
     private var tapAt = Offset.Unspecified
-    private var tapTime = 0L
+    private var tapTime = -1L
 
     /** Notes each tap on the screen without taking it. */
     fun Modifier.watchTaps(): Modifier = pointerInput(Unit) {
         awaitEachGesture {
             val down = awaitFirstDown(requireUnconsumed = false, pass = PointerEventPass.Initial)
-            tapAt = down.position
-            tapTime = SystemClock.uptimeMillis()
+            recordTap(down.position)
         }
+    }
+
+    internal fun recordTap(position: Offset) {
+        tapAt = position
+        tapTime = SystemClock.uptimeMillis()
     }
 
     /** On the now-playing card's cover: where flights land. */
@@ -60,9 +64,9 @@ object FlyingCover {
 
     /** Where a flight for a song starting now begins, or null if no tap just led to it. */
     internal fun takeStart(): Offset? {
-        val recent = SystemClock.uptimeMillis() - tapTime < TAP_WINDOW_MS
+        val recent = tapTime >= 0L && SystemClock.uptimeMillis() - tapTime < TAP_WINDOW_MS
         val at = tapAt
-        tapTime = 0L
+        tapTime = -1L
         if (!recent || at == Offset.Unspecified) return null
         if (cardBounds?.inflate(12f)?.contains(at) == true) return null
         return at
