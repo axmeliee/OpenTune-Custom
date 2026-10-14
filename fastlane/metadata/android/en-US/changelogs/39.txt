@@ -1,0 +1,1 @@
+Recents now snaps into place after a swipe. The list view pages through four songs at a time and fits your screen width; the cover view snaps to each card.

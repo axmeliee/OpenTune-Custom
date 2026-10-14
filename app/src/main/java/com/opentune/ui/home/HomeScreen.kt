@@ -21,6 +21,11 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.gestures.snapping.SnapPosition
+import androidx.compose.foundation.gestures.snapping.rememberSnapFlingBehavior
+import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyHorizontalGrid
 import androidx.compose.foundation.lazy.grid.items
@@ -191,30 +196,39 @@ private fun Recents(songs: List<Song>, asGrid: Boolean, actions: SongActions, on
         })
         AnimatedContent(asGrid, transitionSpec = { fadeIn() togetherWith fadeOut() }, label = "recents") { grid ->
             if (grid) {
-                LazyRow(contentPadding = PaddingValues(horizontal = 10.dp)) {
-                    itemsIndexed(songs) { i, song ->
+                val rowState = rememberLazyListState()
+                LazyRow(
+                    state = rowState,
+                    flingBehavior = rememberSnapFlingBehavior(rowState, snapPosition = SnapPosition.Start),
+                    contentPadding = PaddingValues(horizontal = 10.dp),
+                ) {
+                    itemsIndexed(songs, key = { _, song -> song.videoId }) { i, song ->
                         ItemCard(song.title, song.artist, song.thumbnailUrl, null, onClick = { actions.playAll(songs, i, false, "Recents") }, explicit = song.isExplicit == true)
                     }
                 }
             } else {
-                LazyHorizontalGrid(
-                    rows = GridCells.Fixed(4),
+                val pages = rememberPagerState(pageCount = { (songs.size + 3) / 4 })
+                HorizontalPager(
+                    state = pages,
                     modifier = Modifier.fillMaxWidth().height(64.dp * 4),
-                ) {
-                    items(songs.size) { i ->
-                        val song = songs[i]
-                        SongListItem(
-                            song = song,
-                            onClick = { actions.playAll(songs, i, false, "Recents") },
-                            modifier = Modifier.width(340.dp),
-                            isCurrent = song.videoId == actions.currentVideoId,
-                            isPlaying = actions.isPlaying,
-                            onPlayNext = { actions.playNext(song) },
-                            onAddToQueue = { actions.addToQueue(song) },
-                            // A sideways drag here scrolls the grid; Play next and
-                            // Add to queue stay in the long-press menu.
-                            swipeToQueue = false,
-                        )
+                    verticalAlignment = Alignment.Top,
+                ) { page ->
+                    Column(Modifier.fillMaxWidth()) {
+                        for (i in page * 4 until minOf(page * 4 + 4, songs.size)) {
+                            val song = songs[i]
+                            SongListItem(
+                                song = song,
+                                onClick = { actions.playAll(songs, i, false, "Recents") },
+                                modifier = Modifier.fillMaxWidth().height(64.dp),
+                                isCurrent = song.videoId == actions.currentVideoId,
+                                isPlaying = actions.isPlaying,
+                                onPlayNext = { actions.playNext(song) },
+                                onAddToQueue = { actions.addToQueue(song) },
+                                // A sideways drag changes pages; Play next and
+                                // Add to queue stay in the long-press menu.
+                                swipeToQueue = false,
+                            )
+                        }
                     }
                 }
             }
@@ -348,3 +362,4 @@ private fun MixCard(mix: com.opentune.data.history.DailyMixes.Mix, onClick: () -
         )
     }
 }
+
