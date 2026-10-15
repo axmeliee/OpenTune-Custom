@@ -36,7 +36,6 @@ import androidx.compose.runtime.remember
 import androidx.compose.foundation.clickable
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.foundation.gestures.detectTapGestures
-import androidx.compose.material3.LocalContentColor
 import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material.icons.rounded.Stop
 import androidx.compose.material.icons.rounded.Mic
@@ -46,6 +45,9 @@ import androidx.compose.material.icons.rounded.CallEnd
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.ui.graphics.lerp
+import androidx.compose.ui.graphics.compositeOver
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
@@ -66,8 +68,6 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextField
-import androidx.compose.material3.TextFieldDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -317,35 +317,54 @@ internal fun RoomView(r: Together.Room, onBack: () -> Unit) {
                 }
             }
         }
-        // Talk and the call sit here, outside the list, so holding Talk can't
-        // scroll the page and nothing above moves while someone speaks.
-        if (r.phase == Together.Phase.Live) TalkBar()
+        // Talk, the call and the message box sit here, outside the list, so
+        // holding Talk can't scroll the page and nothing above moves while
+        // someone speaks. One tray, one grid: every control is the same
+        // height and the round buttons share the right-hand column.
         if (r.phase != Together.Phase.Ended) {
-            Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-                TextField(
-                    message, { message = it.take(300) },
-                    placeholder = { Text("Message the room") },
-                    singleLine = true,
-                    shape = RoundedCornerShape(26.dp),
-                    colors = TextFieldDefaults.colors(
-                        focusedIndicatorColor = Color.Transparent,
-                        unfocusedIndicatorColor = Color.Transparent,
-                    ),
-                    keyboardOptions = KeyboardOptions(imeAction = ImeAction.Send),
-                    keyboardActions = KeyboardActions(onSend = { Together.say(message); message = "" }),
-                    modifier = Modifier.weight(1f),
-                )
-                if (message.isNotBlank()) {
-                    IconButton(onClick = { Together.say(message); message = "" }) {
-                        Icon(Icons.AutoMirrored.Rounded.Send, "Send")
-                    }
-                } else if (r.phase == Together.Phase.Live) {
-                    HoldToRecord(live = false, Modifier.size(48.dp)) { recording ->
-                        Icon(
-                            Icons.Rounded.Mic, "Hold to record a voice note",
-                            Modifier.size(26.dp),
-                            tint = if (recording) MaterialTheme.colorScheme.error else LocalContentColor.current,
-                        )
+            val scheme = MaterialTheme.colorScheme
+            Column(
+                Modifier.fillMaxWidth().padding(horizontal = 10.dp, vertical = 6.dp)
+                    .background(scheme.surfaceContainer, RoundedCornerShape(30.dp))
+                    .padding(8.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                if (r.phase == Together.Phase.Live) TalkBar()
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                    val send = { Together.say(message); message = "" }
+                    androidx.compose.foundation.text.BasicTextField(
+                        message, { message = it.take(300) },
+                        singleLine = true,
+                        textStyle = MaterialTheme.typography.bodyLarge.copy(color = scheme.onSurface),
+                        cursorBrush = androidx.compose.ui.graphics.SolidColor(scheme.primary),
+                        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Send),
+                        keyboardActions = KeyboardActions(onSend = { if (message.isNotBlank()) send() }),
+                        modifier = Modifier.weight(1f).height(TRAY_HEIGHT)
+                            .background(scheme.surfaceContainerHighest, RoundedCornerShape(TRAY_HEIGHT / 2)),
+                        decorationBox = { field ->
+                            Box(Modifier.padding(horizontal = 18.dp), contentAlignment = Alignment.CenterStart) {
+                                if (message.isEmpty()) Text("Message the room", style = MaterialTheme.typography.bodyLarge, color = scheme.onSurfaceVariant)
+                                field()
+                            }
+                        },
+                    )
+                    if (message.isNotBlank()) {
+                        FilledIconButton(onClick = send, Modifier.size(TRAY_HEIGHT)) {
+                            Icon(Icons.AutoMirrored.Rounded.Send, "Send")
+                        }
+                    } else if (r.phase == Together.Phase.Live) {
+                        val recording by Together.recording.collectAsState()
+                        val note = recording == false
+                        HoldToRecord(
+                            live = false,
+                            Modifier.size(TRAY_HEIGHT).background(if (note) scheme.error else scheme.surfaceContainerHighest, CircleShape),
+                        ) { held ->
+                            Icon(
+                                Icons.Rounded.Mic, "Hold to record a voice note",
+                                Modifier.size(24.dp),
+                                tint = if (held) scheme.onError else scheme.onSurfaceVariant,
+                            )
+                        }
                     }
                 }
             }
@@ -551,50 +570,63 @@ private fun TalkBar() {
         if (granted && Together.startCall()) haptics.press()
     }
     val scheme = MaterialTheme.colorScheme
-    Row(
-        Modifier.fillMaxWidth().padding(start = 12.dp, end = 12.dp, top = 8.dp),
-        horizontalArrangement = Arrangement.spacedBy(10.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
+    Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
         if (inCall) {
+            val live = speaking && !callMuted
+            val glow by animateFloatAsState(if (live) 1f else 0f, label = "speaking")
             Row(
-                Modifier.weight(1f).height(52.dp).background(scheme.surfaceContainerHigh, RoundedCornerShape(26.dp)).padding(horizontal = 16.dp),
+                Modifier.weight(1f).height(TRAY_HEIGHT)
+                    .background(lerp(scheme.surfaceContainerHighest, SPEAKING.copy(alpha = 0.22f).compositeOver(scheme.surfaceContainerHighest), glow), RoundedCornerShape(TRAY_HEIGHT / 2))
+                    .padding(horizontal = 18.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                Box(Modifier.size(10.dp).background(if (speaking && !callMuted) SPEAKING else scheme.outline, CircleShape))
-                Spacer(Modifier.width(10.dp))
-                Text(
-                    when {
-                        callMuted -> "In the call · muted"
-                        speaking -> "In the call · you're on"
-                        else -> "In the call · just talk"
-                    },
-                    style = MaterialTheme.typography.titleSmall,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
+                Box(Modifier.size(10.dp).background(if (live) SPEAKING else if (callMuted) scheme.error else scheme.outline, CircleShape))
+                Spacer(Modifier.width(12.dp))
+                Column(Modifier.weight(1f)) {
+                    Text("In the call", style = MaterialTheme.typography.titleSmall, maxLines = 1)
+                    Text(
+                        when {
+                            callMuted -> "You're muted"
+                            speaking -> "You're on"
+                            else -> "Just talk"
+                        },
+                        style = MaterialTheme.typography.bodySmall,
+                        color = scheme.onSurfaceVariant,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
             }
-            FilledTonalIconButton(onClick = { haptics.tick(); Together.setCallMuted(!callMuted) }, Modifier.size(52.dp)) {
+            FilledTonalIconButton(
+                onClick = { haptics.tick(); Together.setCallMuted(!callMuted) },
+                modifier = Modifier.size(TRAY_HEIGHT),
+                colors = if (callMuted) IconButtonDefaults.filledTonalIconButtonColors(containerColor = scheme.errorContainer, contentColor = scheme.onErrorContainer)
+                    else IconButtonDefaults.filledTonalIconButtonColors(),
+            ) {
                 Icon(if (callMuted) Icons.Rounded.MicOff else Icons.Rounded.Mic, if (callMuted) "Unmute" else "Mute")
             }
             FilledIconButton(
                 onClick = { haptics.tick(); Together.endCall() },
-                modifier = Modifier.size(52.dp),
+                modifier = Modifier.size(TRAY_HEIGHT),
                 colors = IconButtonDefaults.filledIconButtonColors(containerColor = scheme.error, contentColor = scheme.onError),
             ) { Icon(Icons.Rounded.CallEnd, "Leave the call") }
         } else {
+            val talking = recording == true
+            val fill by animateColorAsState(if (talking) scheme.error else scheme.primary, label = "talk")
+            val ink = if (talking) scheme.onError else scheme.onPrimary
             HoldToRecord(
                 live = true,
-                Modifier.weight(1f).height(52.dp).background(if (recording == true) scheme.error else scheme.primary, RoundedCornerShape(26.dp)),
-            ) { talking ->
+                Modifier.weight(1f).height(TRAY_HEIGHT).background(fill, RoundedCornerShape(TRAY_HEIGHT / 2)),
+            ) { held ->
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(Icons.Rounded.Mic, null, tint = if (talking) scheme.onError else scheme.onPrimary)
-                    Spacer(Modifier.width(8.dp))
+                    Icon(Icons.Rounded.Mic, null, Modifier.size(22.dp), tint = ink)
+                    Spacer(Modifier.width(10.dp))
                     Text(
-                        if (talking) "Talking… let go to stop" else "Hold to talk",
+                        if (held) "Talking · let go to stop" else "Hold to talk",
                         style = MaterialTheme.typography.titleMedium,
-                        color = if (talking) scheme.onError else scheme.onPrimary,
+                        color = ink,
                         maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
                     )
                 }
             }
@@ -605,11 +637,14 @@ private fun TalkBar() {
                     if (!granted) ask.launch(android.Manifest.permission.RECORD_AUDIO)
                     else if (Together.startCall()) haptics.press()
                 },
-                modifier = Modifier.size(52.dp),
+                modifier = Modifier.size(TRAY_HEIGHT),
             ) { Icon(Icons.Rounded.Call, "Join the call") }
         }
     }
 }
+
+/** The height of everything in the talk tray. */
+private val TRAY_HEIGHT = 52.dp
 
 /**
  * Records while held: [live] talk, or a voice note sent when let go. Asks
