@@ -9,4 +9,6 @@
     <string name="widget_play">Play</string>
     <string name="widget_pause">Pause</string>
     <string name="widget_next">Next</string>
+    <string name="recognize_label">Name that song</string>
+    <string name="recognize_widget_description">One tap listens for the song playing nearby and adds it to your library</string>
 </resources>

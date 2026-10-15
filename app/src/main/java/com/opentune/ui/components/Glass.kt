@@ -131,13 +131,24 @@ fun Modifier.glass(shape: Shape, tint: Color = MaterialTheme.colorScheme.surface
             effects = {
                 vibrancy()
                 blur(look.liquidBlur.toPx())
-                lens(20.dp.toPx(), 44.dp.toPx(), depthEffect = true, chromaticAberration = true)
+                // A wide, deep lens: content bends visibly for the last stretch
+                // before the edge, with the light split into a fringe there.
+                lens(26.dp.toPx(), 56.dp.toPx(), depthEffect = true, chromaticAberration = true)
             },
             highlight = { Highlight.Default },
             shadow = { Shadow.Default },
             innerShadow = { InnerShadow.Default },
             onDrawSurface = { drawRect(film) },
-        ).border(0.75.dp, Color.White.copy(alpha = if (dark) 0.16f else 0.4f), shape)
+        ).border(
+            0.9.dp,
+            // A lit rim: brightest where light would catch it, top left and bottom right.
+            Brush.linearGradient(
+                0f to Color.White.copy(alpha = if (dark) 0.44f else 0.7f),
+                0.45f to Color.White.copy(alpha = if (dark) 0.10f else 0.25f),
+                1f to Color.White.copy(alpha = if (dark) 0.32f else 0.55f),
+            ),
+            shape,
+        )
     }
     if (backdrop != null && liquidGlassOn()) {
         // A see-through dark (or light) film rather than the theme's grey, so
@@ -242,7 +253,9 @@ internal fun glassLook(style: GlassStyle): GlassLook = when (style) {
     GlassStyle.TINTED -> GlassLook(30.dp, 0.58f, 0.05f, LIQUID_BLUR, 0.46f, 1.6f)
     GlassStyle.SMOKE -> GlassLook(34.dp, 0.70f, 0.04f, 26.dp, 0.58f, 1.1f)
     // Without Liquid Glass (older Android, or blur reduced) it's the clearest frost.
-    GlassStyle.LIQUID -> GlassLook(20.dp, 0.30f, 0f, 16.dp, 0.08f, 1.8f)
+    // Liquid's own blur (the fourth figure) is heavy enough that what's behind
+    // reads as soft fields of colour, not detail, as on BitChord and iOS 26.
+    GlassStyle.LIQUID -> GlassLook(20.dp, 0.30f, 0f, 26.dp, 0.08f, 1.8f)
 }
 
 /** The colour a [GlassStyle] washes the glass with, from the surface [base] and the [accent]. */

@@ -106,7 +106,7 @@ import kotlinx.coroutines.launch
  * ready to play, and stays in a list underneath.
  */
 @Composable
-fun RecognizeScreen(contentPadding: PaddingValues, onPlay: (Song) -> Unit, onBack: () -> Unit) {
+fun RecognizeScreen(contentPadding: PaddingValues, onPlay: (Song) -> Unit, onBack: () -> Unit, listenAtOnce: Boolean = false) {
     val context = LocalContext.current
     val haptics = rememberHaptics()
     val scope = rememberCoroutineScope()
@@ -127,6 +127,8 @@ fun RecognizeScreen(contentPadding: PaddingValues, onPlay: (Song) -> Unit, onBac
         }
     }
     LaunchedEffect(state) { if (state is Recognizer.State.Found) haptics.pattern(Haptics.Pattern.DONE) }
+    // Opened from the widget or the Quick Settings tile: listening starts straight away.
+    LaunchedEffect(listenAtOnce) { if (listenAtOnce) listen() }
     DisposableEffect(Unit) { onDispose { Recognizer.cancel() } }
     // The song found, held while its card animates away after the next listen starts.
     var lastFound by remember { mutableStateOf<Recognized?>(null) }

@@ -18,6 +18,8 @@ sealed interface LinkTarget {
     data class SpotifyImport(val text: String) : LinkTarget
     /** An invite to a Listen together room. */
     data class Together(val code: String) : LinkTarget
+    /** From the widget or Quick Settings tile: start listening for a song nearby. */
+    data object Recognize : LinkTarget
 }
 
 /**
@@ -60,6 +62,10 @@ object Links {
 
     fun receive(intent: Intent?) {
         intent ?: return
+        if (intent.action == com.opentune.widget.RecognizeLaunch.ACTION) {
+            _incoming.value = LinkTarget.Recognize
+            return
+        }
         if (intent.action == MediaStore.INTENT_ACTION_MEDIA_PLAY_FROM_SEARCH) {
             _incoming.value = LinkTarget.PlaySearch(intent.getStringExtra(SearchManager.QUERY).orEmpty())
             return

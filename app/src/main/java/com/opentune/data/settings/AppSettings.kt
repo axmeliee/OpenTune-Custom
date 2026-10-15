@@ -207,22 +207,37 @@ data class ParametricFilter(val type: FilterType, val freqHz: Float, val gainDb:
 @Serializable
 enum class FilterType { PEAK, LOW_SHELF, HIGH_SHELF }
 
-enum class EqPreset(val label: String, val bands: List<Float>) {
-    FLAT("Flat", List(15) { 0f }),
+/** Where a preset sits on the equalizer page. */
+enum class EqGroup(val label: String) { SIGNATURE("Signature"), SITUATION("For the moment"), GENRE("Genres") }
+
+/**
+ * Curves for the 15 bands. Gentle on purpose (no more than about 6 dB): the
+ * equalizer takes the biggest boost back off the input, so a steep curve
+ * mostly makes everything quieter. Matched by its bands.
+ */
+enum class EqPreset(val label: String, val bands: List<Float>, val summary: String = "", val group: EqGroup = EqGroup.GENRE) {
+    FLAT("Flat", List(15) { 0f }, "The song as mastered", EqGroup.SIGNATURE),
     /** Deep, clean lows and open highs. */
-    STUDIO("Studio", listOf(2.6f, 2.8f, 2.2f, 0.6f, -1.8f, -2.6f, -1.2f, 0f, 1.2f, 2.4f, 3.6f, 4.0f, 4.2f, 4.5f, 4.8f)),
-    BASS("Bass", resampleBands(listOf(6f, 4f, 1f, 0f, 0f, 0f, 0f))),
-    DEEP_BASS("Deep bass", listOf(6f, 5.5f, 4.5f, 3f, 1.5f, 0f, -1f, -1f, 0f, 0f, 0f, 0f, 0f, 0f, 0f)),
-    WARM("Warm", resampleBands(listOf(3f, 2f, 1f, 0f, -1f, -2f, -2f))),
-    VOCAL("Vocal", resampleBands(listOf(-2f, -1f, 1f, 3f, 3f, 1f, 0f))),
-    BRIGHT("Bright", resampleBands(listOf(-1f, 0f, 0f, 1f, 2f, 4f, 5f))),
-    TREBLE_AIR("Air", listOf(0f, 0f, 0f, 0f, 0f, 0f, 0f, 0f, 0f, 0.5f, 1f, 2f, 3f, 4.5f, 5.5f)),
-    LOUDNESS("Loudness", resampleBands(listOf(5f, 3f, 0f, -1f, 0f, 3f, 4f))),
-    ROCK("Rock", listOf(4f, 4f, 3.5f, 2.5f, 1f, -0.5f, -1.5f, -1.5f, -0.5f, 1f, 2.5f, 3.5f, 4f, 4f, 4f)),
-    POP("Pop", listOf(-1f, -0.5f, 0.5f, 1.5f, 2.5f, 3f, 2.5f, 1.5f, 0.5f, 0f, -0.5f, -0.5f, 0f, 0.5f, 1f)),
-    ELECTRONIC("Electronic", resampleBands(listOf(5f, 3f, 0f, -2f, 1f, 3f, 4f))),
-    ACOUSTIC("Acoustic", resampleBands(listOf(3f, 2f, 1f, 1f, 2f, 2f, 1f))),
-    CLASSICAL("Classical", listOf(3f, 3f, 2.5f, 2f, 1f, 0f, 0f, 0f, 0f, 0f, 0f, -1f, -1.5f, -2f, -2.5f)),
+    STUDIO("Studio", listOf(2.6f, 2.8f, 2.2f, 0.6f, -1.8f, -2.6f, -1.2f, 0f, 1.2f, 2.4f, 3.6f, 4.0f, 4.2f, 4.5f, 4.8f), "Firm lows, clear mids, open top", EqGroup.SIGNATURE),
+    HIFI("Hi-Fi", listOf(2.5f, 2.2f, 1.6f, 0.8f, 0f, -0.6f, -0.8f, -0.4f, 0f, 0.4f, 1f, 1.6f, 2f, 2.4f, 2.6f), "A gentle smile: a touch more weight and sparkle", EqGroup.SIGNATURE),
+    WARM("Warm", resampleBands(listOf(3f, 2f, 1f, 0f, -1f, -2f, -2f)), "Rounder, softer highs", EqGroup.SIGNATURE),
+    BRIGHT("Bright", resampleBands(listOf(-1f, 0f, 0f, 1f, 2f, 4f, 5f)), "More detail and presence", EqGroup.SIGNATURE),
+    TREBLE_AIR("Air", listOf(0f, 0f, 0f, 0f, 0f, 0f, 0f, 0f, 0f, 0.5f, 1f, 2f, 3f, 4.5f, 5.5f), "Shimmer above 10 kHz, nothing else touched", EqGroup.SIGNATURE),
+    LATE_NIGHT("Late night", listOf(5f, 4.5f, 3.5f, 2f, 0.5f, -0.5f, -1f, -1f, -0.5f, 0f, 0.5f, 1.5f, 2.5f, 3f, 3f), "Full sound at low volume, as ears hear less bass and treble when it's quiet", EqGroup.SITUATION),
+    LOUDNESS("Loudness", resampleBands(listOf(5f, 3f, 0f, -1f, 0f, 3f, 4f)), "Punchy lows and highs for noisy places", EqGroup.SITUATION),
+    PHONE_SPEAKER("Phone speaker", listOf(-6f, -6f, -3f, 1f, 2.5f, 2f, 1f, 0f, 0f, 1f, 2f, 2f, 1f, 0.5f, 0f), "Leaves out bass a small speaker can't play, so it doesn't rattle", EqGroup.SITUATION),
+    CAR("Car", listOf(3f, 3f, 2.5f, 1f, 0f, -1f, -1f, 0f, 0.5f, 1f, 1.5f, 2f, 2f, 1.5f, 1f), "Lows and clarity that carry over road noise", EqGroup.SITUATION),
+    SPEECH("Speech", listOf(-6f, -5f, -3f, -1f, 0f, 0.5f, 1f, 1.5f, 2f, 3f, 3f, 2f, 0f, -1f, -2f), "Podcasts and talk: voices forward, rumble gone", EqGroup.SITUATION),
+    VOCAL_CLARITY("Vocal clarity", listOf(-1.5f, -1.5f, -1f, -0.5f, 0f, -0.5f, 0f, 1f, 2f, 3f, 3f, 2f, 1f, 0.5f, 0f), "Singers step out of the mix", EqGroup.SITUATION),
+    BASS("Bass", resampleBands(listOf(6f, 4f, 1f, 0f, 0f, 0f, 0f)), "More low end", EqGroup.GENRE),
+    DEEP_BASS("Deep bass", listOf(6f, 5.5f, 4.5f, 3f, 1.5f, 0f, -1f, -1f, 0f, 0f, 0f, 0f, 0f, 0f, 0f), "Sub-bass you feel", EqGroup.GENRE),
+    HIPHOP("Hip-hop", listOf(5f, 5f, 4f, 2.5f, 0.5f, -1f, -1.5f, -1f, 0f, 1f, 1.5f, 1f, 1.5f, 2f, 2f), "Heavy kick, clear vocals", EqGroup.GENRE),
+    VOCAL("Vocal", resampleBands(listOf(-2f, -1f, 1f, 3f, 3f, 1f, 0f)), "Warm, forward voices", EqGroup.GENRE),
+    ROCK("Rock", listOf(4f, 4f, 3.5f, 2.5f, 1f, -0.5f, -1.5f, -1.5f, -0.5f, 1f, 2.5f, 3.5f, 4f, 4f, 4f), "Big drums, bite in the guitars", EqGroup.GENRE),
+    POP("Pop", listOf(-1f, -0.5f, 0.5f, 1.5f, 2.5f, 3f, 2.5f, 1.5f, 0.5f, 0f, -0.5f, -0.5f, 0f, 0.5f, 1f), "Present, polished mids", EqGroup.GENRE),
+    ELECTRONIC("Electronic", resampleBands(listOf(5f, 3f, 0f, -2f, 1f, 3f, 4f)), "Deep drops, crisp hats", EqGroup.GENRE),
+    ACOUSTIC("Acoustic", resampleBands(listOf(3f, 2f, 1f, 1f, 2f, 2f, 1f)), "Natural body and string detail", EqGroup.GENRE),
+    CLASSICAL("Classical", listOf(3f, 3f, 2.5f, 2f, 1f, 0f, 0f, 0f, 0f, 0f, 0f, -1f, -1.5f, -2f, -2.5f), "A hall's warmth, gentle highs", EqGroup.GENRE),
 }
 
 @Serializable
@@ -299,6 +314,8 @@ data class InterfaceSettings(
     val blurLyrics: Boolean = true,
     /** On the lyrics view, the controls slide away after a few seconds untouched, leaving the lyrics. */
     val lyricsFocus: Boolean = true,
+    /** The mini player's glass takes the cover's colour; off keeps it plain. */
+    val miniPlayerTint: Boolean = true,
     val statsForNerds: Boolean = false,
     val recentsAsGrid: Boolean = false,
     /** Refracting Liquid Glass on Android 13+; frosted blur otherwise. */
@@ -394,10 +411,10 @@ enum class DockLens(val label: String, val summary: String) {
 /** How pages come and go. */
 @Serializable
 enum class PageTransition(val label: String, val summary: String) {
-    SLIDE("Slide", "New pages slide in a little from the side"),
-    FADE("Fade", "Pages cross-fade in place"),
-    ZOOM("Zoom", "New pages grow into view; going back, they shrink away"),
-    RISE("Rise", "New pages rise up from below"),
+    SLIDE("Push", "Pages push in from the side, as on iPhone"),
+    FADE("Fade through", "The page fades out, then the next fades in and settles"),
+    ZOOM("Depth", "Pages come forward from behind; going back, they sink away"),
+    RISE("Rise", "Pages rise like cards over the one before, which sinks back a little"),
 }
 
 @Serializable

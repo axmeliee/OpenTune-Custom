@@ -25,33 +25,44 @@ import com.opentune.data.settings.PlayerMotion
  * is a short cross-fade whatever the choice.
  */
 internal object PageMotion {
+    // Each style is its own idea, not a variation on a fade:
+    // Push slides whole pages across (the one underneath edging away),
+    // Fade through swaps in two beats, Depth moves along the Z axis, and
+    // Rise stacks pages like cards.
+    private val glide = spring(dampingRatio = 1f, stiffness = 520f, visibilityThreshold = IntOffset.VisibilityThreshold)
+    private val settle = spring(dampingRatio = 0.92f, stiffness = 420f, visibilityThreshold = IntOffset.VisibilityThreshold)
+    private val ease = FastOutSlowInEasing
+
     fun enter(t: PageTransition, still: Boolean): EnterTransition = when {
         still -> fadeIn(tween(160))
-        t == PageTransition.SLIDE -> fadeIn(tween(220)) + slideInHorizontally(tween(260)) { it / 10 }
-        t == PageTransition.FADE -> fadeIn(tween(240, delayMillis = 60))
-        t == PageTransition.ZOOM -> fadeIn(tween(240)) + scaleIn(tween(320, easing = FastOutSlowInEasing), initialScale = 0.92f)
-        else -> fadeIn(tween(220)) + slideInVertically(tween(320, easing = FastOutSlowInEasing)) { it / 8 }
+        t == PageTransition.SLIDE -> slideInHorizontally(glide) { it } + fadeIn(tween(120))
+        t == PageTransition.FADE -> fadeIn(tween(210, delayMillis = 90)) + scaleIn(tween(260, delayMillis = 90, easing = ease), initialScale = 0.94f)
+        t == PageTransition.ZOOM -> fadeIn(tween(220)) + scaleIn(spring(dampingRatio = 1f, stiffness = 420f), initialScale = 0.86f)
+        else -> slideInVertically(settle) { it / 3 } + fadeIn(tween(200))
     }
 
     fun exit(t: PageTransition, still: Boolean): ExitTransition = when {
         still -> fadeOut(tween(120))
-        t == PageTransition.ZOOM -> fadeOut(tween(200)) + scaleOut(tween(320, easing = FastOutSlowInEasing), targetScale = 1.04f)
-        else -> fadeOut(tween(160))
+        t == PageTransition.SLIDE -> slideOutHorizontally(glide) { -it / 4 } + fadeOut(tween(260))
+        t == PageTransition.FADE -> fadeOut(tween(90))
+        t == PageTransition.ZOOM -> fadeOut(tween(200)) + scaleOut(tween(320, easing = ease), targetScale = 1.08f)
+        else -> fadeOut(tween(260)) + scaleOut(tween(320, easing = ease), targetScale = 0.94f)
     }
 
     fun popEnter(t: PageTransition, still: Boolean): EnterTransition = when {
         still -> fadeIn(tween(160))
-        t == PageTransition.ZOOM -> fadeIn(tween(240)) + scaleIn(tween(320, easing = FastOutSlowInEasing), initialScale = 1.04f)
-        t == PageTransition.FADE -> fadeIn(tween(240, delayMillis = 60))
-        else -> fadeIn(tween(220))
+        t == PageTransition.SLIDE -> slideInHorizontally(glide) { -it / 4 } + fadeIn(tween(220))
+        t == PageTransition.FADE -> fadeIn(tween(210, delayMillis = 90)) + scaleIn(tween(260, delayMillis = 90, easing = ease), initialScale = 0.94f)
+        t == PageTransition.ZOOM -> fadeIn(tween(240)) + scaleIn(tween(320, easing = ease), initialScale = 1.08f)
+        else -> fadeIn(tween(240)) + scaleIn(tween(320, easing = ease), initialScale = 0.94f)
     }
 
     fun popExit(t: PageTransition, still: Boolean): ExitTransition = when {
         still -> fadeOut(tween(120))
-        t == PageTransition.SLIDE -> fadeOut(tween(160)) + slideOutHorizontally(tween(260)) { it / 10 }
-        t == PageTransition.FADE -> fadeOut(tween(160))
-        t == PageTransition.ZOOM -> fadeOut(tween(200)) + scaleOut(tween(280, easing = FastOutSlowInEasing), targetScale = 0.92f)
-        else -> fadeOut(tween(200)) + slideOutVertically(tween(280, easing = FastOutSlowInEasing)) { it / 8 }
+        t == PageTransition.SLIDE -> slideOutHorizontally(glide) { it } + fadeOut(tween(260, delayMillis = 60))
+        t == PageTransition.FADE -> fadeOut(tween(90))
+        t == PageTransition.ZOOM -> fadeOut(tween(200)) + scaleOut(tween(280, easing = ease), targetScale = 0.86f)
+        else -> fadeOut(tween(220)) + slideOutVertically(tween(280, easing = ease)) { it / 3 }
     }
 
     /** The full player rising over the page. */

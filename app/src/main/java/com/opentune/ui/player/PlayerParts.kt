@@ -667,7 +667,8 @@ fun MiniPlayer(
     val track = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.16f)
     // The cover's own colour, faded into the glass, so each song tints the card.
     val seed = rememberArtworkSeed(song.thumbnailUrl)
-    val tint by animateColorAsState((seed ?: MaterialTheme.colorScheme.surfaceContainerHigh).copy(alpha = 0.38f), tween(600), label = "miniTint")
+    val colourFromCover = com.opentune.data.settings.AppSettings.ui.collectAsState().value.miniPlayerTint
+    val tint by animateColorAsState(((if (colourFromCover) seed else null) ?: MaterialTheme.colorScheme.surfaceContainerHigh).copy(alpha = 0.38f), tween(600), label = "miniTint")
 
     if (inline) {
         Box(

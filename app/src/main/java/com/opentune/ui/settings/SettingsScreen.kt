@@ -792,6 +792,9 @@ private fun settingsSections(
                 Entry("Color from artwork", "tint album cover") {
                     ToggleRow("Color from artwork", theme.colorFromArtwork, { v -> AppSettings.updateTheme { it.copy(colorFromArtwork = v) } }, summary = "Tint the app with the playing song's cover", icon = Icons.Rounded.AutoAwesome)
                 },
+                Entry("Mini player takes the cover's colour", "mini player pill tint colour artwork plain") {
+                    ToggleRow("Mini player takes the cover's colour", ui.miniPlayerTint, { v -> AppSettings.updateUi { it.copy(miniPlayerTint = v) } }, summary = "Off keeps the small player's glass plain, whatever is playing", icon = Icons.Rounded.AutoAwesome)
+                },
                 Entry("Material You", "wallpaper dynamic color") {
                     val supported = Build.VERSION.SDK_INT >= Build.VERSION_CODES.S
                     ToggleRow(

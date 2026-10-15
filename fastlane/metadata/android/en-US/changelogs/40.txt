@@ -1,4 +1,6 @@
-• Lyrics are looked up with the playing song's length, so they stay in step, with a Setting up the lyrics badge while they load
+• Lyrics stay in step with the playing song, and take the screen when left alone
 • Better Lyrics joins the lyrics sources
-• A downloaded album or playlist stays in the library with its offline songs
-• Liking a song bursts small hearts
+• Downloaded albums and playlists stay in the library; lists can be saved with a heart and shared
+• A new equalizer with a draggable curve and tuned presets
+• Name a song from a widget or Quick Settings
+• Deeper Liquid Glass and distinct page motion

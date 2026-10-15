@@ -289,6 +289,7 @@ fun AppRoot(vm: PlayerViewModel) {
             is LinkTarget.Browse -> nav.openBrowse(link.browseId)
             is LinkTarget.SpotifyImport -> nav.navigate("import?link=${Uri.encode(link.text)}")
             is LinkTarget.Together -> { playerOpen = false; nav.navigate("together?code=${link.code}") }
+            is LinkTarget.Recognize -> { playerOpen = false; nav.navigate("recognize?listen=true") { launchSingleTop = true } }
             is LinkTarget.PlaySearch -> {
                 vm.player.connected.first { it }
                 if (link.query.isBlank()) {
@@ -325,7 +326,9 @@ fun AppRoot(vm: PlayerViewModel) {
     BackHandler(enabled = isPlaying && atRoot && !playerOpen && !chromeUi.reduceAnimation && leave.targetValue == 0f) {
         val activity = appContext as? android.app.Activity
         uiScope.launch {
-            leave.animateTo(1f, androidx.compose.animation.core.tween(420, easing = androidx.compose.animation.core.CubicBezierEasing(0.4f, 0f, 0.2f, 1f)))
+            // Long enough to read as one gesture, on a curve that starts briskly and
+            // glides into place, the way iOS sends an app home.
+            leave.animateTo(1f, androidx.compose.animation.core.tween(560, easing = androidx.compose.animation.core.CubicBezierEasing(0.32f, 0.72f, 0f, 1f)))
             if (activity == null || !activity.moveTaskToBack(true)) { leave.snapTo(0f); return@launch }
             // The shrink was the closing; skip the system's own on top of it where it allows.
             @Suppress("DEPRECATION") activity.overridePendingTransition(0, 0)
@@ -348,14 +351,23 @@ fun AppRoot(vm: PlayerViewModel) {
                 val p = leave.value
                 if (p > 0f) {
                     // Shrinking toward the top centre, cropped down to a pill as it goes.
+                    // The crop runs a little ahead of the shrink, so the rounded pill
+                    // shape is there early and the rest is it settling into place.
                     val s = 1f - 0.68f * p
                     scaleX = s
                     scaleY = s
                     transformOrigin = androidx.compose.ui.graphics.TransformOrigin(0.5f, 0f)
                     translationY = 30.dp.toPx() * p
-                    shape = com.opentune.ui.components.pillCrop(p, 375.dp.toPx(), 100.dp.toPx())
+                    val crop = 1f - (1f - p) * (1f - p)
+                    shape = com.opentune.ui.components.pillCrop(crop, 375.dp.toPx(), 100.dp.toPx())
                     clip = true
-                    alpha = if (p < 0.7f) 1f else 1f - (p - 0.7f) / 0.3f
+                    // Lifted off the screen as it goes, and softening into the pill.
+                    shadowElevation = 28.dp.toPx() * p
+                    if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.S && p > 0.35f) {
+                        val b = 10.dp.toPx() * ((p - 0.35f) / 0.65f)
+                        renderEffect = androidx.compose.ui.graphics.BlurEffect(b, b)
+                    }
+                    alpha = if (p < 0.8f) 1f else 1f - (p - 0.8f) / 0.2f
                 }
             },
         ) {
@@ -448,8 +460,11 @@ fun AppRoot(vm: PlayerViewModel) {
                     composable("local") { LocalMusicScreen(content, actions, onBack = { nav.popBackStack() }) }
                     composable("replay") { ReplayScreen(content, actions, onBack = { nav.popBackStack() }, onOpenWrapped = { nav.navigate("wrapped") }) }
                     composable("wrapped") { WrappedScreen(actions, onBack = { nav.popBackStack() }) }
-                    composable("recognize") {
-                        com.opentune.ui.recognize.RecognizeScreen(content, onPlay = { vm.play(it, "Found by listening") }, onBack = { nav.popBackStack() })
+                    composable("recognize?listen={listen}", listOf(navArgument("listen") { type = NavType.BoolType; defaultValue = false })) { e ->
+                        com.opentune.ui.recognize.RecognizeScreen(
+                            content, onPlay = { vm.play(it, "Found by listening") }, onBack = { nav.popBackStack() },
+                            listenAtOnce = e.arguments?.getBoolean("listen") == true,
+                        )
                     }
                     composable(
                         "import?link={link}",

@@ -94,6 +94,7 @@ object Recognizer {
                         val found = runCatching { done.await() }.getOrNull()
                         if (found != null) {
                             remember(found)
+                            addToLibrary(found)
                             _state.value = State.Found(found)
                             return@launch
                         }
@@ -111,6 +112,7 @@ object Recognizer {
                 val last = lookup?.let { runCatching { it.await() }.getOrNull() }
                 if (last != null) {
                     remember(last)
+                    addToLibrary(last)
                     _state.value = State.Found(last)
                 } else {
                     _state.value = State.NotFound
@@ -152,6 +154,27 @@ object Recognizer {
         _history.value = (listOf(song) + _history.value.filterNot { it.title == song.title && it.artist == song.artist }).take(30)
         save()
     }
+    /** The playlist songs found by listening go into, so they're in the library. */
+    const val PLAYLIST = "Recognized"
+
+    /**
+     * Finds [song] on YouTube Music and adds the best match to the
+     * [PLAYLIST] playlist, making it the first time. A song YouTube Music
+     * doesn't have stays only in the list of songs found.
+     */
+    private fun addToLibrary(song: Recognized) {
+        scope.launch(Dispatchers.IO) {
+            val match = runCatching {
+                com.opentune.data.MusicRepository.search("${song.title} ${song.artist}", com.opentune.data.model.SearchFilter.ALL)
+            }.getOrNull()?.firstNotNullOfOrNull {
+                (it as? com.opentune.data.model.SearchResult.TopTrack)?.song ?: (it as? com.opentune.data.model.SearchResult.Track)?.song
+            } ?: return@launch
+            val store = com.opentune.data.library.LibraryStore
+            val id = store.playlists.value.firstOrNull { it.name == PLAYLIST }?.id ?: store.createPlaylist(PLAYLIST)
+            store.addToPlaylist(id, match)
+        }
+    }
+
 
     private fun save() {
         prefs?.edit()?.putString("history", toJson(_history.value))?.apply()

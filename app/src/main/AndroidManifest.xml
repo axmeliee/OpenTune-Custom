@@ -150,6 +150,29 @@
                 android:resource="@xml/widget_now_playing_info" />
         </receiver>
 
+        <!-- "Name that song": a home-screen widget and a Quick Settings tile. -->
+        <receiver
+            android:name=".widget.RecognizeWidget"
+            android:exported="false"
+            android:label="@string/recognize_label">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/widget_recognize_info" />
+        </receiver>
+        <service
+            android:name=".widget.RecognizeTileService"
+            android:exported="true"
+            android:icon="@drawable/ic_recognize"
+            android:label="@string/recognize_label"
+            android:permission="android.permission.BIND_QUICK_SETTINGS_TILE">
+            <intent-filter>
+                <action android:name="android.service.quicksettings.action.QS_TILE" />
+            </intent-filter>
+        </service>
+
         <!-- Media buttons (the widget's, a headset's after the app was closed)
              start the player and resume the saved queue. -->
         <receiver

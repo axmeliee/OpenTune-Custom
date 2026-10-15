@@ -160,6 +160,7 @@ object Downloads {
         val request = OneTimeWorkRequestBuilder<DownloadWorker>()
             .setInputData(workDataOf(DownloadWorker.KEY_ID to song.videoId))
             .setConstraints(Constraints.Builder().setRequiredNetworkType(if (wifiOnly) NetworkType.UNMETERED else NetworkType.CONNECTED).build())
+            .setBackoffCriteria(androidx.work.BackoffPolicy.EXPONENTIAL, 15, java.util.concurrent.TimeUnit.SECONDS)
             .addTag(TAG)
             .build()
         put(song.videoId) { DownloadEntry(SongRef.of(song), workId = request.id.toString()) }
@@ -276,7 +277,9 @@ class DownloadWorker(context: Context, params: WorkerParameters) : CoroutineWork
             throw e
         } catch (e: Exception) {
             Log.w(TAG, "Download of $id failed", e)
-            val retrying = runAttemptCount < MAX_ATTEMPTS && e is IOException
+            // A stream YouTube wouldn't hand over just then fails the same way as a
+            // dropped connection: both are worth another go a little later.
+            val retrying = runAttemptCount < MAX_ATTEMPTS
             publish { it.copy(state = if (retrying) DownloadState.QUEUED else DownloadState.FAILED,
                 progress = 0f, error = e.message) }
             if (retrying) Result.retry() else Result.failure()
