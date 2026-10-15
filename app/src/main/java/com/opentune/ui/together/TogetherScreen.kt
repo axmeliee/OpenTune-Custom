@@ -124,13 +124,14 @@ fun TogetherScreen(contentPadding: PaddingValues, code: String?, onBack: () -> U
             dismissButton = { androidx.compose.material3.TextButton(onClick = { switchRoom = false }) { Text("Stay here") } },
         )
     }
-    Box(Modifier.fillMaxSize().padding(contentPadding)) {
-        if (r == null) StartRoom(code, onBack) else RoomView(r, onBack)
-    }
+    // The start page scrolls behind the dock and stops short of it; the room
+    // view keeps its talk bar above it.
+    if (r == null) StartRoom(code, onBack, contentPadding)
+    else Box(Modifier.fillMaxSize().padding(contentPadding)) { RoomView(r, onBack) }
 }
 
 @Composable
-internal fun StartRoom(code: String?, onBack: () -> Unit) {
+internal fun StartRoom(code: String?, onBack: () -> Unit, contentPadding: PaddingValues = PaddingValues()) {
     val invite = remember(code) { RoomCode.parse(code) }
     var name by rememberSaveable {
         mutableStateOf(Together.savedName.ifBlank {
@@ -139,7 +140,7 @@ internal fun StartRoom(code: String?, onBack: () -> Unit) {
     }
     var typed by rememberSaveable(code) { mutableStateOf(RoomCode.parse(code)?.pretty ?: "") }
     val parsed = RoomCode.parse(typed)
-    LazyColumn(Modifier.fillMaxSize()) {
+    LazyColumn(Modifier.fillMaxSize(), contentPadding = contentPadding) {
         item { PageHeader(if (invite != null) "You’re invited" else "Listen together", onBack = onBack) }
         item {
             Column(Modifier.padding(horizontal = 24.dp, vertical = 8.dp)) {
