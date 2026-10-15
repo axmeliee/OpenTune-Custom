@@ -1244,8 +1244,9 @@ footer .about p { color: var(--muted); font-size: 14px; max-width: 46ch; margin-
   const screens = $("screens"), pin = $("pin"), rail = pin.querySelector(".rail"), figs = [...rail.children];
   let pinned = false, railTravel = 0;
   function layout() {
-    // Scrolling down slides the screenshots across, on phones too.
-    pinned = !still;
+    // Scrolling down slides the screenshots across, on phones too, and with
+    // reduced motion as well: the row only moves as far as you scroll.
+    pinned = true;
     screens.classList.toggle("pinned", pinned);
     if (pinned) { railTravel = Math.max(0, rail.scrollWidth - innerWidth); pin.style.height = (railTravel + innerHeight - nav.offsetHeight) + "px"; }
     else { pin.style.height = ""; rail.style.transform = ""; figs.forEach((f) => { f.style.transform = ""; }); }
@@ -1450,12 +1451,7 @@ footer .about p { color: var(--muted); font-size: 14px; max-width: 46ch; margin-
 
     if (shown(crate)) crateFx(vh);
 
-    if (pinned && shown(pin)) {
-      const pr = pin.getBoundingClientRect(), navH = nav.offsetHeight;
-      const pp = clamp(-(pr.top - navH) / Math.max(1, pr.height - (vh - navH)));
-      rail.style.transform = "translateX(" + (-pp * railTravel).toFixed(1) + "px)";
-      figs.forEach((f) => { const fr = f.getBoundingClientRect(); const c = clamp((fr.left + fr.width / 2 - innerWidth / 2) / innerWidth, -1, 1); f.style.transform = "perspective(1000px) rotateY(" + (c * -16).toFixed(2) + "deg) translateY(" + (Math.abs(c) * 26).toFixed(1) + "px) scale(" + (1 - Math.abs(c) * 0.06).toFixed(3) + ")"; });
-    }
+    if (pinned && shown(pin)) railFx(vh, true);
 
     if (shown(outro)) {
       const or = outro.getBoundingClientRect();
@@ -1465,7 +1461,18 @@ footer .about p { color: var(--muted); font-size: 14px; max-width: 46ch; margin-
 
     requestAnimationFrame(frame);
   }
+  /* The screenshots follow the scroll; the tilt is left out with reduced motion. */
+  function railFx(vh, tilt) {
+    const pr = pin.getBoundingClientRect(), navH = nav.offsetHeight;
+    const pp = clamp(-(pr.top - navH) / Math.max(1, pr.height - (vh - navH)));
+    rail.style.transform = "translateX(" + (-pp * railTravel).toFixed(1) + "px)";
+    if (tilt) figs.forEach((f) => { const fr = f.getBoundingClientRect(); const c = clamp((fr.left + fr.width / 2 - innerWidth / 2) / innerWidth, -1, 1); f.style.transform = "perspective(1000px) rotateY(" + (c * -16).toFixed(2) + "deg) translateY(" + (Math.abs(c) * 26).toFixed(1) + "px) scale(" + (1 - Math.abs(c) * 0.06).toFixed(3) + ")"; });
+  }
   if (still) {
+    const stillRail = () => { if (pinned) railFx(innerHeight, false); };
+    addEventListener("scroll", stillRail, { passive: true });
+    addEventListener("resize", stillRail);
+    stillRail();
     paintHero();
     crateFx(innerHeight);
     qualityFrame(qStart + Q_MS * 0.7);
