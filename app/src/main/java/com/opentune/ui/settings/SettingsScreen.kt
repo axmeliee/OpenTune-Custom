@@ -979,6 +979,9 @@ private fun settingsSections(
                 Entry("Blur unfocused lyrics", "spotlight") {
                     ToggleRow("Blur unfocused lyrics", ui.blurLyrics, { v -> AppSettings.updateUi { it.copy(blurLyrics = v) } }, summary = "Keeps the spotlight on the current line", icon = Icons.Rounded.BlurOn)
                 },
+                Entry("Lyrics take the screen", "hide controls idle focus fullscreen lyrics auto") {
+                    ToggleRow("Lyrics take the screen", ui.lyricsFocus, { v -> AppSettings.updateUi { it.copy(lyricsFocus = v) } }, summary = "On the lyrics view, the controls slide away after a few seconds untouched. Touch or swipe to bring them back.", icon = Icons.Rounded.Lyrics)
+                },
                 Entry("Lyrics sources", "lrclib youtube order provider") {
                     NavRow(
                         "Lyrics sources",

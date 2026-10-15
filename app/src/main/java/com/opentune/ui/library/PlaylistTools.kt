@@ -19,6 +19,9 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.material.icons.rounded.Share
+import androidx.compose.material.icons.rounded.Favorite
+import androidx.compose.material.icons.rounded.FavoriteBorder
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
@@ -291,12 +294,63 @@ private fun AddRow(song: Song, added: Boolean, onAdd: () -> Unit) {
     }
 }
 
+/** A round button the height of the others in the row. */
+@Composable
+private fun RoundToolButton(icon: androidx.compose.ui.graphics.vector.ImageVector, label: String, onClick: () -> Unit) {
+    val haptics = rememberHaptics()
+    Box(
+        Modifier.size(44.dp).clip(CircleShape).background(MaterialTheme.colorScheme.surfaceContainerHighest)
+            .clickable { haptics.tick(); onClick() },
+        contentAlignment = Alignment.Center,
+    ) { Icon(icon, label, Modifier.size(20.dp)) }
+}
+
+/** Saves the album or playlist to the library, or takes it out; a little pop when it goes in. */
+@Composable
+private fun ListHeart(saved: Boolean, onClick: () -> Unit) {
+    val haptics = rememberHaptics()
+    val pop = remember { androidx.compose.animation.core.Animatable(1f) }
+    var bursts by remember { mutableStateOf(0) }
+    LaunchedEffect(bursts) {
+        if (bursts == 0) return@LaunchedEffect
+        pop.snapTo(0.7f)
+        pop.animateTo(1f, androidx.compose.animation.core.spring(dampingRatio = 0.4f, stiffness = 500f))
+    }
+    Box(
+        Modifier.size(44.dp).clip(CircleShape).background(MaterialTheme.colorScheme.surfaceContainerHighest)
+            .clickable {
+                haptics.pattern(if (saved) Haptics.Pattern.OFF else Haptics.Pattern.LIKE)
+                if (!saved) bursts++
+                onClick()
+            },
+        contentAlignment = Alignment.Center,
+    ) {
+        Icon(
+            if (saved) Icons.Rounded.Favorite else Icons.Rounded.FavoriteBorder,
+            if (saved) "Remove from library" else "Save to library",
+            Modifier.size(22.dp).graphicsLayer { scaleX = pop.value; scaleY = pop.value },
+            tint = if (saved) androidx.compose.ui.graphics.Color(0xFFFF4D6D) else MaterialTheme.colorScheme.onSurface,
+        )
+    }
+}
+
 /** The row under a list's Play and Shuffle: download it all, and for the app's own playlists, add songs. */
 @OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
 @Composable
-fun ListTools(songs: List<Song>, onAddSongs: (() -> Unit)?, modifier: Modifier = Modifier, list: DownloadedListInfo? = null) {
+fun ListTools(
+    songs: List<Song>,
+    onAddSongs: (() -> Unit)?,
+    modifier: Modifier = Modifier,
+    list: DownloadedListInfo? = null,
+    /** Whether the list's heart is on; null shows no heart (the app's own playlists). */
+    saved: Boolean? = null,
+    onSave: () -> Unit = {},
+    onShare: (() -> Unit)? = null,
+) {
     androidx.compose.foundation.layout.FlowRow(modifier, horizontalArrangement = Arrangement.spacedBy(10.dp, Alignment.CenterHorizontally), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        if (saved != null) ListHeart(saved, onSave)
         if (onAddSongs != null) AddSongsButton(onAddSongs)
         if (songs.isNotEmpty()) DownloadAllButton(songs, list = list)
+        if (onShare != null) RoundToolButton(Icons.Rounded.Share, "Share", onShare)
     }
 }

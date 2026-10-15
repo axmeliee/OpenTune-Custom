@@ -114,6 +114,7 @@ fun LibraryScreen(contentPadding: PaddingValues, actions: SongActions, nav: Libr
     val finished by Downloads.done.collectAsState(Downloads.doneNow())
     val downloadEntries by Downloads.entries.collectAsState()
     val downloadedLists by com.opentune.data.download.DownloadedLists.lists.collectAsState()
+    val hearted by LibraryStore.savedLists.collectAsState()
     // Downloaded lists with something still downloaded in them, and how much.
     val savedLists = remember(downloadedLists, downloadEntries) {
         downloadedLists.mapNotNull { l ->
@@ -211,7 +212,7 @@ fun LibraryScreen(contentPadding: PaddingValues, actions: SongActions, nav: Libr
                 }
             })
         }
-        if (playlists.isEmpty() && ytPlaylists.isEmpty() && savedLists.isEmpty()) {
+        if (playlists.isEmpty() && ytPlaylists.isEmpty() && savedLists.isEmpty() && hearted.isEmpty()) {
             item {
                 Text(
                     "Make one with New, bring one over from Spotify or YouTube Music with Import, or add any song from its menu.",
@@ -235,7 +236,11 @@ fun LibraryScreen(contentPadding: PaddingValues, actions: SongActions, nav: Libr
                 com.opentune.ui.components.PlaylistCover(p.name, p.songs.map { it.thumbnailUrl }, Modifier.size(56.dp))
             })
         }
-        items(ytPlaylists.filter { p -> savedLists.none { it.first.id == p.browseId } }, key = { "yt:${it.browseId}" }) { p ->
+        // Albums and playlists saved with their heart; one downloaded too is listed once, above.
+        items(hearted.filter { h -> savedLists.none { it.first.id == h.browseId } }, key = { "saved:${it.browseId}" }) { h ->
+            PlaylistRow(h.thumbnailUrl, h.title, h.subtitle.ifBlank { "Saved" }, { nav.browse(h.browseId) }, Modifier.animateItem())
+        }
+        items(ytPlaylists.filter { p -> savedLists.none { it.first.id == p.browseId } && hearted.none { it.browseId == p.browseId } }, key = { "yt:${it.browseId}" }) { p ->
             PlaylistRow(p.thumbnailUrl, p.title, p.subtitle.ifBlank { "YouTube Music" }, { p.browseId?.let(nav.browse) }, Modifier.animateItem())
         }
         if (recents.isNotEmpty()) {
@@ -506,6 +511,7 @@ fun LikedScreen(contentPadding: PaddingValues, actions: SongActions, onBack: () 
 /** A playlist made in the app: play, rename, delete, remove songs. */
 @Composable
 fun LocalPlaylistScreen(id: String, contentPadding: PaddingValues, actions: SongActions, onBack: () -> Unit) {
+    val context = LocalContext.current
     val playlists by LibraryStore.playlists.collectAsState()
     val playlist = playlists.firstOrNull { it.id == id }
     var renaming by remember { mutableStateOf(false) }
@@ -559,10 +565,10 @@ fun LocalPlaylistScreen(id: String, contentPadding: PaddingValues, actions: Song
             item {
                 MessageState(Icons.AutoMirrored.Rounded.QueueMusic, "Nothing here yet", Modifier.padding(top = 32.dp), message = "Add songs here, or use Add to playlist in any song's menu.")
             }
-            item { ListTools(songs, onAddSongs = { adding = true }, Modifier.fillMaxWidth().padding(16.dp)) }
+            item { ListTools(songs, onAddSongs = { adding = true }, onShare = { com.opentune.ui.share.ListShare.shareLocal(context, playlist.name, songs) }, modifier = Modifier.fillMaxWidth().padding(16.dp)) }
             return@LazyColumn
         }
-        item { ListTools(songs, onAddSongs = { adding = true }, Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, bottom = 8.dp)) }
+        item { ListTools(songs, onAddSongs = { adding = true }, onShare = { com.opentune.ui.share.ListShare.shareLocal(context, playlist.name, songs) }, modifier = Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, bottom = 8.dp)) }
         itemsIndexed(songs, key = { i, s -> "$i:${s.videoId}" }) { i, song ->
             SongListItem(
                 song = song,

@@ -297,6 +297,8 @@ data class InterfaceSettings(
     val hideSongStatus: Boolean = false,
     val syncedLyrics: Boolean = true,
     val blurLyrics: Boolean = true,
+    /** On the lyrics view, the controls slide away after a few seconds untouched, leaving the lyrics. */
+    val lyricsFocus: Boolean = true,
     val statsForNerds: Boolean = false,
     val recentsAsGrid: Boolean = false,
     /** Refracting Liquid Glass on Android 13+; frosted blur otherwise. */

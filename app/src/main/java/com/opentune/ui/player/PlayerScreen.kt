@@ -130,6 +130,9 @@ import com.opentune.ui.theme.rememberArtworkSeed
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.launch
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.shrinkVertically
 
 /**
  * The playback position, refreshed every frame while playing and the caller
@@ -273,6 +276,19 @@ fun PlayerLayout(
         val shift = lineStart - position()
         AppSettings.setLyricsOffset(current.videoId, shift)
         Toast.makeText(context, "Lyrics moved %+.1f s for this song".format(shift / 1000f), Toast.LENGTH_SHORT).show()
+    }
+    // Lyrics take the screen: the controls go after LYRICS_FOCUS_MS untouched while
+    // synced lyrics play on the lyrics view, and come back at the next touch.
+    var touchedAt by remember { mutableLongStateOf(System.currentTimeMillis()) }
+    var controlsAway by remember { mutableStateOf(false) }
+    val focusable = state.ui.lyricsFocus && pane == Pane.LYRICS && state.isPlaying &&
+        ((state.lyrics as? LyricsState.Found)?.lyrics is com.opentune.data.lyrics.Lyrics.Synced) &&
+        !showMenu && !showRemix && !showSleep && !showCast && !showOffset && !showLyricsSource && !showDetails && !showSignal
+    LaunchedEffect(touchedAt, focusable) {
+        controlsAway = false
+        if (!focusable) return@LaunchedEffect
+        delay(LYRICS_FOCUS_MS)
+        controlsAway = true
     }
     val liked by LibraryStore.liked.collectAsState()
     val isLiked = liked.any { it.videoId == current.videoId }
@@ -426,7 +442,19 @@ fun PlayerLayout(
                     },
                 )
             } else Column(
-                Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.systemBars).padding(horizontal = 24.dp),
+                Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.systemBars).padding(horizontal = 24.dp)
+                    // Every touch anywhere on the player, seen before the parts under it
+                    // handle it and never taken from them: it counts as being looked at.
+                    .pointerInput(Unit) {
+                        awaitPointerEventScope {
+                            while (true) {
+                                val e = awaitPointerEvent(androidx.compose.ui.input.pointer.PointerEventPass.Initial)
+                                val now = System.currentTimeMillis()
+                                // A few times a second is plenty, and keeps a drag from recomposing the player each frame.
+                                if (e.changes.any { it.pressed } && (controlsAway || now - touchedAt > 250)) touchedAt = now
+                            }
+                        }
+                    },
             ) {
                 // Grab handle, then "Playing from" or the remix pill.
                 Column(Modifier.fillMaxWidth().padding(top = 6.dp), horizontalAlignment = Alignment.CenterHorizontally) {
@@ -583,6 +611,14 @@ fun PlayerLayout(
                         kotlinx.coroutines.delay(500)
                     }
                 }
+                // Lyrics with nothing in the way: a few seconds untouched while they
+                // play, and the controls slide down out of sight.
+                AnimatedVisibility(
+                    !controlsAway,
+                    enter = expandVertically(spring(dampingRatio = 0.9f, stiffness = 380f), expandFrom = Alignment.Top) + slideInVertically(spring(dampingRatio = 0.9f, stiffness = 380f)) { it / 2 } + fadeIn(tween(220)),
+                    exit = shrinkVertically(tween(520, easing = FastOutSlowInEasing), shrinkTowards = Alignment.Top) + slideOutVertically(tween(520, easing = FastOutSlowInEasing)) { it / 2 } + fadeOut(tween(360)),
+                ) {
+                Column {
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
                     SourceQualityBadge(current.videoId, state.audioFormat, onClick = { showSignal = true }, modifier = Modifier.weight(1f, fill = false))
                     AnimatedVisibility(nextChorus != null, enter = fadeIn() + expandHorizontally(), exit = fadeOut() + shrinkHorizontally()) {
@@ -646,6 +682,14 @@ fun PlayerLayout(
                     textAlign = TextAlign.Center,
                     modifier = Modifier.fillMaxWidth().padding(top = 10.dp, bottom = 6.dp),
                 )
+                }
+                }
+                // Where the controls went: a faint handle, and a swipe or touch brings them back.
+                AnimatedVisibility(controlsAway, enter = fadeIn(tween(400)), exit = fadeOut(tween(150))) {
+                    Box(Modifier.fillMaxWidth().padding(top = 10.dp, bottom = 14.dp), contentAlignment = Alignment.Center) {
+                        Box(Modifier.size(width = 44.dp, height = 5.dp).clip(CircleShape).background(MaterialTheme.colorScheme.onSurface.copy(alpha = 0.3f)))
+                    }
+                }
             }
             }
         }
@@ -862,6 +906,9 @@ internal fun LikeBurst(t: Float, seed: Int, colors: List<Color>, modifier: Modif
         }
     }
 }
+
+/** How long the lyrics view goes untouched before the controls slide away. */
+private const val LYRICS_FOCUS_MS = 5_000L
 
 /** Mini player wired to the view model; the bottom bar places and sizes it. */
 @Composable

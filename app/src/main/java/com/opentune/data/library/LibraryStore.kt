@@ -49,12 +49,24 @@ data class LocalPlaylist(
     val createdAt: Long = System.currentTimeMillis(),
 )
 
+/** An album or playlist from YouTube Music saved to the library with its heart. */
+@Serializable
+data class SavedList(
+    val browseId: String,
+    val title: String,
+    val subtitle: String = "",
+    val thumbnailUrl: String? = null,
+    val savedAt: Long = System.currentTimeMillis(),
+)
+
 @Serializable
 private data class LibraryDocument(
     val liked: List<SongRef> = emptyList(),
     val playlists: List<LocalPlaylist> = emptyList(),
     /** Songs marked "Dislike": kept out of autoplay. */
     val disliked: Set<String> = emptySet(),
+    /** Albums and playlists saved with their heart, newest first. */
+    val savedLists: List<SavedList> = emptyList(),
 )
 
 /**
@@ -73,6 +85,18 @@ object LibraryStore {
 
     private val _playlists = MutableStateFlow<List<LocalPlaylist>>(emptyList())
     val playlists: StateFlow<List<LocalPlaylist>> = _playlists.asStateFlow()
+
+    private val _savedLists = MutableStateFlow<List<SavedList>>(emptyList())
+    /** Albums and playlists saved with their heart, newest first. */
+    val savedLists: StateFlow<List<SavedList>> = _savedLists.asStateFlow()
+
+    fun isSaved(browseId: String): Boolean = _savedLists.value.any { it.browseId == browseId }
+
+    /** Saves [list] to the library, or with [saved] false takes it out. */
+    fun setSaved(list: SavedList, saved: Boolean) = update { d ->
+        val rest = d.savedLists.filterNot { it.browseId == list.browseId }
+        d.copy(savedLists = if (saved) listOf(list.copy(savedAt = System.currentTimeMillis())) + rest else rest)
+    }
 
     @OptIn(FlowPreview::class)
     fun init(context: Context) {
@@ -93,6 +117,7 @@ object LibraryStore {
         doc.value = d
         _liked.value = d.liked
         _playlists.value = d.playlists
+        _savedLists.value = d.savedLists
         LibraryArtwork.keep(d.liked.map { it.thumbnailUrl } + d.playlists.flatMap { p -> p.songs.map { it.thumbnailUrl } })
     }
 

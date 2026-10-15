@@ -281,10 +281,20 @@ fun CollectionScreen(
                                     onShuffle = { c?.let { actions.playAll(it.songs, 0, true, it.title) } },
                                     modifier = Modifier.fillMaxWidth().padding(top = 20.dp, bottom = 12.dp),
                                 )
-                                if (!c?.songs.isNullOrEmpty()) {
+                                if (c != null) {
+                                    val savedLists by com.opentune.data.library.LibraryStore.savedLists.collectAsState()
+                                    val saved = savedLists.any { it.browseId == c.browseId }
+                                    val context = androidx.compose.ui.platform.LocalContext.current
                                     com.opentune.ui.library.ListTools(
-                                        c!!.songs, onAddSongs = null, Modifier.fillMaxWidth().padding(bottom = 16.dp),
+                                        c.songs, onAddSongs = null, Modifier.fillMaxWidth().padding(bottom = 16.dp),
                                         list = com.opentune.ui.library.DownloadedListInfo(c.browseId, c.title, c.subtitle, c.thumbnailUrl),
+                                        saved = saved,
+                                        onSave = {
+                                            com.opentune.data.library.LibraryStore.setSaved(
+                                                com.opentune.data.library.SavedList(c.browseId, c.title, c.subtitle, c.thumbnailUrl), !saved,
+                                            )
+                                        },
+                                        onShare = { com.opentune.ui.share.ListShare.shareList(context, c.title, c.browseId) },
                                     )
                                 }
                             }
