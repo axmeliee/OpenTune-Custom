@@ -140,7 +140,13 @@ h3 { font-size: clamp(27px, 2.6vw, 34px); line-height: 1; font-weight: 750; font
 /* ---------- nav ---------- */
 .nav { position: fixed; top: 0; left: 0; right: 0; z-index: var(--z-nav); padding-top: env(safe-area-inset-top, 0px); color: var(--ink); transition: background-color .4s, color .4s, box-shadow .4s; }
 .nav .wrap { display: flex; align-items: center; gap: 28px; min-height: 64px; flex-wrap: wrap; padding-block: 10px; }
-.nav.solid { background: var(--night); color: var(--snow); box-shadow: 0 1px 0 var(--night-line); }
+/* Frosted once the page moves: tinted over the hero, dark after it. */
+.nav.raised { background: color-mix(in oklab, var(--tint) 92%, transparent); -webkit-backdrop-filter: saturate(1.5) blur(20px); backdrop-filter: saturate(1.5) blur(20px); box-shadow: 0 1px 0 color-mix(in oklab, var(--ink) 14%, transparent); }
+.nav.solid { background: color-mix(in oklab, var(--night) 92%, transparent); -webkit-backdrop-filter: saturate(1.5) blur(20px); backdrop-filter: saturate(1.5) blur(20px); color: var(--snow); box-shadow: 0 1px 0 var(--night-line); }
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  .nav.raised { background: var(--tint); }
+  .nav.solid { background: var(--night); }
+}
 .brand { flex-shrink: 0; display: flex; align-items: center; gap: 10px; text-decoration: none; font: 800 21px/1 var(--font); font-stretch: 80%; letter-spacing: -0.01em; }
 .brand img { width: 30px; height: 30px; border-radius: 9px; }
 .nav.solid .brand img { box-shadow: 0 0 0 1px var(--night-line); }
@@ -946,6 +952,7 @@ footer .about p { color: var(--muted); font-size: 14px; max-width: 46ch; margin-
   function onScroll() {
     const y = scrollY, doc = root.scrollHeight - innerHeight;
     const now = y > hero.offsetHeight - nav.offsetHeight;
+    nav.classList.toggle("raised", y > 4 && !now);
     if (now !== solid) { solid = now; nav.classList.toggle("solid", now); themeMeta.setAttribute("content", now ? NIGHT_HEX : songs[index].tint); }
     readline.style.transform = "scaleX(" + (doc > 0 ? clamp(y / doc) : 0).toFixed(4) + ")";
   }
@@ -1237,7 +1244,8 @@ footer .about p { color: var(--muted); font-size: 14px; max-width: 46ch; margin-
   const screens = $("screens"), pin = $("pin"), rail = pin.querySelector(".rail"), figs = [...rail.children];
   let pinned = false, railTravel = 0;
   function layout() {
-    pinned = !still && innerWidth >= 900;
+    // Scrolling down slides the screenshots across, on phones too.
+    pinned = !still;
     screens.classList.toggle("pinned", pinned);
     if (pinned) { railTravel = Math.max(0, rail.scrollWidth - innerWidth); pin.style.height = (railTravel + innerHeight - nav.offsetHeight) + "px"; }
     else { pin.style.height = ""; rail.style.transform = ""; figs.forEach((f) => { f.style.transform = ""; }); }
