@@ -112,6 +112,7 @@ p { margin: 0; }
 .lede { font-size: clamp(17px, 1.6vw, 20px); color: var(--muted); max-width: 40ch; }
 .dim { color: var(--dim); }
 .line-ico { fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+.logo-ico { fill: currentColor; }
 
 /* ---------- nav ---------- */
 /* Fixed rather than sticky, so it holds at the top in every browser; the body makes room for it. */
@@ -508,6 +509,9 @@ footer .about p { color: var(--dim); font-size: 13.5px; max-width: 46ch; margin-
 
 <svg width="0" height="0" style="position:absolute" aria-hidden="true">
   <defs>
+    <!-- Apple and Android marks, from Simple Icons (CC0), filled rather than stroked. -->
+    <symbol id="i-apple" viewBox="0 0 24 24"><path d="M12.152 6.896c-.948 0-2.415-1.078-3.96-1.04-2.04.027-3.91 1.183-4.961 3.014-2.117 3.675-.546 9.103 1.519 12.09 1.013 1.454 2.208 3.09 3.792 3.039 1.52-.065 2.09-.987 3.935-.987 1.831 0 2.35.987 3.96.948 1.637-.026 2.676-1.48 3.676-2.948 1.156-1.688 1.636-3.325 1.662-3.415-.039-.013-3.182-1.221-3.22-4.857-.026-3.04 2.48-4.494 2.597-4.559-1.429-2.09-3.623-2.324-4.39-2.376-2-.156-3.675 1.09-4.61 1.09zM15.53 3.83c.843-1.012 1.4-2.427 1.245-3.83-1.207.052-2.662.805-3.532 1.818-.78.896-1.454 2.338-1.273 3.714 1.338.104 2.715-.688 3.559-1.701"/></symbol>
+    <symbol id="i-android" viewBox="0 0 24 24"><path d="M18.4395 5.5586c-.675 1.1664-1.352 2.3318-2.0274 3.498-.0366-.0155-.0742-.0286-.1113-.043-1.8249-.6957-3.484-.8-4.42-.787-1.8551.0185-3.3544.4643-4.2597.8203-.084-.1494-1.7526-3.021-2.0215-3.4864a1.1451 1.1451 0 0 0-.1406-.1914c-.3312-.364-.9054-.4859-1.379-.203-.475.282-.7136.9361-.3886 1.5019 1.9466 3.3696-.0966-.2158 1.9473 3.3593.0172.031-.4946.2642-1.3926 1.0177C2.8987 12.176.452 14.772 0 18.9902h24c-.119-1.1108-.3686-2.099-.7461-3.0683-.7438-1.9118-1.8435-3.2928-2.7402-4.1836a12.1048 12.1048 0 0 0-2.1309-1.6875c.6594-1.122 1.312-2.2559 1.9649-3.3848.2077-.3615.1886-.7956-.0079-1.1191a1.1001 1.1001 0 0 0-.8515-.5332c-.5225-.0536-.9392.3128-1.0488.5449zm-.0391 8.461c.3944.5926.324 1.3306-.1563 1.6503-.4799.3197-1.188.0985-1.582-.4941-.3944-.5927-.324-1.3307.1563-1.6504.4727-.315 1.1812-.1086 1.582.4941zM7.207 13.5273c.4803.3197.5506 1.0577.1563 1.6504-.394.5926-1.1038.8138-1.584.4941-.48-.3197-.5503-1.0577-.1563-1.6504.4008-.6021 1.1087-.8106 1.584-.4941z"/></symbol>
     <symbol id="i-download" viewBox="0 0 24 24"><path d="M12 4v11M7 10.5l5 5 5-5M5 20h14"/></symbol>
     <symbol id="i-code" viewBox="0 0 24 24"><path d="M8.5 7 3.5 12l5 5M15.5 7l5 5-5 5M13.5 4.5l-3 15"/></symbol>
     <symbol id="i-star" viewBox="0 0 24 24"><path d="m12 3.5 2.6 5.3 5.9.9-4.3 4.1 1 5.8-5.2-2.7-5.2 2.7 1-5.8-4.3-4.1 5.9-.9Z"/></symbol>
@@ -536,8 +540,8 @@ footer .about p { color: var(--dim); font-size: 13.5px; max-width: 46ch; margin-
     </nav>
     <div class="nav-right">
       <a class="btn btn-ghost btn-small gh" href="https://github.com/justshivv/Opentune" target="_blank" rel="noopener"><svg class="line-ico"><use href="#i-star"/></svg>Star<span class="sub" id="stars-nav" hidden></span></a>
-      <a class="btn btn-ghost btn-small ios" href="#iphone"><svg class="line-ico"><use href="#i-phone"/></svg>iOS<span class="sub">early</span></a>
-      <a data-latest-apk class="btn btn-primary btn-small" href="https://github.com/justshivv/Opentune/releases/latest" target="_blank" rel="noopener"><svg class="line-ico"><use href="#i-download"/></svg>Get APK</a>
+      <a data-latest-apk class="btn btn-primary btn-small" href="https://github.com/justshivv/Opentune/releases/latest" target="_blank" rel="noopener"><svg class="logo-ico"><use href="#i-android"/></svg>Android</a>
+      <a class="btn btn-ghost btn-small ios" href="#iphone"><svg class="logo-ico"><use href="#i-apple"/></svg>iOS<span class="sub">early</span></a>
     </div>
   </div>
   <i class="readline" id="readline" aria-hidden="true"></i>
@@ -551,8 +555,8 @@ footer .about p { color: var(--dim); font-size: 13.5px; max-width: 46ch; margin-
         <h1 class="rise d1"><span class="hl">Every song.</span><span class="hl two">No ads.</span><span class="hl three">No account.</span></h1>
         <p class="lede rise d2">OpenTune is a free, open-source music player for Android, with an early version for iPhone. It plays the YouTube Music catalogue with word-synced lyrics, live radio, podcasts and rooms where friends listen in step.</p>
         <div class="ctas rise d3">
-          <a data-latest-apk class="btn btn-tint" id="dl-hero" href="https://github.com/justshivv/Opentune/releases/latest" target="_blank" rel="noopener"><svg class="line-ico"><use href="#i-download"/></svg>Download for Android<span class="sub" id="dl-size" hidden></span></a>
-          <a class="btn btn-ghost" href="#iphone"><svg class="line-ico"><use href="#i-phone"/></svg>iPhone and iPad<span class="sub">early</span></a>
+          <a data-latest-apk class="btn btn-tint" id="dl-hero" href="https://github.com/justshivv/Opentune/releases/latest" target="_blank" rel="noopener"><svg class="logo-ico"><use href="#i-android"/></svg>Download for Android<span class="sub" id="dl-size" hidden></span></a>
+          <a class="btn btn-ghost" href="#iphone"><svg class="logo-ico"><use href="#i-apple"/></svg>iPhone and iPad<span class="sub">early</span></a>
           <a class="btn btn-ghost" href="https://github.com/justshivv/Opentune" target="_blank" rel="noopener"><svg class="line-ico"><use href="#i-code"/></svg>Source on GitHub</a>
         </div>
         <div class="fine rise d4"><span>Android 8.0+</span><span>No ads</span><span>No account needed</span><span>GPL-3.0</span></div>
@@ -795,7 +799,7 @@ footer .about p { color: var(--dim); font-size: 13.5px; max-width: 46ch; margin-
         <a class="btn btn-ghost" href="altstore://source?url=https://justshivv.github.io/Opentune/ios/source.json">Add to AltStore</a>
         <a class="btn btn-ghost" href="https://github.com/justshivv/Opentune/releases/download/ios/OpenTune-iOS.ipa">Download the .ipa</a>
       </div>
-      <p class="mono source-note">Source: https://justshivv.github.io/Opentune/ios/source.json</p>
+      <p class="mono source-note" style="overflow-wrap: anywhere">Source: https://justshivv.github.io/Opentune/ios/source.json</p>
     </div>
   </section>
 
@@ -804,7 +808,7 @@ footer .about p { color: var(--dim); font-size: 13.5px; max-width: 46ch; margin-
       <div class="word" id="word" aria-label="OpenTune"></div>
       <p>Free, open source, and yours to keep.</p>
       <div class="ctas">
-        <a data-latest-apk class="btn btn-tint" href="https://github.com/justshivv/Opentune/releases/latest" target="_blank" rel="noopener"><svg class="line-ico"><use href="#i-download"/></svg>Download for Android</a>
+        <a data-latest-apk class="btn btn-tint" href="https://github.com/justshivv/Opentune/releases/latest" target="_blank" rel="noopener"><svg class="logo-ico"><use href="#i-android"/></svg>Download for Android</a>
         <a class="btn btn-ghost" href="https://github.com/justshivv/Opentune" target="_blank" rel="noopener"><svg class="line-ico"><use href="#i-star"/></svg>Star on GitHub</a>
       </div>
     </div>

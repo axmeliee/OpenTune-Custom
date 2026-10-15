@@ -82,8 +82,13 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
             _lyrics.value = LyricsState.Loading
             // LRCLIB matches on duration, and the player's figure is exact
             // where the row's "3:45" is rounded. Without it any version's
-            // lyrics can match, so wait for it while the stream starts.
-            val duration = withTimeoutOrNull(20_000) { durationMs.first { it > 0 } } ?: 0L
+            // lyrics can match, so wait for it while the stream starts. It
+            // has to be this song's: right after a change the player can
+            // still report the last one's, and lyrics found with that are
+            // another version's, out of step from the first line.
+            val duration = withTimeoutOrNull(20_000) {
+                player.durationOf.first { (id, ms) -> id == song.videoId && ms > 0 }.second
+            } ?: 0L
             val found = LyricsRepository.lyricsFor(song.videoId, song.title, song.artist, duration)
             _lyrics.value = found?.let(LyricsState::Found) ?: LyricsState.NotFound
             // Plain text often means a synced source was busy just then; ask

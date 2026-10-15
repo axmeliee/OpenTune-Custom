@@ -80,7 +80,8 @@ object LyricsRepository {
         withContext(Dispatchers.IO) { readOffline(videoId) }?.let { return it }
         val settings = AppSettings.lyrics.value
         val chosen = settings.chosen[videoId]
-        val key = "$videoId|${settings.ordered.filter { it.enabled }.joinToString(",") { it.source.name }}|${settings.preferWordSynced}|$chosen"
+        // The duration is in the key: lyrics found for one length aren't reused for another.
+        val key = "$videoId|${durationMs / 1000}|${settings.ordered.filter { it.enabled }.joinToString(",") { it.source.name }}|${settings.preferWordSynced}|$chosen"
         if (cache.containsKey(key)) return cache[key]
         // A source picked for this song from the player goes first, on its own.
         if (chosen != null) {

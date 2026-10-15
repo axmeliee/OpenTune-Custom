@@ -72,6 +72,7 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.foundation.layout.requiredSize
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -777,18 +778,34 @@ private fun HeartButton(liked: Boolean, onClick: () -> Unit) {
         if (pressed && !still) 0.94f else 1f,
         tween(if (still) 0 else 140), label = "heartPress",
     )
-    Box(
-        Modifier.size(46.dp).graphicsLayer { scaleX = scale; scaleY = scale }
-            .glass(CircleShape, Color.White.copy(alpha = 0.16f))
-            .clickable(interactionSource = interactions, indication = null) {
-                haptics.pattern(if (liked) com.opentune.ui.components.Haptics.Pattern.OFF else com.opentune.ui.components.Haptics.Pattern.LIKE)
-                onClick()
-            },
-        contentAlignment = Alignment.Center,
-    ) {
-        Icon(if (liked) Icons.Rounded.Favorite else Icons.Rounded.FavoriteBorder,
-            if (liked) "Remove from Liked" else "Like", Modifier.size(24.dp),
-            tint = if (liked) Color(0xFFFF4D6D) else LocalContentColor.current)
+    // A small burst of hearts and sparks each time the button likes a song.
+    val burst = remember { androidx.compose.animation.core.Animatable(1f) }
+    var bursts by remember { mutableStateOf(0) }
+    val pop = remember { androidx.compose.animation.core.Animatable(1f) }
+    LaunchedEffect(bursts) {
+        if (bursts == 0) return@LaunchedEffect
+        launch { pop.snapTo(0.7f); pop.animateTo(1f, androidx.compose.animation.core.spring(dampingRatio = 0.4f, stiffness = 500f)) }
+        burst.snapTo(0f)
+        burst.animateTo(1f, tween(720, easing = androidx.compose.animation.core.LinearEasing))
+    }
+    val burstColors = listOf(Color(0xFFFF4D6D), Color(0xFFFF8FA3), Color(0xFFFFC2D1), MaterialTheme.colorScheme.primary)
+    Box(Modifier.size(46.dp), contentAlignment = Alignment.Center) {
+        Box(
+            Modifier.size(46.dp).graphicsLayer { scaleX = scale; scaleY = scale }
+                .glass(CircleShape, Color.White.copy(alpha = 0.16f))
+                .clickable(interactionSource = interactions, indication = null) {
+                    haptics.pattern(if (liked) com.opentune.ui.components.Haptics.Pattern.OFF else com.opentune.ui.components.Haptics.Pattern.LIKE)
+                    if (!liked && !still) bursts++
+                    onClick()
+                },
+            contentAlignment = Alignment.Center,
+        ) {
+            Icon(if (liked) Icons.Rounded.Favorite else Icons.Rounded.FavoriteBorder,
+                if (liked) "Remove from Liked" else "Like", Modifier.size(24.dp).graphicsLayer { scaleX = pop.value; scaleY = pop.value },
+                tint = if (liked) Color(0xFFFF4D6D) else LocalContentColor.current)
+        }
+        // Drawn past the button's edges, over whatever is around it.
+        if (burst.value < 1f) LikeBurst(burst.value, bursts, burstColors, Modifier.requiredSize(150.dp))
     }
 }
 

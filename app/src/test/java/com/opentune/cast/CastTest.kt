@@ -148,7 +148,9 @@ class CastTest {
                 tv.load(CastMedia("song", "http://phone/s/a.m4a", "audio/mp4", "T", "A", null, null, 0), 0, play = true)
                 tv.setVolume(0.5f)
             }
-            assertEquals(listOf("Stop", "SetAVTransportURI:http://phone/s/a.m4a", "Play", "SetVolume"), calls.toList().take(4))
+            // The commands, in order. The renderer's status checks (Get…) run on their
+            // own and can land between them on a busy machine, so they're left out here.
+            assertEquals(listOf("Stop", "SetAVTransportURI:http://phone/s/a.m4a", "Play", "SetVolume"), calls.toList().filterNot { it.startsWith("Get") }.take(4))
             // Its reports come in once it's past the quiet spell after a command.
             org.robolectric.shadows.ShadowSystemClock.advanceBy(java.time.Duration.ofSeconds(3))
             val deadline = System.currentTimeMillis() + 8_000

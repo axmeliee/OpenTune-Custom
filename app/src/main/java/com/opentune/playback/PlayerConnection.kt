@@ -57,6 +57,13 @@ class PlayerConnection(private val context: Context) {
 
     private val _durationMs = MutableStateFlow(0L)
     val durationMs = _durationMs.asStateFlow()
+    private val _durationOf = MutableStateFlow<Pair<String?, Long>>(null to 0L)
+    /**
+     * The duration together with the item it belongs to. Just after a song
+     * changes, [durationMs] can still hold the last song's for a moment;
+     * this says whose it is.
+     */
+    val durationOf = _durationOf.asStateFlow()
 
     private val _isPlaying = MutableStateFlow(false)
     val isPlaying = _isPlaying.asStateFlow()
@@ -155,7 +162,9 @@ class PlayerConnection(private val context: Context) {
         _hasNext.value = player.hasNextMediaItem()
         _shuffleEnabled.value = player.shuffleModeEnabled
         _repeatMode.value = player.repeatMode
-        _durationMs.value = player.duration.takeIf { it > 0 } ?: 0L
+        val duration = player.duration.takeIf { it > 0 } ?: 0L
+        _durationMs.value = duration
+        _durationOf.value = player.currentMediaItem?.mediaId to duration
         _isPlaying.value = player.isPlaying
         _isBuffering.value = player.playbackState == Player.STATE_BUFFERING
         _playWhenReady.value = player.playWhenReady
