@@ -76,7 +76,13 @@ object WhatsNew {
 
     /** Newest first. Add the coming version's notes at the top when releasing. */
     val NOTES: List<Pair<String, List<Note>>> = listOf(
-        "0.5.0" to listOf(
+        "0.4.16" to listOf(
+            Note(Icons.Rounded.Lyrics, "Lyrics in step", "Lyrics are now looked up with the length of the song actually playing, so they no longer come from another version of it, timed differently. While they're found, a Setting up the lyrics badge shows."),
+            Note(Icons.Rounded.FormatQuote, "Better Lyrics", "A new word-by-word lyrics source, for songs Better Lyrics' listeners have already looked up. In Settings › Lyrics sources."),
+            Note(Icons.Rounded.Download, "Downloaded playlists", "Download a whole album or playlist and it stays in your library under Playlists, with its downloaded songs ready offline. Downloads still lists every song."),
+            Note(Icons.Rounded.Favorite, "A burst of hearts", "Liking a song with the player's heart sends out a little burst of hearts."),
+        ),
+        "0.4.10" to listOf(
             Note(Icons.Rounded.Mic, "Call the room", "Join a room's call and just talk: what you say is heard as you say it, and a ring lights up round whoever is speaking. Hold Talk for a quick word instead. Nothing is kept in the chat."),
             Note(Icons.Rounded.Groups, "Nobody wrongly gone", "A guest whose check-ins got lost no longer shows as having left on the host's phone, and comes back on their own without knocking again."),
             Note(Icons.Rounded.Waves, "A beam for lossless", "When a song plays lossless, a glowing beam runs round the quality pill. Words in synced lyrics no longer jump twice."),

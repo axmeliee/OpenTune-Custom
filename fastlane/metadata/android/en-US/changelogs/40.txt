@@ -1,0 +1,4 @@
+• Lyrics are looked up with the playing song's length, so they stay in step, with a Setting up the lyrics badge while they load
+• Better Lyrics joins the lyrics sources
+• A downloaded album or playlist stays in the library with its offline songs
+• Liking a song bursts small hearts
