@@ -352,7 +352,7 @@ h3 { font-size: clamp(27px, 2.6vw, 34px); line-height: 1; font-weight: 750; font
 .also li small { color: var(--muted); font-size: 13.5px; margin-left: auto; text-align: right; }
 
 /* ---------- colour chapter ---------- */
-.crate { position: relative; height: 300vh; background: var(--wash); color: var(--ink); transition: --wash .8s var(--ease); }
+.crate { position: relative; height: 300vh; height: 300svh; background: var(--wash); color: var(--ink); transition: --wash .8s var(--ease); }
 .crate-stage { position: sticky; top: 0; height: 100vh; height: 100svh; display: grid; align-items: center; overflow: hidden; padding-top: var(--nav-h); }
 .crate-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: clamp(28px, 6vw, 96px); align-items: center; }
 .crate h2 { margin-bottom: 20px; max-width: 11ch; }
@@ -381,6 +381,7 @@ h3 { font-size: clamp(27px, 2.6vw, 34px); line-height: 1; font-weight: 750; font
 .screens.pinned .pin-stage { position: sticky; top: var(--nav-h); height: calc(100svh - var(--nav-h)); display: flex; align-items: center; }
 .screens.pinned .rail { margin-inline: 0; will-change: transform; }
 .screens.pinned .rail figure { will-change: transform; }
+
 
 /* ---------- activity ---------- */
 .rule-top { border-top: 1px solid var(--line); }
@@ -490,7 +491,7 @@ footer .about p { color: var(--muted); font-size: 14px; max-width: 46ch; margin-
   .head.split { grid-template-columns: minmax(0, 1fr); }
   .faq-grid .head { position: static; }
   .stage { padding-block: 24px 8px; }
-  .crate { height: 280vh; }
+  .crate { height: 280vh; height: 280svh; }
   .crate-grid { gap: 20px; }
   .stack { width: min(300px, 62vw); grid-row: 1; }
   .crate h2 { font-size: clamp(32px, 8vw, 46px); margin-bottom: 10px; }
@@ -1242,18 +1243,30 @@ footer .about p { color: var(--muted); font-size: 14px; max-width: 46ch; margin-
 
   /* ===== pinned screens ===== */
   const screens = $("screens"), pin = $("pin"), rail = pin.querySelector(".rail"), figs = [...rail.children];
-  let pinned = false, railTravel = 0;
-  function layout() {
-    // Scrolling down slides the screenshots across, on phones too, and with
-    // reduced motion as well: the row only moves as far as you scroll.
-    pinned = true;
+  // Scrolling down slides the screenshots across, on phones too, and with
+  // reduced motion as well: the row only moves as far as you scroll.
+  const pinned = true;
+  let railTravel = 0, centres = [], laidWidth = 0;
+  // The small viewport height: it doesn't change when a phone's address bar
+  // slides in and out, so the section never changes length under the finger.
+  const svhProbe = document.createElement("div");
+  svhProbe.style.cssText = "position:absolute;visibility:hidden;pointer-events:none;height:100svh;width:0;top:0";
+  document.body.appendChild(svhProbe);
+  let svh = svhProbe.offsetHeight || innerHeight;
+  addEventListener("resize", () => { svh = svhProbe.offsetHeight || innerHeight; });
+  function layout(force) {
+    if (!force && innerWidth === laidWidth) return;
+    laidWidth = innerWidth;
     screens.classList.toggle("pinned", pinned);
+    railTravel = Math.max(0, rail.scrollWidth - innerWidth);
+    // offsetLeft ignores transforms, so these are the resting centres.
+    centres = figs.map((f) => f.offsetLeft + f.offsetWidth / 2);
     // On phones one flick covers a lot of page, so the row takes twice the
     // scrolling to cross and can't be skipped past in a blink.
-    if (pinned) { railTravel = Math.max(0, rail.scrollWidth - innerWidth); pin.style.height = (railTravel * (innerWidth < 900 ? 2.2 : 1) + innerHeight - nav.offsetHeight) + "px"; }
-    else { pin.style.height = ""; rail.style.transform = ""; figs.forEach((f) => { f.style.transform = ""; }); }
+    pin.style.height = Math.round(railTravel * (innerWidth < 900 ? 2.2 : 1) + svh - nav.offsetHeight) + "px";
   }
-  layout(); addEventListener("resize", layout); addEventListener("load", layout);
+  layout(true); addEventListener("resize", () => layout(false)); addEventListener("load", () => layout(true));
+  if (document.fonts) document.fonts.ready.then(() => layout(true));
 
   /* ===== closing word ===== */
   const letters = [..."OpenTune"].map((ch) => { const s = document.createElement("span"); s.textContent = ch; s.setAttribute("aria-hidden", "true"); $("word").appendChild(s); return s; });
@@ -1416,7 +1429,9 @@ footer .about p { color: var(--muted); font-size: 14px; max-width: 46ch; margin-
 
   function frame(t) {
     const dt = Math.min(64, t - lastFrame); lastFrame = t;
-    const vh = innerHeight, y = scrollY;
+    // The small viewport height, so the address bar sliding in and out never
+    // nudges a scroll effect.
+    const vh = svh, y = scrollY;
 
     // Hero player, its moving cover and the waveform under it.
     const heroOn = shown(hero);
@@ -1466,17 +1481,20 @@ footer .about p { color: var(--muted); font-size: 14px; max-width: 46ch; margin-
   /* The screenshots follow the scroll; the tilt is left out with reduced motion. */
   function railFx(vh, tilt) {
     const pr = pin.getBoundingClientRect(), navH = nav.offsetHeight;
-    const pp = clamp(-(pr.top - navH) / Math.max(1, pr.height - (vh - navH)));
-    rail.style.transform = "translateX(" + (-pp * railTravel).toFixed(1) + "px)";
-    if (tilt) figs.forEach((f) => { const fr = f.getBoundingClientRect(); const c = clamp((fr.left + fr.width / 2 - innerWidth / 2) / innerWidth, -1, 1); f.style.transform = "perspective(1000px) rotateY(" + (c * -16).toFixed(2) + "deg) translateY(" + (Math.abs(c) * 26).toFixed(1) + "px) scale(" + (1 - Math.abs(c) * 0.06).toFixed(3) + ")"; });
+    const pp = clamp(-(pr.top - navH) / Math.max(1, pr.height - (svh - navH)));
+    const shift = pp * railTravel;
+    rail.style.transform = "translateX(" + (-shift).toFixed(1) + "px)";
+    // The tilt follows the scroll position, never where a card was last
+    // drawn, so it can't feed back on itself and wobble.
+    if (tilt) figs.forEach((f, i) => { const c = clamp((centres[i] - shift - innerWidth / 2) / innerWidth, -1, 1); f.style.transform = "perspective(1000px) rotateY(" + (c * -16).toFixed(2) + "deg) translateY(" + (Math.abs(c) * 26).toFixed(1) + "px) scale(" + (1 - Math.abs(c) * 0.06).toFixed(3) + ")"; });
   }
   if (still) {
-    const stillRail = () => { if (pinned) railFx(innerHeight, false); };
+    const stillRail = () => { if (pinned) railFx(svh, false); };
     addEventListener("scroll", stillRail, { passive: true });
     addEventListener("resize", stillRail);
     stillRail();
     paintHero();
-    crateFx(innerHeight);
+    crateFx(svh);
     qualityFrame(qStart + Q_MS * 0.7);
     togetherFrame(0, 0);
   } else requestAnimationFrame(frame);
