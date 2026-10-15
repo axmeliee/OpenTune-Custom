@@ -79,7 +79,7 @@ object WhatsNew {
         "0.4.16" to listOf(
             Note(Icons.Rounded.Lyrics, "Lyrics in step", "Lyrics are now looked up with the length of the song actually playing, so they no longer come from another version of it, timed differently. While they're found, a Setting up the lyrics badge shows."),
             Note(Icons.Rounded.FormatQuote, "Better Lyrics", "A new word-by-word lyrics source, for songs Better Lyrics' listeners have already looked up. In Settings › Lyrics sources."),
-            Note(Icons.Rounded.Download, "Downloaded playlists", "Download a whole album or playlist and it stays in your library under Playlists, with its downloaded songs ready offline. Downloads still lists every song."),
+            Note(Icons.Rounded.Download, "Downloaded playlists", "Download a whole album or playlist and it stays in your library under Playlists, with its downloaded songs ready offline. Downloads still lists every song. In a song's menu, the download button fills round its edge as it goes; tap it to cancel."),
             Note(Icons.Rounded.Favorite, "A burst of hearts", "Liking a song with the player's heart sends out a little burst of hearts. Albums and playlists have a heart too, to save them to your library, and every list can be shared."),
             Note(Icons.Rounded.GraphicEq, "A new equalizer", "A big response curve you drag the bands on, faders that glide, and presets in three groups, from Hi-Fi to Late night, each showing its own curve."),
             Note(Icons.Rounded.Lyrics, "Lyrics take the screen", "On the lyrics view, a few seconds untouched and the controls slide away; touch to bring them back."),

@@ -1,6 +1,7 @@
 • Lyrics stay in step with the playing song, and take the screen when left alone
 • Better Lyrics joins the lyrics sources
 • Downloaded albums and playlists stay in the library; lists can be saved with a heart and shared
+• The download button shows its progress round its edge
 • A new equalizer with a draggable curve and tuned presets
 • Name a song from a widget or Quick Settings
 • Deeper Liquid Glass and distinct page motion
