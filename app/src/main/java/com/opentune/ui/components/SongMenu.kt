@@ -53,6 +53,8 @@ import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawWithCache
+import androidx.compose.animation.core.animateFloat
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
@@ -139,11 +141,17 @@ fun SongMenuSheet(
                 if (!local) {
                     val (icon, label) = when (download?.state) {
                         DownloadState.DONE -> Icons.Rounded.DeleteOutline to "Remove"
-                        DownloadState.QUEUED, DownloadState.DOWNLOADING -> Icons.Rounded.Close to "Cancel"
+                        DownloadState.QUEUED -> Icons.Rounded.Close to "Waiting"
+                        DownloadState.DOWNLOADING -> Icons.Rounded.Close to "${(download.progress * 100).toInt()}%"
                         DownloadState.FAILED -> Icons.Rounded.Download to "Retry"
                         null -> Icons.Rounded.Download to "Download"
                     }
-                    QuickAction(icon, label, active = download?.state == DownloadState.DONE) {
+                    val ring = when (download?.state) {
+                        DownloadState.DOWNLOADING -> download.progress
+                        DownloadState.QUEUED -> -1f
+                        else -> null
+                    }
+                    QuickAction(icon, label, active = download?.state == DownloadState.DONE, progress = ring) {
                         when (download?.state) {
                             DownloadState.DONE, DownloadState.QUEUED, DownloadState.DOWNLOADING -> Downloads.remove(context, song.videoId)
                             DownloadState.FAILED -> Downloads.retry(context, song.videoId)
@@ -207,13 +215,66 @@ fun SongMenuSheet(
 
 /** A round quick action with its label underneath; filled when [active]. */
 @Composable
-private fun QuickAction(icon: ImageVector, label: String, active: Boolean, onClick: () -> Unit) {
+/**
+ * One of the menu's big buttons. With [progress] (0..1) a ring fills round
+ * its edge from the top, as a download goes; below 0 it's waiting, and a
+ * short stretch of the ring runs round instead.
+ */
+private fun QuickAction(icon: ImageVector, label: String, active: Boolean, progress: Float? = null, onClick: () -> Unit) {
+    val ringColour = MaterialTheme.colorScheme.primary
+    val trackColour = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.10f)
+    val shown by androidx.compose.animation.core.animateFloatAsState((progress ?: 0f).coerceIn(0f, 1f), androidx.compose.animation.core.tween(300), label = "downloadRing")
+    val waiting = progress != null && progress < 0f
+    val spin = if (waiting) {
+        androidx.compose.animation.core.rememberInfiniteTransition(label = "downloadWait")
+            .animateFloat(0f, 1f, androidx.compose.animation.core.infiniteRepeatable(androidx.compose.animation.core.tween(1_200, easing = androidx.compose.animation.core.LinearEasing)), label = "downloadWaitSpin")
+    } else null
     Column(
         Modifier.width(76.dp).clip(RoundedCornerShape(18.dp)).clickable(onClick = onClick).padding(vertical = 8.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
         Box(
-            Modifier.size(52.dp).clip(RoundedCornerShape(18.dp))
+            Modifier.size(52.dp)
+                .then(if (progress == null) Modifier else Modifier.drawWithCache {
+                    val stroke = 3.dp.toPx()
+                    val inset = stroke / 2
+                    // The button's own outline, starting at the top middle and going clockwise.
+                    val corner = 18.dp.toPx() - inset
+                    val outline = androidx.compose.ui.graphics.Path().apply {
+                        val w = size.width - inset
+                        val h = size.height - inset
+                        moveTo(size.width / 2, inset)
+                        lineTo(w - corner, inset)
+                        arcTo(androidx.compose.ui.geometry.Rect(w - 2 * corner, inset, w, inset + 2 * corner), -90f, 90f, false)
+                        lineTo(w, h - corner)
+                        arcTo(androidx.compose.ui.geometry.Rect(w - 2 * corner, h - 2 * corner, w, h), 0f, 90f, false)
+                        lineTo(inset + corner, h)
+                        arcTo(androidx.compose.ui.geometry.Rect(inset, h - 2 * corner, inset + 2 * corner, h), 90f, 90f, false)
+                        lineTo(inset, inset + corner)
+                        arcTo(androidx.compose.ui.geometry.Rect(inset, inset, inset + 2 * corner, inset + 2 * corner), 180f, 90f, false)
+                        close()
+                    }
+                    val measure = androidx.compose.ui.graphics.PathMeasure().apply { setPath(outline, false) }
+                    val length = measure.length
+                    val piece = androidx.compose.ui.graphics.Path()
+                    val style = androidx.compose.ui.graphics.drawscope.Stroke(stroke, cap = androidx.compose.ui.graphics.StrokeCap.Round)
+                    onDrawWithContent {
+                        drawContent()
+                        drawPath(outline, trackColour, style = style)
+                        piece.reset()
+                        val s = spin?.value
+                        if (s != null) {
+                            val from = s * length
+                            val to = from + length * 0.22f
+                            if (to <= length) measure.getSegment(from, to, piece, true)
+                            else { measure.getSegment(from, length, piece, true); measure.getSegment(0f, to - length, piece, true) }
+                        } else if (shown > 0f) {
+                            measure.getSegment(0f, shown * length, piece, true)
+                        }
+                        drawPath(piece, ringColour, style = style)
+                    }
+                })
+                .clip(RoundedCornerShape(18.dp))
                 .background(if (active) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceContainerHighest),
             contentAlignment = Alignment.Center,
         ) {
