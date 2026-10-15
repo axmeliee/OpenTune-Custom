@@ -1,6 +1,3 @@
-Warning: truncated output (original token count: 26760)
-Total output lines: 1401
-
 <!doctype html>
 <html lang="en">
 <head>
@@ -571,7 +568,102 @@ footer .about p { color: var(--dim); font-size: 13.5px; max-width: 46ch; margin-
           <div class="times"><span id="pos">1:04</span><span id="left">-2:16</span></div>
           <div class="controls">
             <button class="skip" id="prev" aria-label="Previous song"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M11.5 6v12L3 12zM20.5 6v12L12 12z"/></svg></button>
-            <button class="pp" id="pp" aria-label="Pause"><svg viewBox="0 0 24 24" fill="currentColor"><p…1760 tokens truncated…aying" id="btn-demo">
+            <button class="pp" id="pp" aria-label="Pause"><svg viewBox="0 0 24 24" fill="currentColor"><path id="ppa"/><path id="ppb"/></svg></button>
+            <button class="skip" id="next" aria-label="Next song"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M3.5 6v12L12 12zM12.5 6v12L21 12z"/></svg></button>
+          </div>
+          <div class="lyric-mini" id="mini-lyric" aria-hidden="true"></div>
+        </div>
+        <div class="chip-float cf-a"><span class="sw"></span>Colour from the cover <code id="hex">#E5483A</code></div>
+        <div class="chip-float cf-b"><span class="bars" aria-hidden="true"><i></i><i></i><i></i><i></i></span>Opus &middot; 48 kHz</div>
+        <div class="chip-float cf-c">Moving cover art</div>
+      </div>
+    </div>
+    <div class="wrap works">
+      <div><svg class="line-ico"><use href="#i-phone"/></svg>Android phones and tablets</div>
+      <div><svg class="line-ico"><use href="#i-car"/></svg>Android Auto</div>
+      <div><svg class="line-ico"><use href="#i-widget"/></svg>Home-screen widget</div>
+      <div><svg class="line-ico"><use href="#i-dac"/></svg>USB DACs <small>bit-perfect</small></div>
+      <div><svg class="line-ico"><use href="#i-bt"/></svg>Bluetooth resume</div>
+    </div>
+  </section>
+
+  <div class="facts" aria-label="OpenTune in numbers">
+    <div class="wrap">
+      <div class="fact"><div class="n" data-odo="50000" data-suffix="+"></div><span>live radio stations</span></div>
+      <div class="fact"><div class="n" data-odo="8000" data-suffix="+"></div><span>headphones corrected by AutoEq</span></div>
+      <div class="fact"><div class="n" data-odo="15"></div><span>equalizer bands, 25 Hz to 16 kHz</span></div>
+      <div class="fact"><div class="n" data-odo="3"></div><span>lyrics sources, tried in your order</span></div>
+      <div class="fact"><div class="n" data-odo="7"></div><span>player layouts to choose from</span></div>
+      <div class="fact"><div class="n" data-odo="0" data-em="1"></div><span>ads or required subscriptions</span></div>
+    </div>
+  </div>
+
+  <section class="block" id="live">
+    <div class="wrap">
+      <div class="head">
+        <span class="kicker"><i></i>Inside the app</span>
+        <h2>Built for people who listen closely.</h2>
+        <p>Everything below ships in the app today. The cards are live: tap, drag and switch them to see how each part works.</p>
+      </div>
+
+      <div class="bento">
+        <article class="card span-4 lift">
+          <div class="top"><span class="label">Word-synced lyrics</span><div class="pills" id="lyric-styles" role="group" aria-label="Lyrics animation">
+            <button class="pill on" data-style="karaoke">Karaoke</button><button class="pill" data-style="fluid">Fluid</button><button class="pill" data-style="bounce">Bounce</button><button class="pill" data-style="reveal">Reveal</button>
+          </div></div>
+          <h3>Lyrics that move with the voice.</h3>
+          <div class="demo"><div class="karaoke" id="karaoke" aria-label="Lyrics demo: Danny Boy"></div></div>
+          <div class="sources"><span>LRCLIB</span><span>KuGou</span><span>YouTube Music</span><small>tried in the order you set, credited under every song</small></div>
+        </article>
+
+        <article class="card span-2 lift">
+          <div class="top"><span class="label">Quality upgrade</span><button class="pill" id="replay-q"><svg class="line-ico" width="13" height="13"><use href="#i-replay"/></svg>Again</button></div>
+          <h3>Starts fast. Gets better without stopping.</h3>
+          <p class="desc">Playback starts on the first stream that answers. A few seconds in, OpenTune finds a clearly better copy and switches to it in place.</p>
+          <div class="lanes">
+            <div class="lane"><div class="row"><span>Other players</span><b id="q-other">AAC 128 kbps</b></div><div class="track" id="t-other"><span class="seg lo" style="width:100%"></span><span class="gap" id="q-gap" style="left:46%;width:16%">re-buffer</span><span class="play" id="q-play-a"></span></div></div>
+            <div class="lane"><div class="row"><span>OpenTune</span><b id="q-ours">AAC 128 kbps</b></div><div class="track"><span class="seg lo" id="q-lo" style="width:100%"></span><span class="seg hi" id="q-hi" style="width:0"></span><span class="play" id="q-play-b"></span></div></div>
+          </div>
+          <div class="readout"><div><small>Now on</small><b id="q-now">AAC 128</b></div><div><small>Gaps</small><b>0</b></div></div>
+        </article>
+
+        <article class="card span-3 lift">
+          <div class="top"><span class="label">Listen together</span><button class="pill" id="knock">Knock Ravi 300 ms out</button></div>
+          <h3>Same second, different phones.</h3>
+          <p class="desc">Share a room code and friends hear what you play. A guest who drifts plays a few percent faster or slower until it's back in step, so the music never stops to catch up.</p>
+          <div class="demo">
+            <div class="duo">
+              <div class="ph"><div class="who"><span class="av">A</span>Asha<small>Host</small></div><div class="bar"><i id="t-host"></i></div><span class="pos" id="p-host">1:12.0</span></div>
+              <div class="ph"><div class="who"><span class="av alt">R</span>Ravi<small>Guest</small></div><div class="bar"><i id="t-guest"></i></div><span class="pos" id="p-guest">1:12.0</span></div>
+            </div>
+            <div class="sync-row" style="margin-top:16px">
+              <div class="readout"><div><small>Drift</small><b id="drift">0 ms</b></div><div><small>Ravi's speed</small><b id="rate">1.00x</b></div></div>
+              <div class="meter" aria-hidden="true"><span class="zero"></span><span class="dot" id="drift-dot"></span></div>
+            </div>
+          </div>
+        </article>
+
+        <article class="card span-3 lift">
+          <div class="top"><span class="label">Sound</span><div class="pills" id="presets" role="group" aria-label="Equalizer preset"></div></div>
+          <h3>A 15-band equalizer you can drag.</h3>
+          <div class="demo">
+            <div class="eq" id="eq" aria-label="Equalizer, drag a band up or down"></div>
+            <div class="hz" id="hz"></div>
+          </div>
+          <div class="xf">
+            <div class="top"><span class="label">Crossfade</span><span class="mono" id="xf-val">6 s</span></div>
+            <canvas id="xf" aria-label="Equal-power crossfade curves"></canvas>
+            <input class="slider" id="xf-slider" type="range" min="1" max="12" value="6" aria-label="Crossfade length in seconds">
+          </div>
+        </article>
+
+        <article class="card span-2 lift">
+          <div class="top"><span class="label">Player buttons</span></div>
+          <h3>Five button designs.</h3>
+          <div class="pills" id="btn-styles" role="group" aria-label="Button design">
+            <button class="pill on" data-b="morph">Morph</button><button class="pill" data-b="disc">Disc</button><button class="pill" data-b="squircle">Squircle</button><button class="pill" data-b="glass">Glass</button>
+          </div>
+          <div class="demo"><div class="btn-demo playing" id="btn-demo">
             <button class="b skip" id="bd-prev" aria-label="Previous"><svg viewBox="0 0 24 24" fill="currentColor"><path id="bd-pa"/><path id="bd-pb"/></svg></button>
             <button class="b main" id="bd-main" aria-label="Pause"><svg viewBox="0 0 24 24" fill="currentColor"><path id="bd-a"/><path id="bd-b"/></svg></button>
             <button class="b skip" id="bd-next" aria-label="Next"><svg viewBox="0 0 24 24" fill="currentColor"><path id="bd-na"/><path id="bd-nb"/></svg></button>
