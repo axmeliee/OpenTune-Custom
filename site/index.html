@@ -1248,7 +1248,9 @@ footer .about p { color: var(--muted); font-size: 14px; max-width: 46ch; margin-
     // reduced motion as well: the row only moves as far as you scroll.
     pinned = true;
     screens.classList.toggle("pinned", pinned);
-    if (pinned) { railTravel = Math.max(0, rail.scrollWidth - innerWidth); pin.style.height = (railTravel + innerHeight - nav.offsetHeight) + "px"; }
+    // On phones one flick covers a lot of page, so the row takes twice the
+    // scrolling to cross and can't be skipped past in a blink.
+    if (pinned) { railTravel = Math.max(0, rail.scrollWidth - innerWidth); pin.style.height = (railTravel * (innerWidth < 900 ? 2.2 : 1) + innerHeight - nav.offsetHeight) + "px"; }
     else { pin.style.height = ""; rail.style.transform = ""; figs.forEach((f) => { f.style.transform = ""; }); }
   }
   layout(); addEventListener("resize", layout); addEventListener("load", layout);
