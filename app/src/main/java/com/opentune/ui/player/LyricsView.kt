@@ -122,7 +122,8 @@ fun LyricsView(
     var sharing by remember { mutableStateOf<Pair<com.opentune.data.model.Song, List<String>>?>(null) }
     Box(modifier) {
         when (state) {
-            is LyricsState.Loading -> Column(Modifier.padding(top = 32.dp), verticalArrangement = Arrangement.spacedBy(18.dp)) {
+            is LyricsState.Loading -> Column(Modifier.padding(top = 20.dp), verticalArrangement = Arrangement.spacedBy(18.dp)) {
+                SettingUpBadge()
                 listOf(0.8f, 0.6f, 0.9f, 0.5f, 0.7f).forEach {
                     Placeholder(Modifier.fillMaxWidth(it).height(28.dp), MaterialTheme.shapes.small)
                 }
@@ -597,6 +598,25 @@ internal fun wordGroups(words: List<LyricWord>): List<IntRange> {
 private val UNLIT = Color.Black.copy(alpha = 0.68f)
 
 private fun easeOut(t: Float): Float = 1f - (1f - t) * (1f - t)
+
+/** While the sources are asked: a small pill saying the lyrics are on their way, with a turning mark. */
+@Composable
+internal fun SettingUpBadge(modifier: Modifier = Modifier) {
+    val colors = MaterialTheme.colorScheme
+    Row(
+        modifier
+            .clip(CircleShape)
+            .background(colors.onSurface.copy(alpha = 0.10f))
+            .padding(horizontal = 14.dp, vertical = 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        androidx.compose.material3.CircularProgressIndicator(
+            Modifier.size(12.dp), color = colors.onSurface, strokeWidth = 1.5.dp, trackColor = colors.onSurface.copy(alpha = 0.2f),
+        )
+        androidx.compose.foundation.layout.Spacer(Modifier.size(8.dp))
+        Text("Setting up the lyrics…", style = MaterialTheme.typography.labelLarge, color = colors.onSurface.copy(alpha = 0.85f))
+    }
+}
 
 /** Three dots breathing in sequence while an intro plays. */
 @Composable

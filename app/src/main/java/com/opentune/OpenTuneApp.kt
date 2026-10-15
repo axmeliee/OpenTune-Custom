@@ -93,6 +93,7 @@ class OpenTuneApp : Application(), SingletonImageLoader.Factory {
         com.opentune.data.library.LibraryArtwork.init(this)
         LibraryStore.init(this)
         Downloads.init(this)
+        com.opentune.data.download.DownloadedLists.init(this)
         AccountStore.init(this)
         com.opentune.data.library.LibraryCache.init(this)
         InnerTubeXResolver.init(this)

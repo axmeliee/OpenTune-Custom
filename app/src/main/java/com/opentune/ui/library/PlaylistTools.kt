@@ -81,8 +81,11 @@ import kotlinx.coroutines.delay
  * already saved are left as they are. A rising run of taps says when the
  * last one is done.
  */
+/** The list a [DownloadAllButton] downloads, kept so the library can show it as a list of its downloads. */
+data class DownloadedListInfo(val id: String, val title: String, val subtitle: String, val thumbnailUrl: String?)
+
 @Composable
-fun DownloadAllButton(songs: List<Song>, modifier: Modifier = Modifier) {
+fun DownloadAllButton(songs: List<Song>, modifier: Modifier = Modifier, list: DownloadedListInfo? = null) {
     val context = LocalContext.current
     val haptics = rememberHaptics()
     val entries by Downloads.entries.collectAsState()
@@ -95,11 +98,18 @@ fun DownloadAllButton(songs: List<Song>, modifier: Modifier = Modifier) {
     val all = wanted.isNotEmpty() && done == wanted.size
     var started by remember { mutableStateOf(false) }
     LaunchedEffect(all) { if (all && started) haptics.pattern(Haptics.Pattern.DONE) }
+    // A list downloaded in full before lists were kept: keep it now, so it shows in the library too.
+    LaunchedEffect(list?.id, selection.stored.size, wanted.size) {
+        if (list != null && wanted.isNotEmpty() && selection.stored.size == wanted.size && com.opentune.data.download.DownloadedLists.get(list.id) == null) {
+            com.opentune.data.download.DownloadedLists.save(list.id, list.title, list.subtitle, list.thumbnailUrl, songs.map { it.videoId })
+        }
+    }
     val progress by animateFloatAsState(if (wanted.isEmpty()) 0f else done.toFloat() / wanted.size, tween(500), label = "downloaded")
     val scheme = MaterialTheme.colorScheme
     val downloadRemaining = {
         started = true
         wanted.forEach { Downloads.enqueue(context, it) }
+        list?.let { com.opentune.data.download.DownloadedLists.save(it.id, it.title, it.subtitle, it.thumbnailUrl, songs.map { s -> s.videoId }) }
     }
     if (options) FloatingCard(onDismiss = { options = false }, title = "Playlist downloads", icon = Icons.Rounded.Download) {
         Text("$done of ${wanted.size} songs saved · $going pending", Modifier.padding(horizontal = 24.dp, vertical = 12.dp),
@@ -125,6 +135,7 @@ fun DownloadAllButton(songs: List<Song>, modifier: Modifier = Modifier) {
         confirmButton = { SheetButton("Remove downloads", onClick = {
             started = false
             Downloads.removeAll(context, wanted)
+            list?.let { com.opentune.data.download.DownloadedLists.remove(it.id) }
             confirmRemove = false
         }) },
         dismissButton = { SheetButton("Keep downloads", onClick = { confirmRemove = false }, closes = true) },
@@ -283,9 +294,9 @@ private fun AddRow(song: Song, added: Boolean, onAdd: () -> Unit) {
 /** The row under a list's Play and Shuffle: download it all, and for the app's own playlists, add songs. */
 @OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
 @Composable
-fun ListTools(songs: List<Song>, onAddSongs: (() -> Unit)?, modifier: Modifier = Modifier) {
+fun ListTools(songs: List<Song>, onAddSongs: (() -> Unit)?, modifier: Modifier = Modifier, list: DownloadedListInfo? = null) {
     androidx.compose.foundation.layout.FlowRow(modifier, horizontalArrangement = Arrangement.spacedBy(10.dp, Alignment.CenterHorizontally), verticalArrangement = Arrangement.spacedBy(8.dp)) {
         if (onAddSongs != null) AddSongsButton(onAddSongs)
-        if (songs.isNotEmpty()) DownloadAllButton(songs)
+        if (songs.isNotEmpty()) DownloadAllButton(songs, list = list)
     }
 }

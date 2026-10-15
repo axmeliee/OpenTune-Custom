@@ -236,6 +236,8 @@ private fun QueueRow(song: Song, isCurrent: Boolean, isPlaying: Boolean, handle:
 fun LyricPreview(lyrics: LyricsState, position: () -> Long, onOpen: () -> Unit, modifier: Modifier = Modifier) {
     // The position function changes with the lyrics offset; read the latest.
     val pos by rememberUpdatedState(position)
+    // While the lyrics are being found, say so where the line will be.
+    if (lyrics is LyricsState.Loading) { SettingUpBadge(modifier); return }
     val synced = (lyrics as? LyricsState.Found)?.lyrics as? Lyrics.Synced ?: return
     val line by remember(synced) {
         derivedStateOf {

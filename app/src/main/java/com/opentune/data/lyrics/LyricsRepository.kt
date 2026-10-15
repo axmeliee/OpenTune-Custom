@@ -162,6 +162,7 @@ object LyricsRepository {
         when (source) {
             LyricsSource.LRCLIB -> lookup(title, artist, durationMs)
             LyricsSource.LYRICSPLUS -> LyricsPlus.lookup(title, artist, durationMs)
+            LyricsSource.BETTERLYRICS -> BetterLyrics.lookup(title, artist, durationMs)
             LyricsSource.SIMPMUSIC -> if (!isYouTubeId(videoId)) null else runInterruptible { SimpMusic.lookup(videoId, durationMs) }
             LyricsSource.KUGOU -> runInterruptible { KuGou.lookup(title, artist, durationMs) }
             LyricsSource.NETEASE -> runInterruptible { NetEase.lookup(title, artist, durationMs) }

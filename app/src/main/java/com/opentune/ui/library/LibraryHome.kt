@@ -100,6 +100,8 @@ class LibraryNav(
     val together: () -> Unit = {},
     val importPlaylist: () -> Unit = {},
     val wrapped: () -> Unit = {},
+    /** An album or playlist downloaded as a whole, by its id. */
+    val downloaded: (String) -> Unit = {},
 )
 
 private const val YT_PLAYLISTS = "library:ytPlaylists"
@@ -110,6 +112,16 @@ fun LibraryScreen(contentPadding: PaddingValues, actions: SongActions, nav: Libr
     val liked by LibraryStore.liked.collectAsState()
     val playlists by LibraryStore.playlists.collectAsState()
     val finished by Downloads.done.collectAsState(Downloads.doneNow())
+    val downloadEntries by Downloads.entries.collectAsState()
+    val downloadedLists by com.opentune.data.download.DownloadedLists.lists.collectAsState()
+    // Downloaded lists with something still downloaded in them, and how much.
+    val savedLists = remember(downloadedLists, downloadEntries) {
+        downloadedLists.mapNotNull { l ->
+            val have = l.songIds.count { downloadEntries[it]?.state == com.opentune.data.download.DownloadState.DONE }
+            val any = l.songIds.any { it in downloadEntries }
+            if (any) l to have else null
+        }
+    }
     val signedIn by AccountStore.signedIn.collectAsState()
     val account by AccountStore.account.collectAsState()
     val recents = remember(records) { History.recents(records, 30) }
@@ -199,7 +211,7 @@ fun LibraryScreen(contentPadding: PaddingValues, actions: SongActions, nav: Libr
                 }
             })
         }
-        if (playlists.isEmpty() && ytPlaylists.isEmpty()) {
+        if (playlists.isEmpty() && ytPlaylists.isEmpty() && savedLists.isEmpty()) {
             item {
                 Text(
                     "Make one with New, bring one over from Spotify or YouTube Music with Import, or add any song from its menu.",
@@ -209,12 +221,21 @@ fun LibraryScreen(contentPadding: PaddingValues, actions: SongActions, nav: Libr
                 )
             }
         }
+        // Albums and playlists downloaded whole: their songs, ready offline.
+        items(savedLists, key = { "dl:${it.first.id}" }) { (l, have) ->
+            PlaylistRow(
+                l.thumbnailUrl, l.title,
+                "$have of ${l.songIds.size} downloaded · plays offline",
+                { nav.downloaded(l.id) }, Modifier.animateItem(),
+            )
+        }
         items(playlists, key = { it.id }) { p ->
-            PlaylistRow(null, p.name, "${p.songs.size} songs · on this phone", { nav.playlist(p.id) }, Modifier.animateItem(), cover = {
+            val saved = p.songs.count { downloadEntries[it.videoId]?.state == com.opentune.data.download.DownloadState.DONE }
+            PlaylistRow(null, p.name, "${p.songs.size} songs · " + if (saved > 0) "$saved downloaded" else "on this phone", { nav.playlist(p.id) }, Modifier.animateItem(), cover = {
                 com.opentune.ui.components.PlaylistCover(p.name, p.songs.map { it.thumbnailUrl }, Modifier.size(56.dp))
             })
         }
-        items(ytPlaylists, key = { "yt:${it.browseId}" }) { p ->
+        items(ytPlaylists.filter { p -> savedLists.none { it.first.id == p.browseId } }, key = { "yt:${it.browseId}" }) { p ->
             PlaylistRow(p.thumbnailUrl, p.title, p.subtitle.ifBlank { "YouTube Music" }, { p.browseId?.let(nav.browse) }, Modifier.animateItem())
         }
         if (recents.isNotEmpty()) {
@@ -323,6 +344,80 @@ internal fun NameDialog(title: String, initial: String, onDismiss: () -> Unit, o
         confirmButton = { SheetButton("Save", onClick = { onConfirm(name) }) },
         dismissButton = { SheetButton("Cancel", onClick = onDismiss, closes = true) },
     )
+}
+
+/**
+ * An album or playlist downloaded as a whole: its downloaded songs in the
+ * list's order, playable offline, with any still on their way.
+ */
+@Composable
+fun DownloadedListScreen(id: String, contentPadding: PaddingValues, actions: SongActions, onBack: () -> Unit) {
+    val context = LocalContext.current
+    val lists by com.opentune.data.download.DownloadedLists.lists.collectAsState()
+    val entries by Downloads.entries.collectAsState()
+    val saved = lists.firstOrNull { it.id == id }
+    val inList = remember(saved, entries) { saved?.songIds.orEmpty().mapNotNull { entries[it] } }
+    val ready = remember(inList) { inList.filter { it.state == DownloadState.DONE }.map { it.song.toSong() } }
+    var confirmRemove by remember { mutableStateOf(false) }
+    if (confirmRemove && saved != null) com.opentune.ui.components.FloatingDialog(
+        onDismissRequest = { confirmRemove = false },
+        title = { Text("Remove this download?") },
+        text = { Text("Deletes the downloaded songs of ${saved.title} from this phone and takes it out of your library's downloads.") },
+        confirmButton = { com.opentune.ui.components.SheetButton("Remove", tone = com.opentune.ui.components.SheetTone.Danger, onClick = {
+            Downloads.removeAll(context, inList.map { it.song.toSong() })
+            com.opentune.data.download.DownloadedLists.remove(saved.id)
+            confirmRemove = false
+            onBack()
+        }) },
+        dismissButton = { com.opentune.ui.components.SheetButton("Keep", onClick = { confirmRemove = false }, closes = true) },
+    )
+    LazyColumn(contentPadding = contentPadding, modifier = Modifier.fillMaxSize()) {
+        item { PageHeader(saved?.title ?: "Downloaded", onBack = onBack) }
+        if (saved == null || inList.isEmpty()) {
+            item { MessageState(Icons.Rounded.Download, "Nothing downloaded here", Modifier.padding(top = 32.dp), message = "Its songs were removed from Downloads.") }
+            return@LazyColumn
+        }
+        item {
+            Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                Artwork(saved.thumbnailUrl, Modifier.size(96.dp), RoundedCornerShape(16.dp))
+                Spacer(Modifier.width(16.dp))
+                Column(Modifier.weight(1f)) {
+                    if (saved.subtitle.isNotBlank()) Text(saved.subtitle, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 2)
+                    Text("${ready.size} of ${saved.songIds.size} songs downloaded", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    TextButton(onClick = { confirmRemove = true }, contentPadding = PaddingValues(0.dp)) { Text("Remove download") }
+                }
+            }
+        }
+        item {
+            PlayButtons(
+                onPlay = { actions.playAll(ready, 0, false, saved.title) },
+                onShuffle = { actions.playAll(ready, 0, true, saved.title) },
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp),
+            )
+        }
+        items(inList, key = { it.song.videoId }) { e ->
+            val song = e.song.toSong()
+            SongListItem(
+                song = when (e.state) {
+                    DownloadState.FAILED -> song.copy(durationText = "Failed · tap to retry")
+                    DownloadState.QUEUED, DownloadState.DOWNLOADING -> song.copy(durationText = "Downloading ${(e.progress * 100).toInt()}%")
+                    else -> song
+                },
+                onClick = {
+                    when (e.state) {
+                        DownloadState.DONE -> actions.playAll(ready, ready.indexOfFirst { it.videoId == song.videoId }.coerceAtLeast(0), false, saved.title)
+                        DownloadState.FAILED -> Downloads.retry(context, song.videoId)
+                        else -> Unit
+                    }
+                },
+                modifier = Modifier.animateItem(),
+                isCurrent = song.videoId == actions.currentVideoId,
+                isPlaying = actions.isPlaying,
+                onPlayNext = { actions.playNext(song) },
+                onAddToQueue = { actions.addToQueue(song) },
+            )
+        }
+    }
 }
 
 /** Songs saved for offline listening, newest first, including ones still on their way. */

@@ -282,7 +282,10 @@ fun CollectionScreen(
                                     modifier = Modifier.fillMaxWidth().padding(top = 20.dp, bottom = 12.dp),
                                 )
                                 if (!c?.songs.isNullOrEmpty()) {
-                                    com.opentune.ui.library.ListTools(c!!.songs, onAddSongs = null, Modifier.fillMaxWidth().padding(bottom = 16.dp))
+                                    com.opentune.ui.library.ListTools(
+                                        c!!.songs, onAddSongs = null, Modifier.fillMaxWidth().padding(bottom = 16.dp),
+                                        list = com.opentune.ui.library.DownloadedListInfo(c.browseId, c.title, c.subtitle, c.thumbnailUrl),
+                                    )
                                 }
                             }
                         }

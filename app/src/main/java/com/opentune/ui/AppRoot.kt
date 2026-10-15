@@ -253,6 +253,7 @@ fun AppRoot(vm: PlayerViewModel) {
     ) }
     val libraryNav = remember(nav) { LibraryNav(
         downloads = { nav.navigate("downloads") },
+        downloaded = { id -> nav.navigate("downloaded/${Uri.encode(id)}") },
         local = { nav.navigate("local") },
         replay = { nav.navigate("replay") },
         settings = { nav.navigate("settings") },
@@ -434,6 +435,9 @@ fun AppRoot(vm: PlayerViewModel) {
                     }
                     composable("login") { LoginScreen(onDone = { nav.popBackStack() }) }
                     composable("downloads") { DownloadsScreen(content, actions, onBack = { nav.popBackStack() }) }
+                    composable("downloaded/{id}", listOf(navArgument("id") { type = NavType.StringType })) { e ->
+                        com.opentune.ui.library.DownloadedListScreen(e.arguments?.getString("id").orEmpty(), content, actions, onBack = { nav.popBackStack() })
+                    }
                     composable("liked") {
                         LikedScreen(content, actions, onBack = { nav.popBackStack() }, onOpenYouTubeLikes = { nav.openBrowse("VLLM", BrowseType.PLAYLIST) })
                     }
