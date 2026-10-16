@@ -78,6 +78,8 @@ import androidx.compose.material.icons.rounded.PlayCircle
 import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material.icons.rounded.SpaceBar
 import androidx.compose.material.icons.rounded.Speed
+import androidx.compose.material.icons.rounded.TabletAndroid
+import androidx.compose.material.icons.rounded.VerticalSplit
 import androidx.compose.material.icons.rounded.Storage
 import androidx.compose.material.icons.rounded.SurroundSound
 import androidx.compose.material.icons.rounded.Favorite
@@ -865,6 +867,16 @@ private fun settingsSections(
                 Entry("Player layout", "player style layout vinyl record lyrics minimal classic screen") {
                     NavRow("Player layout", { playerStyleDialog = true }, summary = ui.playerStyle.summary, icon = Icons.Rounded.Album, value = ui.playerStyle.label)
                 },
+                Entry("Player beside the page", "tablet foldable large screen side pane docked player split landscape") {
+                    ToggleRow(
+                        "Player beside the page",
+                        ui.sidePlayer,
+                        { v -> AppSettings.updateUi { it.copy(sidePlayer = v) } },
+                        summary = "On large screens, the player stays open on the right while music plays",
+                        icon = Icons.Rounded.VerticalSplit,
+                        enabled = ui.wideLayout,
+                    )
+                },
                 Entry("Player buttons", "play pause next previous skip controls buttons design morph disc squircle glass") {
                     NavRow("Player buttons", { controlStyleDialog = true }, summary = ui.controlStyle.summary, icon = Icons.Rounded.PlayCircle, value = ui.controlStyle.label)
                 },
@@ -954,6 +966,15 @@ private fun settingsSections(
                 },
                 Entry("High refresh rate", "120hz 90hz smooth fps refresh rate frame rate scrolling performance") {
                     ToggleRow("High refresh rate", ui.highRefreshRate, { v -> AppSettings.updateUi { it.copy(highRefreshRate = v) } }, summary = "Runs the screen at its fastest rate while OpenTune is open, for smoother scrolling", icon = Icons.Rounded.Speed)
+                },
+                Entry("Wide-screen layout", "tablet foldable large screen landscape rail side navigation dock columns") {
+                    ToggleRow(
+                        "Wide-screen layout",
+                        ui.wideLayout,
+                        { v -> AppSettings.updateUi { it.copy(wideLayout = v) } },
+                        summary = "On tablets, unfolded phones and in landscape, the tabs move to a rail on the side and pages keep a readable width",
+                        icon = Icons.Rounded.TabletAndroid,
+                    )
                 },
                 Entry("Reduce dynamic blur", "glass frosted performance") {
                     ToggleRow("Reduce dynamic blur", ui.reduceBlur, { v -> AppSettings.updateUi { it.copy(reduceBlur = v) } }, summary = "Swaps frosted glass for solid fills across the app", icon = Icons.Rounded.BlurOff)

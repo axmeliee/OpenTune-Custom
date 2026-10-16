@@ -34,6 +34,12 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.safeDrawing
+import androidx.compose.foundation.layout.calculateStartPadding
+import androidx.compose.foundation.layout.calculateEndPadding
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.ui.unit.toSize
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Explore
 import androidx.compose.material.icons.rounded.Home
@@ -130,6 +136,8 @@ fun AppRoot(vm: PlayerViewModel) {
     val isPlaying by vm.isPlaying.collectAsState()
     val playbackError by vm.playbackError.collectAsState()
     var playerOpen by rememberSaveable { mutableStateOf(false) }
+    // The docked player folded into its strip, on screens wide enough for one.
+    var paneCollapsed by rememberSaveable { mutableStateOf(false) }
     var playerCovers by remember { mutableStateOf(false) }
     val snackbar = remember { SnackbarHostState() }
     val haze = rememberHazeState()
@@ -339,9 +347,77 @@ fun AppRoot(vm: PlayerViewModel) {
         Links.consumed()
     }
     // The Wrapped story fills the screen, like the login page.
-    val chromeVisible = route != "login" && route != "wrapped" && !playerCovers
+    val chromeRoute = route != "login" && route != "wrapped"
+    val chromeVisible = chromeRoute && !playerCovers
+    // The window's size class picks the chrome. A fold or unfold only changes
+    // what's around the pages: the NavHost and the player keep their place in
+    // the tree, so neither starts over (the activity handles the size change
+    // itself rather than being recreated; see the manifest).
+    val window = with(androidx.compose.ui.platform.LocalDensity.current) { androidx.compose.ui.platform.LocalWindowInfo.current.containerSize.toSize().toDpSize() }
+    val layout = appLayout(window.width.value.toInt(), window.height.value.toInt(), song != null, paneCollapsed, chromeUi.wideLayout, chromeUi.sidePlayer)
+    // Docked beside the page, the player is never also opened over it.
+    val sheetOpen = playerOpen && !layout.sidePlayer
+    val currentLayout by androidx.compose.runtime.rememberUpdatedState(layout)
+    LaunchedEffect(playerOpen) {
+        // Asked for the player (a shared song, say) while it's docked: unfold the pane.
+        if (playerOpen && currentLayout.sidePlayer) {
+            paneCollapsed = false
+            playerOpen = false
+        }
+    }
+    // Unfolding with the full player open: the pane shows it. Folding back
+    // brings the full player back, as it was left.
+    LaunchedEffect(layout.sidePlayer) { if (layout.sidePlayer && playerOpen) paneCollapsed = false }
     val navInset = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
-    val content = PaddingValues(bottom = navInset + CHROME_TAB_HEIGHT + 24.dp + if (song != null) CHROME_MINI_HEIGHT + 8.dp else 0.dp)
+    val content = if (layout.nav == NavChrome.DOCK) {
+        PaddingValues(bottom = navInset + CHROME_TAB_HEIGHT + 24.dp + if (song != null) CHROME_MINI_HEIGHT + 8.dp else 0.dp)
+    } else {
+        PaddingValues(bottom = navInset + 16.dp + if (layout.nowPlaying == NowPlaying.BAR) CHROME_MINI_HEIGHT + 12.dp else 0.dp)
+    }
+    // Room the rail and the docked player take beside the pages, eased as
+    // the pane folds and unfolds.
+    val direction = androidx.compose.ui.platform.LocalLayoutDirection.current
+    val safe = WindowInsets.safeDrawing.asPaddingValues()
+    val startGutter = if (layout.nav == NavChrome.RAIL && chromeRoute) RAIL_GUTTER + safe.calculateStartPadding(direction) else 0.dp
+    val endGutterTarget = when {
+        !chromeRoute -> 0.dp
+        layout.nowPlaying == NowPlaying.PANE -> PANE_GUTTER + safe.calculateEndPadding(direction)
+        layout.nowPlaying == NowPlaying.STRIP -> STRIP_GUTTER + safe.calculateEndPadding(direction)
+        else -> 0.dp
+    }
+    val endGutter by androidx.compose.animation.core.animateDpAsState(
+        endGutterTarget,
+        if (chromeUi.reduceAnimation) androidx.compose.animation.core.snap() else tween(420, easing = androidx.compose.animation.core.CubicBezierEasing(0.2f, 0f, 0f, 1f)),
+        label = "endGutter",
+    )
+    // Pages in a readable column on wide windows, centred in the room left;
+    // the ones that fill the screen still do.
+    val pageArea = Modifier.padding(start = startGutter, end = endGutter)
+        .then(layout.contentMaxWidthDp?.takeIf { chromeRoute }?.let { Modifier.widthIn(max = it.dp) } ?: Modifier)
+    val selectTab: (Int) -> Unit = { i ->
+        val t = Tab.entries[i]
+        when {
+            // Already in this tab, on its root, a sub-page or Search
+            // opened from it: back to the tab's root.
+            t == tab -> nav.popBackStack(t.route, inclusive = false)
+            // Home is the start, so it's reached by popping. Navigating to
+            // it with restoreState would bring back whatever was popped:
+            // a non-inclusive pop files that state under Home's id too.
+            t == Tab.HOME -> {
+                tab = t
+                nav.popBackStack(Tab.HOME.route, inclusive = false, saveState = true)
+            }
+            else -> {
+                tab = t
+                nav.navigate(t.route) {
+                    popUpTo(Tab.HOME.route) { saveState = true }
+                    launchSingleTop = true
+                    restoreState = true
+                }
+            }
+        }
+    }
+    val openSearch = { if (route != SEARCH_ROUTE) nav.navigate(SEARCH_ROUTE) { launchSingleTop = true } }
 
     // The opening animation, once per launch: the app comes forward out of
     // the mark as the screen dives into it.
@@ -355,7 +431,7 @@ fun AppRoot(vm: PlayerViewModel) {
     val leave = remember { androidx.compose.animation.core.Animatable(0f) }
     LaunchedEffect(lifecycle) { lifecycle.repeatOnLifecycle(androidx.lifecycle.Lifecycle.State.RESUMED) { leave.snapTo(0f) } }
     val atRoot = entry != null && nav.previousBackStackEntry == null
-    BackHandler(enabled = isPlaying && atRoot && !playerOpen && !chromeUi.reduceAnimation && leave.targetValue == 0f) {
+    BackHandler(enabled = isPlaying && atRoot && !sheetOpen && !chromeUi.reduceAnimation && leave.targetValue == 0f) {
         val activity = appContext as? android.app.Activity
         uiScope.launch {
             // Long enough to read as one gesture, on a curve that starts briskly and
@@ -419,6 +495,7 @@ fun AppRoot(vm: PlayerViewModel) {
                 NavHost(
                     navController = nav,
                     startDestination = Tab.HOME.route,
+                    modifier = Modifier.align(Alignment.TopCenter).then(pageArea).fillMaxSize(),
                     enterTransition = { PageMotion.enter(chromeUi.pageTransition, chromeUi.reduceAnimation) },
                     exitTransition = { PageMotion.exit(chromeUi.pageTransition, chromeUi.reduceAnimation) },
                     popEnterTransition = { PageMotion.popEnter(chromeUi.pageTransition, chromeUi.reduceAnimation) },
@@ -564,54 +641,84 @@ fun AppRoot(vm: PlayerViewModel) {
             // Floating chrome: the mini player above the nav pill and search button.
             // It sits outside the recorded layer, so its Liquid Glass can sample it.
             if (chromeVisible) CompositionLocalProvider(LocalBackdrop provides backdrop.takeIf { sampled }) {
+            val openPlayer: (Boolean) -> Unit = { folded ->
+                // The mini player's cover grows into the player's as it opens.
+                if (chromeUi.coverFlight && !chromeUi.reduceAnimation) com.opentune.ui.components.FlyingCover.startExpand(round = folded)
+                playerOpen = true
+            }
+            if (layout.nav == NavChrome.DOCK) {
             Column(Modifier.align(Alignment.BottomCenter).fillMaxWidth().navigationBarsPadding().padding(bottom = 12.dp)) {
                 SnackbarHost(snackbar)
                 BottomChrome(
                     inline = chromeScroll.inline,
                     tabs = chromeTabs,
                     selected = if (route == SEARCH_ROUTE) null else tab.ordinal,
-                    onSelect = { i ->
-                        val t = Tab.entries[i]
-                        when {
-                            // Already in this tab, on its root, a sub-page or Search
-                            // opened from it: back to the tab's root.
-                            t == tab -> nav.popBackStack(t.route, inclusive = false)
-                            // Home is the start, so it's reached by popping. Navigating to
-                            // it with restoreState would bring back whatever was popped:
-                            // a non-inclusive pop files that state under Home's id too.
-                            t == Tab.HOME -> {
-                                tab = t
-                                nav.popBackStack(Tab.HOME.route, inclusive = false, saveState = true)
-                            }
-                            else -> {
-                                tab = t
-                                nav.navigate(t.route) {
-                                    popUpTo(Tab.HOME.route) { saveState = true }
-                                    launchSingleTop = true
-                                    restoreState = true
-                                }
-                            }
-                        }
-                    },
+                    onSelect = selectTab,
                     onExpand = chromeScroll::expand,
                     searchSelected = route == SEARCH_ROUTE,
-                    onSearch = { if (route != SEARCH_ROUTE) nav.navigate(SEARCH_ROUTE) { launchSingleTop = true } },
+                    onSearch = openSearch,
                     mini = if (song == null) null else { folded, m ->
-                        MiniPlayerBar(vm, onExpand = {
-                            // The mini player's cover grows into the player's as it opens.
-                            if (chromeUi.coverFlight && !chromeUi.reduceAnimation) com.opentune.ui.components.FlyingCover.startExpand(round = folded)
-                            playerOpen = true
-                        }, modifier = m, inline = folded)
+                        MiniPlayerBar(vm, onExpand = { openPlayer(folded) }, modifier = m, inline = folded)
                     },
                     motion = chromeUi.dockMotion,
                     lens = chromeUi.dockLens,
                     reduceMotion = chromeUi.reduceAnimation,
                 )
             }
+            } else {
+                // Wide windows: the tabs in a rail down the start edge, and the mini
+                // player along the bottom of the page unless the player is docked.
+                NavRail(
+                    tabs = chromeTabs,
+                    selected = if (route == SEARCH_ROUTE) null else tab.ordinal,
+                    onSelect = selectTab,
+                    searchSelected = route == SEARCH_ROUTE,
+                    onSearch = openSearch,
+                    modifier = Modifier.align(Alignment.CenterStart),
+                    lens = chromeUi.dockLens,
+                    reduceMotion = chromeUi.reduceAnimation,
+                )
+                Column(
+                    Modifier.align(Alignment.BottomCenter).then(pageArea).fillMaxWidth()
+                        .navigationBarsPadding().padding(start = 12.dp, end = 12.dp, bottom = 12.dp),
+                ) {
+                    SnackbarHost(snackbar)
+                    if (layout.nowPlaying == NowPlaying.BAR) {
+                        MiniPlayerBar(vm, onExpand = { openPlayer(false) }, modifier = Modifier.fillMaxWidth().height(CHROME_MINI_HEIGHT))
+                    }
+                }
+            }
+            androidx.compose.animation.AnimatedVisibility(
+                visible = layout.nowPlaying == NowPlaying.STRIP,
+                enter = fadeIn(tween(if (chromeUi.reduceAnimation) 120 else 260, delayMillis = if (chromeUi.reduceAnimation) 0 else 160)),
+                exit = fadeOut(tween(120)),
+                modifier = Modifier.align(Alignment.CenterEnd),
+            ) {
+                NowPlayingStrip(vm, onExpand = { paneCollapsed = false })
+            }
+            }
+
+            // Expanded windows: the player itself, docked on the end edge while a
+            // song is loaded. It folds into the strip above, and back.
+            androidx.compose.animation.AnimatedVisibility(
+                visible = layout.nowPlaying == NowPlaying.PANE && chromeRoute,
+                enter = if (chromeUi.reduceAnimation) fadeIn(tween(160)) else slideInHorizontally(tween(420, easing = androidx.compose.animation.core.CubicBezierEasing(0.2f, 0f, 0f, 1f))) { it } + fadeIn(tween(220)),
+                exit = if (chromeUi.reduceAnimation) fadeOut(tween(120)) else slideOutHorizontally(tween(320, easing = androidx.compose.animation.core.FastOutLinearInEasing)) { it } + fadeOut(tween(260)),
+                modifier = Modifier.align(Alignment.CenterEnd),
+            ) {
+                PlayerPaneFrame {
+                    PlayerScreen(
+                        vm,
+                        onCollapse = { paneCollapsed = true },
+                        onTogether = { nav.navigate("together") },
+                        onEqualizer = { nav.navigate("equalizer") },
+                        docked = true,
+                    )
+                }
             }
 
             AnimatedVisibility(
-                visible = playerOpen && song != null,
+                visible = sheetOpen && song != null,
                 // While the cover grows into place the player fades in under it, so the
                 // spot it's growing to stays put.
                 enter = if (com.opentune.ui.components.FlyingCover.expanding) androidx.compose.animation.fadeIn(androidx.compose.animation.core.tween(320))
@@ -620,7 +727,7 @@ fun AppRoot(vm: PlayerViewModel) {
             ) {
                 // Registered after the NavHost's own handler, so back closes the
                 // player first instead of popping the page behind it.
-                BackHandler(enabled = playerOpen) { playerOpen = false }
+                BackHandler(enabled = sheetOpen) { playerOpen = false }
                 // Once the player has slid fully over the page, the chrome under it is
                 // taken out: no second position loop or glass redrawn behind it.
                 val settled = transition.currentState == EnterExitState.Visible && transition.targetState == EnterExitState.Visible
@@ -641,7 +748,8 @@ fun AppRoot(vm: PlayerViewModel) {
             com.opentune.ui.components.CoverFlight(
                 song?.videoId,
                 song?.thumbnailUrl.artworkAt(ROW_ART_PX),
-                enabled = chromeUi.coverFlight && !chromeUi.reduceAnimation && !playerOpen,
+                // Not onto the docked player: it has no now-playing card to land on.
+                enabled = chromeUi.coverFlight && !chromeUi.reduceAnimation && !sheetOpen && layout.nowPlaying != NowPlaying.PANE,
             )
             // The chrome's snackbar is under the open player; this one shows
             // over it instead, so an Undo for something chosen in the player's

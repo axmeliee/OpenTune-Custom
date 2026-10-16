@@ -376,6 +376,10 @@ data class InterfaceSettings(
     val coverChange: CoverChange = CoverChange.FADE,
     /** The first-run welcome: whether it's still to be shown. See [com.opentune.data.Welcome]. */
     val welcome: WelcomeState = WelcomeState.UNDECIDED,
+    /** On wide windows (tablets, unfolded phones, phones on their side): the tabs in a rail and pages in a readable column. */
+    val wideLayout: Boolean = true,
+    /** On large screens, the player stays docked beside the page while a song is loaded. */
+    val sidePlayer: Boolean = true,
 )
 
 /**

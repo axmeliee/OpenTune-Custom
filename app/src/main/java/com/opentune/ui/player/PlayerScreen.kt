@@ -45,6 +45,7 @@ import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowRight
 import androidx.compose.material.icons.automirrored.rounded.QueueMusic
 import androidx.compose.material.icons.rounded.Bedtime
 import androidx.compose.material.icons.rounded.Cast
@@ -89,6 +90,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.layout.layout
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
@@ -200,6 +202,8 @@ fun PlayerScreen(
     onCovering: (Boolean) -> Unit = {},
     onTogether: () -> Unit = {},
     onEqualizer: () -> Unit = {},
+    /** Docked beside the page on a large screen; see [PlayerLayout]. */
+    docked: Boolean = false,
 ) {
     val song by vm.currentSong.collectAsState()
     val current = song ?: return
@@ -247,6 +251,7 @@ fun PlayerScreen(
         buffered = vm::bufferedPositionMs,
         actions = actions,
         onCovering = onCovering,
+        docked = docked,
     )
 }
 
@@ -260,6 +265,12 @@ fun PlayerLayout(
     actions: PlayerActions,
     initialLyrics: Boolean = false,
     onCovering: (Boolean) -> Unit = {},
+    /**
+     * Docked in a pane beside the page, on a large screen: the upright
+     * layout whatever the screen's orientation, nothing to drag down, and
+     * [PlayerActions.collapse] folds the pane away instead of closing a sheet.
+     */
+    docked: Boolean = false,
 ) {
     val current = state.song
     val theme = state.theme
@@ -321,8 +332,12 @@ fun PlayerLayout(
     val backdrop = rememberLayerBackdrop()
     val style = state.ui.playerStyle
     val minimal = style == PlayerStyle.MINIMAL
+    // Docked in a short window (an unfolded phone on its side), the extras
+    // under the controls make way so the cover keeps some size.
+    val windowHeight = with(LocalDensity.current) { androidx.compose.ui.platform.LocalWindowInfo.current.containerSize.height.toDp() }
+    val roomy = !docked || windowHeight >= DOCKED_ROOMY_HEIGHT
     // On its side the player has its own layout, over a blurred cover.
-    val landscape = LocalConfiguration.current.orientation == Configuration.ORIENTATION_LANDSCAPE
+    val landscape = !docked && LocalConfiguration.current.orientation == Configuration.ORIENTATION_LANDSCAPE
     // Full-screen cover only fits the layouts built around a plain square cover.
     val fullCover = !landscape && state.ui.fullScreenCover && pane == Pane.COVER && (style == PlayerStyle.CLASSIC || style == PlayerStyle.MINIMAL)
     // Where the cover area ends, measured from the top of the player, so a
@@ -349,6 +364,7 @@ fun PlayerLayout(
                 }
                 .draggable(
                     orientation = Orientation.Vertical,
+                    enabled = !docked,
                     state = rememberDraggableState { delta ->
                         dragOffset = (dragOffset + delta).coerceAtLeast(0f)
                     },
@@ -469,15 +485,24 @@ fun PlayerLayout(
                     },
             ) {
                 // Grab handle, then "Playing from" or the remix pill.
-                Column(Modifier.fillMaxWidth().padding(top = 6.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-                    Box(
+                // Docked, there's nothing to pull down: a button at the end folds the pane away.
+                Column(Modifier.fillMaxWidth().padding(top = if (docked) 0.dp else 6.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                    if (!docked) Box(
                         Modifier.size(width = 40.dp, height = 5.dp).clip(CircleShape)
                             .background(MaterialTheme.colorScheme.onSurface.copy(alpha = 0.35f))
                             .clickable(onClick = actions.collapse),
                     )
-                    Box(Modifier.height(40.dp), contentAlignment = Alignment.Center) {
+                    Box(if (docked) Modifier.fillMaxWidth().height(48.dp) else Modifier.height(40.dp), contentAlignment = Alignment.Center) {
+                        if (docked) {
+                            Box(
+                                Modifier.align(Alignment.CenterEnd).size(40.dp).clip(CircleShape).clickable(onClick = actions.collapse),
+                                contentAlignment = Alignment.Center,
+                            ) {
+                                Icon(Icons.AutoMirrored.Rounded.KeyboardArrowRight, "Hide player", Modifier.size(26.dp))
+                            }
+                        }
                         val room by Together.room.collectAsState()
-                        AnimatedContent(sound.isDefault, label = "remixPill") { normal ->
+                        AnimatedContent(sound.isDefault, label = "remixPill", modifier = if (docked) Modifier.padding(horizontal = 44.dp) else Modifier) { normal ->
                             if (room != null) {
                                 TogetherPill(room!!, actions.openTogether)
                             } else if (normal) {
@@ -540,7 +565,7 @@ fun PlayerLayout(
                                 onSyncLine = syncLine,
                             )
                         } else if (p == Pane.COVER) {
-                            Box(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
+                            Box(Modifier.weight(1f).fillMaxWidth().then(if (docked) Modifier.fitSquare() else Modifier), contentAlignment = Alignment.Center) {
                                 when {
                                     fullCover ->
                                         ArtworkSwipeArea(
@@ -638,7 +663,7 @@ fun PlayerLayout(
                         SkipToChorus { nextChorus?.let { actions.seekTo((it - 250).coerceAtLeast(0)) } }
                     }
                 }
-                if (pane != Pane.LYRICS && state.ui.syncedLyrics && !minimal && !(pane == Pane.COVER && style == PlayerStyle.LYRICS_FIRST)) {
+                if (pane != Pane.LYRICS && state.ui.syncedLyrics && !minimal && roomy && !(pane == Pane.COVER && style == PlayerStyle.LYRICS_FIRST)) {
                     LyricPreview(state.lyrics, lyricsPosition, onOpen = { paneName = Pane.LYRICS.name }, Modifier.padding(top = 4.dp))
                 }
                 Spacer(Modifier.height(8.dp))
@@ -666,7 +691,7 @@ fun PlayerLayout(
                     animate = !state.ui.reduceAnimation,
                     progress = { if (state.durationMs > 0) position() / state.durationMs.toFloat() else 0f },
                 )
-                if (!state.ui.hideVolumeBar && !minimal) VolumeBar(Modifier.padding(vertical = 4.dp))
+                if (!state.ui.hideVolumeBar && !minimal && roomy) VolumeBar(Modifier.padding(vertical = 4.dp))
                 Spacer(Modifier.height(10.dp))
                 Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                     GlassToggle(Icons.Rounded.Lyrics, "Lyrics", pane == Pane.LYRICS, { toggle(Pane.LYRICS) })
@@ -687,7 +712,7 @@ fun PlayerLayout(
                     }
                     GlassToggle(Icons.AutoMirrored.Rounded.QueueMusic, "Queue", pane == Pane.QUEUE, { toggle(Pane.QUEUE) })
                 }
-                if (!minimal) Text(
+                if (!minimal && roomy) Text(
                     sleepLabel ?: device,
                     style = MaterialTheme.typography.labelLarge,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -919,6 +944,21 @@ internal fun LikeBurst(t: Float, seed: Int, colors: List<Color>, modifier: Modif
         }
     }
 }
+
+/**
+ * Narrows what it's on to its height, centred, when that's the smaller
+ * side, so a cover sized by its width still fits a short space whole.
+ */
+private fun Modifier.fitSquare(): Modifier = layout { measurable, constraints ->
+    val side = minOf(constraints.maxWidth, constraints.maxHeight)
+    val placeable = measurable.measure(constraints.copy(minWidth = minOf(constraints.minWidth, side), maxWidth = side))
+    val width = constraints.maxWidth
+    val height = placeable.height.coerceIn(constraints.minHeight, constraints.maxHeight)
+    layout(width, height) { placeable.place((width - placeable.width) / 2, (height - placeable.height) / 2) }
+}
+
+/** Below this window height the docked player drops the lyric line, volume and output name. */
+private val DOCKED_ROOMY_HEIGHT = 720.dp
 
 /** How long the lyrics view goes untouched before the controls slide away. */
 private const val LYRICS_FOCUS_MS = 5_000L

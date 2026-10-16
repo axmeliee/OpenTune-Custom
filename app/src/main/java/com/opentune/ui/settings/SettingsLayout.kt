@@ -56,13 +56,13 @@ internal val SETTINGS_CATEGORIES = listOf(
             "Theme" to listOf("Theme", "Pure black"),
             "Colour" to listOf("Color from artwork", "Mini player takes the cover's colour", "Material You", "Accent color", "Palette style"),
             "Glass" to listOf("Liquid Glass", "Glass style", "Frosted top edge", "Reduce dynamic blur"),
-            "Feel" to listOf("Haptic feedback", "High refresh rate"),
+            "Feel" to listOf("Haptic feedback", "High refresh rate", "Wide-screen layout"),
         ),
     ),
     SettingsCategory(
         "player", "Player", "Layout, buttons, cover and background", Icons.Rounded.Album,
         listOf(
-            "Layout" to listOf("Player layout", "Player buttons", "Player background"),
+            "Layout" to listOf("Player layout", "Player buttons", "Player background", "Player beside the page"),
             "Cover art" to listOf("Moving cover art", "Moving covers on Home", "Glow under the cover", "Song change", "Full-screen cover art", "Album covers"),
             "Controls" to listOf("Wavy seek bar", "Waveform seek bar", "Lyric preview while seeking", "Hide volume bar", "Hide song status", "Show stats for nerds"),
         ),

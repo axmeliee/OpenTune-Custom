@@ -44,7 +44,9 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.dp
+import com.opentune.ui.gridColumns
 import com.opentune.data.MusicRepository
 import com.opentune.data.model.MoodGenre
 import com.opentune.data.model.ShelfItem
@@ -80,7 +82,8 @@ import kotlin.math.absoluteValue
 /**
  * Explore as a board, Pinterest-style: artist pills to jump straight to an
  * artist, chips to narrow the board, then moods, genres, new albums and
- * chart playlists in two columns of differently sized cards.
+ * chart playlists in two columns of differently sized cards (more on a
+ * tablet; see [TileColumns]).
  */
 @Composable
 fun ExploreScreen(contentPadding: PaddingValues, onMoodClick: (MoodGenre) -> Unit, onItemClick: (ShelfItem) -> Unit) {
@@ -109,7 +112,7 @@ internal fun ExploreBoard(
 ) {
     val tiles = remember(canvas, filter) { canvas?.tiles?.filter { filter == null || it.kind.name == filter }.orEmpty() }
     LazyVerticalStaggeredGrid(
-        columns = StaggeredGridCells.Fixed(2),
+        columns = TileColumns,
         contentPadding = PaddingValues(start = 12.dp, end = 12.dp, bottom = contentPadding.calculateBottomPadding() + 16.dp),
         horizontalArrangement = Arrangement.spacedBy(10.dp),
         verticalItemSpacing = 10.dp,
@@ -161,6 +164,16 @@ internal fun ExploreBoard(
                 is ExploreFeed.Tile.Item -> BoardCard(tile, onClick = { onItemClick(tile.item) })
             }
         }
+    }
+}
+
+/** Two columns on a phone, as many as fit a tile of about 200dp on anything wider. */
+private object TileColumns : StaggeredGridCells {
+    override fun Density.calculateCrossAxisCellSizes(availableSize: Int, spacing: Int): IntArray {
+        val count = gridColumns(availableSize.toDp().value, spacingDp = spacing.toDp().value)
+        val room = availableSize - spacing * (count - 1)
+        // Spread the pixels that don't divide evenly over the first columns.
+        return IntArray(count) { i -> room / count + if (i < room % count) 1 else 0 }
     }
 }
 

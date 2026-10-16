@@ -128,9 +128,9 @@ private const val FOLD_FADE_IN_MS = 380
 private const val FOLD_FADE_DELAY_MS = 120
 private const val FOLD_FADE_OUT_MS = 240
 private val FOLD_EASING = CubicBezierEasing(0.2f, 0f, 0f, 1f)
-private val DOCK_SHAPE = RoundedCornerShape(32.dp)
-private val LENS_SHAPE = RoundedCornerShape(26.dp)
-private val DOCK_INSET = 6.dp
+internal val DOCK_SHAPE = RoundedCornerShape(32.dp)
+internal val LENS_SHAPE = RoundedCornerShape(26.dp)
+internal val DOCK_INSET = 6.dp
 
 /** Timings for the other ways the dock can fold; see [DockMotion]. */
 private const val RETRACT_MS = 520
@@ -646,7 +646,7 @@ private fun Dock(
 
 /** One destination: the icon, filled and lifted a little when open, over its name. */
 @Composable
-private fun DockItem(tab: ChromeTab, selected: Boolean, modifier: Modifier, collapse: () -> Float = { 0f }, onClick: () -> Unit) {
+internal fun DockItem(tab: ChromeTab, selected: Boolean, modifier: Modifier, collapse: () -> Float = { 0f }, onClick: () -> Unit) {
     val interaction = remember { MutableInteractionSource() }
     val pressed by interaction.collectIsPressedAsState()
     val scale by animateFloatAsState(
@@ -705,7 +705,7 @@ private fun DockItem(tab: ChromeTab, selected: Boolean, modifier: Modifier, coll
 
 /** Search on its own: a glass circle that fills with the accent while search is open. */
 @Composable
-private fun SearchOrb(selected: Boolean, modifier: Modifier = Modifier, onClick: () -> Unit) {
+internal fun SearchOrb(selected: Boolean, modifier: Modifier = Modifier, onClick: () -> Unit) {
     val interaction = remember { MutableInteractionSource() }
     val pressed by interaction.collectIsPressedAsState()
     val scale by animateFloatAsState(if (pressed) 0.9f else 1f, spring(dampingRatio = 0.5f, stiffness = 600f), label = "orbScale")
@@ -764,7 +764,7 @@ private fun TabOrb(tab: ChromeTab, searchSelected: Boolean, modifier: Modifier, 
 
 /** A hairline of light along the top edge, fading down, so the glass reads as lit from above. */
 @Composable
-private fun Modifier.dockHighlight(shape: androidx.compose.ui.graphics.Shape): Modifier {
+internal fun Modifier.dockHighlight(shape: androidx.compose.ui.graphics.Shape): Modifier {
     val light = Color.White.copy(alpha = if (MaterialTheme.colorScheme.surface.luminance() < 0.5f) 0.22f else 0.6f)
     return this.border(1.dp, Brush.verticalGradient(listOf(light, Color.Transparent, Color.Transparent)), shape)
 }
@@ -775,14 +775,14 @@ private fun Modifier.dockHighlight(shape: androidx.compose.ui.graphics.Shape): M
  * coming through, and the open tab on a dark see-through pill. Otherwise the
  * open tab is in the accent, on a soft lens of it.
  */
-private class DockInk(
+internal class DockInk(
     val on: Color, val off: Color, val search: Color,
     val lensTop: Color, val lensBottom: Color, val rimTop: Color, val rimBottom: Color,
     val film: Color?, val shade: androidx.compose.ui.graphics.Shadow?,
 )
 
 @Composable
-private fun dockInk(): DockInk {
+internal fun dockInk(): DockInk {
     val scheme = MaterialTheme.colorScheme
     val ui by AppSettings.ui.collectAsState()
     val liquid = LocalBackdrop.current != null && liquidGlassOn() && ui.glassStyle == GlassStyle.LIQUID
@@ -801,7 +801,7 @@ private fun dockInk(): DockInk {
 }
 
 /** A soft drop shadow so the dock floats over the page. */
-private fun Modifier.dockShadow(shape: androidx.compose.ui.graphics.Shape): Modifier =
+internal fun Modifier.dockShadow(shape: androidx.compose.ui.graphics.Shape): Modifier =
     shadow(18.dp, shape, clip = false, ambientColor = Color.Black.copy(alpha = 0.35f), spotColor = Color.Black.copy(alpha = 0.45f))
 
 /**
@@ -811,7 +811,7 @@ private fun Modifier.dockShadow(shape: androidx.compose.ui.graphics.Shape): Modi
  * are critically damped, so it never overshoots.
  */
 @Composable
-private fun rememberStretchingLens(index: Int, slot: Dp, style: DockLens = DockLens.STRETCH): Pair<() -> Dp, () -> Dp> {
+internal fun rememberStretchingLens(index: Int, slot: Dp, style: DockLens = DockLens.STRETCH): Pair<() -> Dp, () -> Dp> {
     val left = remember { Animatable(slot.value * index) }
     val right = remember { Animatable(slot.value * (index + 1)) }
     LaunchedEffect(index, slot) {
