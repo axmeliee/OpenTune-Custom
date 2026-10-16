@@ -52,6 +52,7 @@ import androidx.compose.material.icons.rounded.BugReport
 import androidx.compose.material.icons.rounded.Favorite
 import androidx.compose.material.icons.rounded.FavoriteBorder
 import androidx.compose.material.icons.rounded.GraphicEq
+import androidx.compose.material.icons.rounded.Equalizer
 import androidx.compose.material.icons.rounded.Groups
 import androidx.compose.material.icons.rounded.HighQuality
 import androidx.compose.material.icons.rounded.Lyrics
@@ -184,6 +185,7 @@ class PlayerActions(
     val collapse: () -> Unit,
     val moveIndex: (Int, Int) -> Unit = { _, _ -> },
     val openTogether: () -> Unit = {},
+    val openEqualizer: () -> Unit = {},
 )
 
 @Composable
@@ -193,6 +195,7 @@ fun PlayerScreen(
     /** True while the player sits fully open, not being dragged down. */
     onCovering: (Boolean) -> Unit = {},
     onTogether: () -> Unit = {},
+    onEqualizer: () -> Unit = {},
 ) {
     val song by vm.currentSong.collectAsState()
     val current = song ?: return
@@ -225,6 +228,7 @@ fun PlayerScreen(
             collapse = onCollapse,
             moveIndex = vm::moveQueueItem,
             openTogether = onTogether,
+            openEqualizer = onEqualizer,
         )
     }
     PlayerLayout(
@@ -666,7 +670,6 @@ fun PlayerLayout(
                                     Modifier.height(52.dp).glass(RoundedCornerShape(30.dp), Color.White.copy(alpha = 0.10f)),
                                     verticalAlignment = Alignment.CenterVertically,
                                 ) {
-                                    GlassToggle(Icons.Rounded.Tune, "Remix", showRemix, { showRemix = true })
                                     GlassToggle(Icons.Rounded.Bedtime, "Sleep timer", sleepLabel != null, { showSleep = true })
                                     GlassToggle(Icons.Rounded.Cast, "Play on another device", com.opentune.ui.cast.castingTo() != null, { showCast = true })
                                 }
@@ -720,6 +723,7 @@ fun PlayerLayout(
                             AppSettings.updateLyrics { it.copy(romanize = !it.romanize) }
                         }
                     }
+                    MenuRow(Icons.Rounded.Equalizer, "Equalizer") { close(); actions.openEqualizer() }
                     MenuRow(Icons.Rounded.GraphicEq, "Remix") { close(); showRemix = true }
                 },
                 end = { close ->

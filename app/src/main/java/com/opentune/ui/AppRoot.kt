@@ -599,6 +599,7 @@ fun AppRoot(vm: PlayerViewModel) {
                     onCollapse = { playerOpen = false },
                     onCovering = { still = it },
                     onTogether = { playerOpen = false; nav.navigate("together") },
+                    onEqualizer = { playerOpen = false; nav.navigate("equalizer") },
                 )
             }
             // The mini player's cover growing into the player's as it opens.
