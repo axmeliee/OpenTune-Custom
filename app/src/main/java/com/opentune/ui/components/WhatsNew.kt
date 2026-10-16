@@ -19,6 +19,11 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.AutoAwesome
+import androidx.compose.material.icons.rounded.Notifications
+import androidx.compose.material.icons.rounded.Swipe
+import androidx.compose.material.icons.rounded.TabletAndroid
+import androidx.compose.material.icons.rounded.VisibilityOff
+import androidx.compose.material.icons.rounded.WavingHand
 import androidx.compose.material.icons.rounded.Bedtime
 import androidx.compose.material.icons.rounded.Explicit
 import androidx.compose.material.icons.rounded.SurroundSound
@@ -76,6 +81,15 @@ object WhatsNew {
 
     /** Newest first. Add the coming version's notes at the top when releasing. */
     val NOTES: List<Pair<String, List<Note>>> = listOf(
+        "0.4.17" to listOf(
+            Note(Icons.Rounded.Notifications, "In the status bar", "On Android 16 and newer, the playing song shows as a Live Update: a chip in the status bar counts down the time left, and the lock screen shows a bar in the cover's colour. Turn it off in Settings › Playback."),
+            Note(Icons.Rounded.VisibilityOff, "Not interested", "A song's menu can now keep that song, or everything by its artist, out of radio, mixes and Home. Your own playlists, likes and downloads stay as they are. Undo it in Settings › Playback › Hidden songs and artists."),
+            Note(Icons.Rounded.AutoAwesome, "Smart shuffle", "Tap shuffle twice in the player, or long-press Shuffle on a playlist, and a similar song joins after every four. The added ones have a sparkle, and you can keep any of them in your playlist."),
+            Note(Icons.Rounded.Swipe, "Swipe to queue", "Swipe a song right to play it next, or left to add it to the queue."),
+            Note(Icons.Rounded.Image, "Covers that move", "Song and album covers on Home drift gently like the player's, while they're on screen and you're not scrolling. They stay still in battery saver."),
+            Note(Icons.Rounded.TabletAndroid, "Room on big screens", "On tablets and unfolded phones the tabs move to a rail on the left, pages keep a readable width, and on large screens the player stays open beside the page."),
+            Note(Icons.Rounded.WavingHand, "A proper welcome", "A new install starts by picking a few artists you like, then a theme and glass, so the first Home already has your music on it. To see it, go to Settings › About › Show the welcome again."),
+        ),
         "0.4.16" to listOf(
             Note(Icons.Rounded.Lyrics, "Lyrics in step", "Lyrics are now looked up with the length of the song actually playing, so they no longer come from another version of it, timed differently. While they're found, a Setting up the lyrics badge shows."),
             Note(Icons.Rounded.FormatQuote, "Better Lyrics", "A new word-by-word lyrics source, for songs Better Lyrics' listeners have already looked up. In Settings › Lyrics sources."),

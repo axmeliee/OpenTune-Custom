@@ -1,0 +1,7 @@
+• On Android 16, the playing song shows as a Live Update in the status bar
+• Not interested: keep a song or artist out of radio, mixes and Home
+• Smart shuffle mixes similar songs into a shuffled list
+• Swipe a song to play it next or add it to the queue
+• Covers on Home move gently
+• Tablets and foldables get a side rail and the player beside the page
+• A first-run welcome to pick artists, theme and glass
