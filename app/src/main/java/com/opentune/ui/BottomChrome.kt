@@ -31,6 +31,11 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.luminance
+import androidx.compose.runtime.collectAsState
+import com.opentune.data.settings.AppSettings
+import com.opentune.data.settings.GlassStyle
+import com.opentune.ui.components.LocalBackdrop
+import com.opentune.ui.components.liquidGlassOn
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.selected
@@ -282,6 +287,7 @@ private fun MinimizeChrome(
     modifier: Modifier,
 ) {
     val haptics = com.opentune.ui.components.rememberHaptics()
+    val ink = dockInk()
     // 0 with the dock open, 1 minimized; a spring that settles without bouncing past.
     val progress = animateFloatAsState(
         if (inline) 1f else 0f,
@@ -344,7 +350,7 @@ private fun MinimizeChrome(
                         h = row,
                     )
                     .dockShadow(pill)
-                    .glass(pill)
+                    .glass(pill, tint = ink.film ?: MaterialTheme.colorScheme.surfaceContainerHigh)
                     .dockHighlight(pill)
                     .clip(pill),
             ) {
@@ -352,7 +358,6 @@ private fun MinimizeChrome(
                 // passes over them, and the whole row slides so the open tab ends
                 // up in the middle of the circle.
                 val (left, right) = rememberStretchingLens(resting, slot, lens)
-                val accent = MaterialTheme.colorScheme.primary
                 val lensAlpha by animateFloatAsState(if (shown != null) 1f else 0f, tween(260, easing = FastOutSlowInEasing), label = "lensAlpha")
                 Box(
                     Modifier
@@ -378,8 +383,8 @@ private fun MinimizeChrome(
                             .fillMaxHeight()
                             .graphicsLayer { alpha = lensAlpha * (1f - progress.value).coerceIn(0f, 1f) }
                             .clip(LENS_SHAPE)
-                            .background(Brush.verticalGradient(listOf(accent.copy(alpha = 0.24f), accent.copy(alpha = 0.14f))))
-                            .border(1.dp, Brush.verticalGradient(listOf(accent.copy(alpha = 0.45f), accent.copy(alpha = 0.08f))), LENS_SHAPE),
+                            .background(Brush.verticalGradient(listOf(ink.lensTop, ink.lensBottom)))
+                            .border(1.dp, Brush.verticalGradient(listOf(ink.rimTop, ink.rimBottom)), LENS_SHAPE),
                     )
                     Row(Modifier.fillMaxSize()) {
                         tabs.forEachIndexed { i, tab ->
@@ -562,6 +567,7 @@ private fun Dock(
     shared: SharedMini? = null,
 ) {
     val haptics = com.opentune.ui.components.rememberHaptics()
+    val ink = dockInk()
     val reveal: State<Float>? = if (motion == DockMotion.RETRACT) {
         // Even in and out, so the edge is seen travelling rather than snapping most of the way at once.
         scope.transition.animateFloat({ tween(RETRACT_MS, easing = FastOutSlowInEasing) }, label = "retract") { if (it == EnterExitState.Visible) 1f else 0f }
@@ -591,7 +597,7 @@ private fun Dock(
         BoxWithConstraints(
             Modifier.weight(1f).fillMaxHeight()
                 .then(if (shared == null) Modifier else with(shared) { Modifier.sharedPart("dock") })
-                .dockShadow(DOCK_SHAPE).glass(DOCK_SHAPE).dockHighlight(DOCK_SHAPE).padding(DOCK_INSET),
+                .dockShadow(DOCK_SHAPE).glass(DOCK_SHAPE, tint = ink.film ?: MaterialTheme.colorScheme.surfaceContainerHigh).dockHighlight(DOCK_SHAPE).padding(DOCK_INSET),
         ) {
             val slot = maxWidth / tabs.size
             val shown = selected?.takeIf { it in tabs.indices }
@@ -600,7 +606,6 @@ private fun Dock(
             if (shown != null) resting = shown
             val (left, right) = rememberStretchingLens(resting, slot, if (motion == null) DockLens.GLIDE else lens)
             val lensAlpha by animateFloatAsState(if (shown != null) 1f else 0f, tween(260, easing = FastOutSlowInEasing), label = "lensAlpha")
-            val accent = MaterialTheme.colorScheme.primary
             Box(
                 Modifier
                     .then(wave(resting))
@@ -618,8 +623,8 @@ private fun Dock(
                         scaleY = 1f - 0.08f * stretch
                     }
                     .clip(LENS_SHAPE)
-                    .background(Brush.verticalGradient(listOf(accent.copy(alpha = 0.24f), accent.copy(alpha = 0.14f))))
-                    .border(1.dp, Brush.verticalGradient(listOf(accent.copy(alpha = 0.45f), accent.copy(alpha = 0.08f))), LENS_SHAPE),
+                    .background(Brush.verticalGradient(listOf(ink.lensTop, ink.lensBottom)))
+                    .border(1.dp, Brush.verticalGradient(listOf(ink.rimTop, ink.rimBottom)), LENS_SHAPE),
             )
             // Clipped to the glass, so tabs in a cascade sink into it rather than below it.
             Row(Modifier.fillMaxSize().clip(LENS_SHAPE)) {
@@ -653,8 +658,9 @@ private fun DockItem(tab: ChromeTab, selected: Boolean, modifier: Modifier, coll
         spring(dampingRatio = 0.85f, stiffness = 320f),
         label = "dockScale",
     )
+    val ink = dockInk()
     val fg by animateColorAsState(
-        if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+        if (selected) ink.on else ink.off,
         tween(320, easing = FastOutSlowInEasing),
         label = "dockFg",
     )
@@ -683,7 +689,7 @@ private fun DockItem(tab: ChromeTab, selected: Boolean, modifier: Modifier, coll
         }
         Text(
             tab.label,
-            style = MaterialTheme.typography.labelSmall,
+            style = MaterialTheme.typography.labelSmall.let { if (ink.shade != null) it.copy(shadow = ink.shade) else it },
             // One weight either way, so the name doesn't change width as it's picked.
             fontWeight = FontWeight.SemiBold,
             color = fg,
@@ -704,14 +710,15 @@ private fun SearchOrb(selected: Boolean, modifier: Modifier = Modifier, onClick:
     val pressed by interaction.collectIsPressedAsState()
     val scale by animateFloatAsState(if (pressed) 0.9f else 1f, spring(dampingRatio = 0.5f, stiffness = 600f), label = "orbScale")
     val fill by animateColorAsState(if (selected) MaterialTheme.colorScheme.primary else Color.Transparent, spring(stiffness = 500f), label = "orbFill")
-    val fg by animateColorAsState(if (selected) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurface, label = "orbFg")
+    val ink = dockInk()
+    val fg by animateColorAsState(if (selected) MaterialTheme.colorScheme.onPrimary else ink.search, label = "orbFg")
     Box(
         modifier
             .sizeIn(maxWidth = CHROME_TAB_HEIGHT, maxHeight = CHROME_TAB_HEIGHT)
             .aspectRatio(1f)
             .graphicsLayer { scaleX = scale; scaleY = scale }
             .dockShadow(CircleShape)
-            .glass(CircleShape)
+            .glass(CircleShape, tint = ink.film ?: MaterialTheme.colorScheme.surfaceContainerHigh)
             .dockHighlight(CircleShape)
             .padding(DOCK_INSET)
             .clip(CircleShape)
@@ -733,12 +740,13 @@ private fun TabOrb(tab: ChromeTab, searchSelected: Boolean, modifier: Modifier, 
     val interaction = remember { MutableInteractionSource() }
     val pressed by interaction.collectIsPressedAsState()
     val scale by animateFloatAsState(if (pressed) 0.9f else 1f, spring(dampingRatio = 0.5f, stiffness = 600f), label = "tabOrbScale")
+    val ink = dockInk()
     Box(
         modifier
             .size(MINI_ROW)
             .graphicsLayer { scaleX = scale; scaleY = scale }
             .dockShadow(CircleShape)
-            .glass(CircleShape)
+            .glass(CircleShape, tint = ink.film ?: MaterialTheme.colorScheme.surfaceContainerHigh)
             .dockHighlight(CircleShape)
             .clip(CircleShape)
             .clickable(interactionSource = interaction, indication = null, onClickLabel = "Show navigation", onClick = onClick)
@@ -748,7 +756,7 @@ private fun TabOrb(tab: ChromeTab, searchSelected: Boolean, modifier: Modifier, 
         Icon(
             if (searchSelected) tab.icon else tab.selectedIcon,
             tab.label,
-            tint = if (searchSelected) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.primary,
+            tint = if (searchSelected) ink.off else ink.on,
             modifier = Modifier.size(26.dp),
         )
     }
@@ -759,6 +767,37 @@ private fun TabOrb(tab: ChromeTab, searchSelected: Boolean, modifier: Modifier, 
 private fun Modifier.dockHighlight(shape: androidx.compose.ui.graphics.Shape): Modifier {
     val light = Color.White.copy(alpha = if (MaterialTheme.colorScheme.surface.luminance() < 0.5f) 0.22f else 0.6f)
     return this.border(1.dp, Brush.verticalGradient(listOf(light, Color.Transparent, Color.Transparent)), shape)
+}
+
+/**
+ * What the dock draws in. Over Liquid Glass, as BitChord does it: white
+ * icons and names on glass darkened a little, so they read over any colour
+ * coming through, and the open tab on a dark see-through pill. Otherwise the
+ * open tab is in the accent, on a soft lens of it.
+ */
+private class DockInk(
+    val on: Color, val off: Color, val search: Color,
+    val lensTop: Color, val lensBottom: Color, val rimTop: Color, val rimBottom: Color,
+    val film: Color?, val shade: androidx.compose.ui.graphics.Shadow?,
+)
+
+@Composable
+private fun dockInk(): DockInk {
+    val scheme = MaterialTheme.colorScheme
+    val ui by AppSettings.ui.collectAsState()
+    val liquid = LocalBackdrop.current != null && liquidGlassOn() && ui.glassStyle == GlassStyle.LIQUID
+    if (!liquid) {
+        val a = scheme.primary
+        return DockInk(a, scheme.onSurfaceVariant, scheme.onSurface, a.copy(alpha = 0.24f), a.copy(alpha = 0.14f), a.copy(alpha = 0.45f), a.copy(alpha = 0.08f), null, null)
+    }
+    val dark = scheme.surface.luminance() <= 0.5f
+    return DockInk(
+        on = Color.White, off = Color.White.copy(alpha = 0.92f), search = Color.White,
+        lensTop = Color.Black.copy(alpha = 0.36f), lensBottom = Color.Black.copy(alpha = 0.28f),
+        rimTop = Color.White.copy(alpha = 0.24f), rimBottom = Color.White.copy(alpha = 0.04f),
+        film = Color.Black.copy(alpha = if (dark) 0.14f else 0.28f),
+        shade = androidx.compose.ui.graphics.Shadow(Color.Black.copy(alpha = 0.35f), blurRadius = 6f),
+    )
 }
 
 /** A soft drop shadow so the dock floats over the page. */
