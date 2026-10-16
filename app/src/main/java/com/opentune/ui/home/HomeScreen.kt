@@ -100,14 +100,16 @@ fun HomeScreen(
     val moreAll by MusicRepository.homeMore.collectAsState()
     val library by AppSettings.library.collectAsState()
     val hideExplicit = library.hideExplicit
-    val more = remember(moreAll, hideExplicit) { ContentFilter.shelves(moreAll, hideExplicit) }
+    // What the user hid is taken off every song shelf and out of the mixes.
+    val hidden by com.opentune.data.library.LibraryStore.hidden.collectAsState()
+    val more = remember(moreAll, hideExplicit, hidden) { hidden.shelves(ContentFilter.shelves(moreAll, hideExplicit)) }
     val records by History.records.collectAsState()
     val recents = remember(records, hideExplicit) { ContentFilter.songs(History.recents(records, 100), hideExplicit) }
     var historyOpen by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf(false) }
-    val first = (state as? UiState.Success<List<HomeShelf>>)?.data?.let { ContentFilter.shelves(it, hideExplicit) }.orEmpty()
+    val first = (state as? UiState.Success<List<HomeShelf>>)?.data?.let { hidden.shelves(ContentFilter.shelves(it, hideExplicit)) }.orEmpty()
     val allShelves = first + more
     val feed = remember(allShelves) { arrangeHomeShelves(allShelves) }
-    val mixes = remember(records) { com.opentune.data.history.DailyMixes.build(records) }
+    val mixes = remember(records, hidden) { com.opentune.data.history.DailyMixes.build(records, hidden = hidden) }
     val ui by AppSettings.ui.collectAsState()
     val signedIn by AccountStore.signedIn.collectAsState()
     val account by AccountStore.account.collectAsState()

@@ -30,6 +30,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowRight
 import androidx.compose.material.icons.rounded.AllInclusive
+import androidx.compose.material.icons.rounded.AutoAwesome
 import androidx.compose.material.icons.rounded.Bedtime
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.DragHandle
@@ -74,6 +75,8 @@ import com.opentune.data.model.ROW_ART_PX
 import com.opentune.data.model.Song
 import com.opentune.data.model.artworkAt
 import com.opentune.data.settings.AppSettings
+import com.opentune.playback.ShuffleMode
+import com.opentune.playback.next
 import com.opentune.ui.components.Haptics
 import com.opentune.playback.SleepTimer
 import com.opentune.ui.LyricsState
@@ -91,6 +94,7 @@ private val QUEUE_ROW = 64.dp
  * The queue inside the player: now playing, then what's next. Rows drag by
  * their handle (or a long press) to reorder; the move is sent once, on drop.
  * With shuffle on, rows don't drag: the play order isn't the list order.
+ * Songs smart shuffle mixed in carry a small sparkle.
  */
 @Composable
 fun QueuePane(
@@ -103,6 +107,7 @@ fun QueuePane(
     onRemoveIndex: (Int) -> Unit,
     onMove: (Int, Int) -> Unit,
     modifier: Modifier = Modifier,
+    smartShuffle: Boolean = false,
 ) {
     val autoplay = AppSettings.playback.collectAsState().value.autoplay
     val haptics = com.opentune.ui.components.rememberHaptics()
@@ -140,6 +145,7 @@ fun QueuePane(
                     Text(
                         when {
                             shuffle -> "Shuffled · turn shuffle off to reorder"
+                            smartShuffle -> "Smart shuffle · similar songs are marked with a sparkle"
                             autoplay -> "Similar music keeps playing after these"
                             else -> "Playback stops after these"
                         },
@@ -221,7 +227,12 @@ private fun QueueRow(song: Song, isCurrent: Boolean, isPlaying: Boolean, handle:
             Artwork(song.thumbnailUrl.artworkAt(ROW_ART_PX), Modifier.fillMaxHeight().width(50.dp), RoundedCornerShape(8.dp))
         }
         Column(Modifier.weight(1f).padding(start = 14.dp)) {
-            Text(song.title, style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                if (song.smartShuffle) {
+                    Icon(Icons.Rounded.AutoAwesome, "Added by smart shuffle", Modifier.padding(end = 6.dp).size(16.dp), tint = MaterialTheme.colorScheme.primary)
+                }
+                Text(song.title, style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            }
             Text(song.artist, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
         }
         if (isCurrent) NowPlayingBars(isPlaying, MaterialTheme.colorScheme.onSurface, Modifier.padding(horizontal = 12.dp))
@@ -270,13 +281,35 @@ fun GlassToggle(icon: ImageVector, label: String, selected: Boolean, onClick: ()
  * motion of its own as it changes.
  */
 @Composable
-fun ModesPill(shuffle: Boolean, repeatMode: Int, onShuffle: () -> Unit, onRepeat: () -> Unit) {
+fun ModesPill(shuffle: ShuffleMode, smartShuffleAvailable: Boolean, repeatMode: Int, onShuffle: () -> Unit, onRepeat: () -> Unit) {
     val autoplay = AppSettings.playback.collectAsState().value.autoplay
     val haptics = com.opentune.ui.components.rememberHaptics()
+    val context = LocalContext.current
     val shape = RoundedCornerShape(30.dp)
     Row(Modifier.height(52.dp).glass(shape, Color.White.copy(alpha = 0.10f)), verticalAlignment = Alignment.CenterVertically) {
-        PillSegment(Icons.Rounded.Shuffle, "Shuffle", shuffle, SegmentMotion.WIGGLE) {
-            haptics.pattern(if (shuffle) Haptics.Pattern.OFF else Haptics.Pattern.SHUFFLE)
+        // Like repeat beside it, shuffle has a third state for a queue from a
+        // playlist or album: off, shuffle, smart shuffle, then off again.
+        PillSegment(
+            Icons.Rounded.Shuffle,
+            when (shuffle) {
+                ShuffleMode.OFF -> "Shuffle off"
+                ShuffleMode.ON -> "Shuffle on"
+                ShuffleMode.SMART -> "Smart shuffle"
+            },
+            shuffle != ShuffleMode.OFF,
+            SegmentMotion.WIGGLE,
+            badge = if (shuffle == ShuffleMode.SMART) Icons.Rounded.AutoAwesome else null,
+        ) {
+            val next = shuffle.next(smartShuffleAvailable)
+            haptics.pattern(if (next == ShuffleMode.OFF) Haptics.Pattern.OFF else Haptics.Pattern.SHUFFLE)
+            // The new mode in a word, so the third state is clear.
+            when {
+                next == ShuffleMode.SMART -> "Smart shuffle: similar songs mixed in"
+                // Once a run is enough to learn there's a third state.
+                next == ShuffleMode.ON && smartShuffleAvailable && !smartHintShown -> { smartHintShown = true; "Shuffle on. Tap again for smart shuffle" }
+                shuffle == ShuffleMode.SMART -> "Shuffle off. Added songs removed"
+                else -> null
+            }?.let { android.widget.Toast.makeText(context, it, android.widget.Toast.LENGTH_SHORT).show() }
             onShuffle()
         }
         VerticalDivider(Modifier.height(30.dp), color = Color.White.copy(alpha = 0.18f))
@@ -310,8 +343,11 @@ fun ModesPill(shuffle: Boolean, repeatMode: Int, onShuffle: () -> Unit, onRepeat
 
 private enum class SegmentMotion { WIGGLE, SPIN, PULSE }
 
+/** Whether the shuffle button has said, this run, that a second tap gives smart shuffle. */
+private var smartHintShown = false
+
 @Composable
-private fun PillSegment(icon: ImageVector, label: String, active: Boolean, motion: SegmentMotion, onClick: () -> Unit) {
+private fun PillSegment(icon: ImageVector, label: String, active: Boolean, motion: SegmentMotion, badge: ImageVector? = null, onClick: () -> Unit) {
     val bg by animateColorAsState(if (active) Color.White.copy(alpha = 0.20f) else Color.Transparent, label = "seg")
     val fg by animateColorAsState(if (active) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant, label = "segFg")
     val reduce = AppSettings.ui.collectAsState().value.reduceAnimation
@@ -343,6 +379,10 @@ private fun PillSegment(icon: ImageVector, label: String, active: Boolean, motio
                 }
             },
         )
+        // A small mark on the icon's corner for a mode's extra state.
+        if (badge != null) {
+            Icon(badge, null, tint = fg, modifier = Modifier.align(Alignment.Center).padding(start = 22.dp, bottom = 20.dp).size(13.dp))
+        }
     }
 }
 

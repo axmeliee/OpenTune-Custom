@@ -188,7 +188,9 @@ object MusicRepository {
      * Music, Spotify or JioSaavn) suggests after the last song heard.
      */
     private suspend fun radioShelf(): List<HomeShelf> {
-        val last = History.records.value.firstOrNull() ?: return emptyList()
+        // A hidden song or artist isn't a seed for more of the same.
+        val hidden = com.opentune.data.library.LibraryStore.hidden.value
+        val last = History.records.value.firstOrNull { !hidden.hides(it.videoId, it.artist) } ?: return emptyList()
         val result = Recommendations.after(last.toSong(), AppSettings.playback.value.recommender)
         val songs = result.songs.filter { it.videoId != last.videoId }.take(20)
         if (songs.size < 4) return emptyList()
@@ -220,6 +222,7 @@ object MusicRepository {
                 }
             }
         }.awaitAll().filterNotNull().distinctBy { it.videoId }
+            .let { com.opentune.data.library.LibraryStore.hidden.value.songs(it) }
         if (songs.size < 4) return@coroutineScope emptyList()
         val items = songs.map { ShelfItem(it.title, it.artist, it.thumbnailUrl, it.videoId, null) }
         listOf(HomeShelf("Recommended by ListenBrainz", items, "From your listens"))
@@ -228,7 +231,9 @@ object MusicRepository {
     /** Albums, singles and look-alikes for the two artists played most this month. */
     private suspend fun artistShelves(): List<HomeShelf> = coroutineScope {
         val since = System.currentTimeMillis() - 30L * 24 * 60 * 60 * 1000
-        val top = History.replay(History.records.value, since).topArtists.take(2)
+        // A hidden artist gets no shelves of their own.
+        val hidden = com.opentune.data.library.LibraryStore.hidden.value
+        val top = History.replay(History.records.value, since).topArtists.filterNot { hidden.hidesArtist(it.title) }.take(2)
         top.map { entry ->
             async {
                 val song = entry.song ?: return@async emptyList()
@@ -347,10 +352,14 @@ object MusicRepository {
             }
     }
 
-    /** The song and the radio YouTube Music queues after it; the song itself is always kept. */
+    /**
+     * The song and the radio YouTube Music queues after it; the song itself
+     * is always kept, even when hidden, since it was asked for.
+     */
     suspend fun watchQueue(videoId: String): List<Song> = io {
         val queue = InnertubeParser.parseWatchQueue(Innertube.next(videoId))
-        queue.filter { it.videoId == videoId } + ContentFilter.songs(queue.filter { it.videoId != videoId })
+        queue.filter { it.videoId == videoId } +
+            com.opentune.data.library.LibraryStore.hidden.value.songs(ContentFilter.songs(queue.filter { it.videoId != videoId }))
     }
 
     /**

@@ -171,6 +171,10 @@ data class PlayerUiState(
     /** "Playing from" label: an album, a playlist, Search… */
     val source: String? = null,
     val audioFormat: AudioFormatInfo? = null,
+    /** Off, shuffle or smart shuffle, for the shuffle button. [shuffle] is the player's own shuffle order. */
+    val shuffleMode: com.opentune.playback.ShuffleMode = if (shuffle) com.opentune.playback.ShuffleMode.ON else com.opentune.playback.ShuffleMode.OFF,
+    /** The queue came from a playlist or album, so the shuffle button offers smart shuffle. */
+    val smartShuffleAvailable: Boolean = false,
 )
 
 class PlayerActions(
@@ -205,6 +209,8 @@ fun PlayerScreen(
     val isBuffering by vm.isBuffering.collectAsState()
     val hasNext by vm.hasNext.collectAsState()
     val shuffle by vm.shuffleEnabled.collectAsState()
+    val shuffleMode by vm.shuffleMode.collectAsState()
+    val smartShuffleAvailable by vm.smartShuffleAvailable.collectAsState()
     val repeat by vm.repeatMode.collectAsState()
     val duration by vm.durationMs.collectAsState()
     val lyrics by vm.lyrics.collectAsState()
@@ -220,7 +226,7 @@ fun PlayerScreen(
             togglePlay = vm::togglePlayPause,
             next = vm::skipNext,
             previous = vm::skipPrevious,
-            toggleShuffle = vm::toggleShuffle,
+            toggleShuffle = { vm.cycleShuffle() },
             cycleRepeat = vm::cycleRepeatMode,
             seekTo = vm::seekTo,
             playIndex = vm::playQueueItem,
@@ -235,6 +241,7 @@ fun PlayerScreen(
         PlayerUiState(
             shown, isPlaying, isBuffering, hasNext, shuffle, repeat, duration,
             lyrics, queue, currentIndex, upNext, sound, theme, ui, source, audioFormat,
+            shuffleMode, smartShuffleAvailable,
         ),
         position = rememberPlaybackPosition(vm),
         buffered = vm::bufferedPositionMs,
@@ -437,6 +444,7 @@ fun PlayerLayout(
                                 upNext = state.upNext,
                                 isPlaying = state.isPlaying,
                                 shuffle = state.shuffle,
+                                smartShuffle = state.shuffleMode == com.opentune.playback.ShuffleMode.SMART,
                                 onPlayIndex = actions.playIndex,
                                 onRemoveIndex = actions.removeIndex,
                                 onMove = actions.moveIndex,
@@ -595,6 +603,7 @@ fun PlayerLayout(
                                     upNext = state.upNext,
                                     isPlaying = state.isPlaying,
                                     shuffle = state.shuffle,
+                                    smartShuffle = state.shuffleMode == com.opentune.playback.ShuffleMode.SMART,
                                     onPlayIndex = actions.playIndex,
                                     onRemoveIndex = actions.removeIndex,
                                     onMove = actions.moveIndex,
@@ -664,7 +673,7 @@ fun PlayerLayout(
                     Box(Modifier.weight(1f), contentAlignment = Alignment.Center) {
                         AnimatedContent(pane == Pane.QUEUE, label = "pill") { inQueue ->
                             if (inQueue) {
-                                ModesPill(state.shuffle, state.repeatMode, actions.toggleShuffle, actions.cycleRepeat)
+                                ModesPill(state.shuffleMode, state.smartShuffleAvailable, state.repeatMode, actions.toggleShuffle, actions.cycleRepeat)
                             } else {
                                 Row(
                                     Modifier.height(52.dp).glass(RoundedCornerShape(30.dp), Color.White.copy(alpha = 0.10f)),

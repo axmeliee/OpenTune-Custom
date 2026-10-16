@@ -50,6 +50,19 @@ class DailyMixesTest {
         assertEquals(morning.toSet(), tomorrow.toSet())
     }
 
+    @Test fun hiddenSongsAndArtistsStayOutOfEveryMix() {
+        val hidden = com.opentune.data.library.HiddenList(
+            songs = listOf(com.opentune.data.library.HiddenSong("p1", "Song p1", "Prateek Kuhad")),
+            artists = listOf(com.opentune.data.library.HiddenArtist("Anuv Jain")),
+        )
+        val mixes = DailyMixes.build(history(), at(29, 22), zone, hidden)
+        val songs = mixes.flatMap { it.songs }
+        assertTrue(songs.isNotEmpty())
+        assertTrue(songs.none { it.artist == "Anuv Jain" || it.videoId == "p1" })
+        // Anuv Jain no longer gets a mix of his own.
+        assertTrue(mixes.none { it.subtitle.startsWith("Anuv Jain") })
+    }
+
     @Test fun nothingFromALittleListening() {
         assertEquals(emptyList<DailyMixes.Mix>(), DailyMixes.build(listOf(play("x", "A", at(1, 9))), at(2, 9), zone))
     }

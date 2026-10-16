@@ -44,7 +44,7 @@ internal val SETTINGS_CATEGORIES = listOf(
         "playback", "Playback", "Crossfade, autoplay, recommendations and devices", Icons.Rounded.PlayCircle,
         listOf(
             "Between songs" to listOf("Crossfade", "Skip silence", "Preload upcoming songs"),
-            "Autoplay" to listOf("Autoplay", "Recommendations", "Don't repeat songs in current session"),
+            "Autoplay" to listOf("Autoplay", "Recommendations", "Don't repeat songs in current session", "Smart shuffle", "Hidden songs and artists"),
             "Headphones and devices" to listOf("Resume when headphones connect", "Pause at zero volume", "Background playback", "Stop music on close from recents"),
             "Notification" to listOf("Show in the status bar"),
             "Music videos" to listOf("SponsorBlock", "SponsorBlock categories"),

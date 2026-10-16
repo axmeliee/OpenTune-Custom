@@ -46,6 +46,8 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
     val isPlaying = player.isPlaying
     val isBuffering = player.isBuffering
     val shuffleEnabled = player.shuffleEnabled
+    val shuffleMode = player.shuffleMode
+    val smartShuffleAvailable = player.smartShuffleAvailable
     val repeatMode = player.repeatMode
     val durationMs = player.durationMs
     val playbackError = player.error
@@ -105,8 +107,12 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
     private fun toRoom(song: Song?): Boolean = song != null && Together.room.value?.following == true && Together.suggest(song)
 
     fun play(song: Song, source: String? = null) { if (!toRoom(song)) player.play(song, source) }
-    fun playAll(songs: List<Song>, startIndex: Int = 0, shuffle: Boolean = false, source: String? = null) {
-        if (!toRoom(songs.getOrNull(if (shuffle) 0 else startIndex))) player.playAll(songs, startIndex, shuffle, source)
+    fun playAll(songs: List<Song>, startIndex: Int = 0, shuffle: Boolean = false, source: String? = null, fromList: Boolean = true) {
+        if (!toRoom(songs.getOrNull(if (shuffle) 0 else startIndex))) player.playAll(songs, startIndex, shuffle, source, fromList = fromList)
+    }
+    /** Shuffles [songs] with similar songs mixed in; in a room, the first song is only suggested, as with shuffle. */
+    fun smartShuffle(songs: List<Song>, source: String? = null) {
+        if (!toRoom(songs.firstOrNull())) player.playAll(songs, 0, shuffle = true, source = source, smart = true)
     }
     fun playNext(song: Song) { if (!toRoom(song)) player.playNext(song) }
     fun addToQueue(song: Song) { if (!toRoom(song)) player.addToQueue(song) }
@@ -115,6 +121,8 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
     fun skipNext() { if (!Together.intercept(Together.Control.Next)) player.skipNext() }
     fun skipPrevious() { if (!Together.intercept(Together.Control.Previous)) player.skipPrevious() }
     fun toggleShuffle() = player.toggleShuffle()
+    /** Off, shuffle, then smart shuffle for a queue from a list; returns the new mode. */
+    fun cycleShuffle(): com.opentune.playback.ShuffleMode = player.cycleShuffle()
     fun cycleRepeatMode() = player.cycleRepeatMode()
     fun playQueueItem(index: Int) = player.playQueueItem(index)
     fun removeQueueItem(index: Int) = player.removeQueueItem(index)

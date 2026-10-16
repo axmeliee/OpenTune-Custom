@@ -84,6 +84,12 @@ data class Song(
     val playbackSourceType: PlaybackSourceType? = null,
     /** Browse id for an album, playlist, or other source page. */
     val playbackSourceId: String? = null,
+    /**
+     * Mixed into a shuffled list by smart shuffle rather than part of the
+     * list: marked in the queue, offered "Keep in playlist", and taken out
+     * again, if not yet played, when smart shuffle is turned off.
+     */
+    val smartShuffle: Boolean = false,
 )
 
 /**

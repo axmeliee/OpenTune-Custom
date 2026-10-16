@@ -246,7 +246,7 @@ fun LibraryScreen(contentPadding: PaddingValues, actions: SongActions, nav: Libr
         if (recents.isNotEmpty()) {
             item {
                 SectionHeader("Recently played", action = {
-                    PlayButtons(onPlay = { actions.playAll(recents, 0, false, "Recently played") }, onShuffle = { actions.playAll(recents, 0, true, "Recently played") }, compact = true)
+                    PlayButtons(onPlay = { actions.playAll(recents, 0, false, "Recently played") }, onShuffle = { actions.playAll(recents, 0, true, "Recently played") }, compact = true, onSmartShuffle = { actions.smartShuffle(recents, "Recently played") })
                 })
             }
             // The last few, with the rest a tap away, so the list doesn't run the page long.
@@ -491,6 +491,7 @@ fun LikedScreen(contentPadding: PaddingValues, actions: SongActions, onBack: () 
             PlayButtons(
                 onPlay = { actions.playAll(songs, 0, false, "Liked Music") },
                 onShuffle = { actions.playAll(songs, 0, true, "Liked Music") },
+                onSmartShuffle = { actions.smartShuffle(songs, "Liked Music") },
                 modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp),
             )
         }
@@ -522,7 +523,8 @@ fun LocalPlaylistScreen(id: String, contentPadding: PaddingValues, actions: Song
         LaunchedEffect(Unit) { onBack() }
         return
     }
-    val songs = remember(playlist) { playlist.songs.map { it.toSong() } }
+    // Tagged with the playlist, so smart shuffle can offer to keep a song it mixed in.
+    val songs = remember(playlist) { playlist.songs.map { it.toSong().copy(playbackSourceId = playlist.id) } }
     if (renaming) NameDialog("Rename playlist", playlist.name, onDismiss = { renaming = false }) { LibraryStore.renamePlaylist(id, it); renaming = false }
     if (deleting) {
         FloatingDialog(
@@ -555,6 +557,7 @@ fun LocalPlaylistScreen(id: String, contentPadding: PaddingValues, actions: Song
                         PlayButtons(
                             onPlay = { actions.playAll(songs, 0, false, playlist.name) },
                             onShuffle = { actions.playAll(songs, 0, true, playlist.name) },
+                            onSmartShuffle = { actions.smartShuffle(songs, playlist.name) },
                             modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp),
                         )
                     }

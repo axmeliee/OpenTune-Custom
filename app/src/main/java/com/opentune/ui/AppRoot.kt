@@ -39,8 +39,10 @@ import androidx.compose.material.icons.rounded.Explore
 import androidx.compose.material.icons.rounded.Home
 import androidx.compose.material.icons.rounded.LibraryMusic
 import androidx.compose.material.icons.rounded.Search
+import androidx.compose.material3.SnackbarDuration
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.SnackbarResult
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
@@ -196,6 +198,7 @@ fun AppRoot(vm: PlayerViewModel) {
     LaunchedEffect(Unit) { com.opentune.cast.Cast.messages.collect { snackbar.showSnackbar(it) } }
     // A swipe's confirmation replaces the last one at once, so a run of swipes doesn't queue up notes.
     LaunchedEffect(Unit) { com.opentune.ui.components.QueueNotices.messages.collectLatest { snackbar.showSnackbar(it) } }
+    LaunchedEffect(Unit) { com.opentune.playback.SmartShuffle.notices.collect { snackbar.showSnackbar(it) } }
 
     // Kept across recompositions (opening the player, play/pause): a new
     // instance each time would recompose every screen and list handed one.
@@ -206,6 +209,7 @@ fun AppRoot(vm: PlayerViewModel) {
             playAll = { songs, index, shuffle, source -> vm.playAll(songs, index, shuffle, source) },
             playNext = vm::playNext,
             addToQueue = vm::addToQueue,
+            smartShuffle = { songs, source -> vm.smartShuffle(songs, source) },
         )
     }
     val openItem: (ShelfItem) -> Unit = remember(nav, vm) { { item ->
@@ -226,6 +230,29 @@ fun AppRoot(vm: PlayerViewModel) {
             LibraryStore.dislike(s)
             if (s.videoId == song?.videoId) vm.skipNext()
             uiScope.launch { snackbar.showSnackbar("You won't hear \"${s.title}\" in autoplay again") }
+        },
+        notInterested = { s ->
+            LibraryStore.hideSong(s)
+            vm.player.dropHiddenSmartShuffleSongs()
+            uiScope.launch {
+                if (snackbar.showSnackbar("\"${s.title}\" won't be suggested", "Undo", duration = SnackbarDuration.Short) == SnackbarResult.ActionPerformed) {
+                    LibraryStore.unhideSong(s.videoId)
+                }
+            }
+        },
+        dontPlayArtist = dontPlay@{ s ->
+            val artist = LibraryStore.hideArtist(s) ?: return@dontPlay
+            vm.player.dropHiddenSmartShuffleSongs()
+            uiScope.launch {
+                if (snackbar.showSnackbar("Songs by ${artist.name} won't be suggested", "Undo", duration = SnackbarDuration.Short) == SnackbarResult.ActionPerformed) {
+                    LibraryStore.unhideArtist(artist.key)
+                }
+            }
+        },
+        keepInPlaylist = { s, id ->
+            LibraryStore.addToPlaylist(id, s)
+            com.opentune.playback.SmartShuffle.keep(s.videoId)
+            LibraryStore.playlist(id)?.let { p -> uiScope.launch { snackbar.showSnackbar("Added to ${p.name}") } }
         },
         progressOf = { s -> if (s.videoId == vm.currentSong.value?.videoId) vm.positionMs() to vm.durationMs.value else null },
         viewArtist = { s ->
@@ -285,7 +312,8 @@ fun AppRoot(vm: PlayerViewModel) {
                 vm.player.connected.first { it }
                 val queue = runCatching { MusicRepository.watchQueue(link.videoId) }.getOrDefault(emptyList())
                 val at = queue.indexOfFirst { it.videoId == link.videoId }
-                if (at >= 0) vm.playAll(queue, at, false, "Shared link")
+                // A radio, though it arrives as a list: smart shuffle doesn't apply.
+                if (at >= 0) vm.playAll(queue, at, false, "Shared link", fromList = false)
                 else vm.play(com.opentune.data.model.Song(link.videoId, "Shared song", "", null), "Shared link")
                 playerOpen = true
             }
@@ -615,6 +643,10 @@ fun AppRoot(vm: PlayerViewModel) {
                 song?.thumbnailUrl.artworkAt(ROW_ART_PX),
                 enabled = chromeUi.coverFlight && !chromeUi.reduceAnimation && !playerOpen,
             )
+            // The chrome's snackbar is under the open player; this one shows
+            // over it instead, so an Undo for something chosen in the player's
+            // menu can be seen. Only one of the two is ever there.
+            if (playerCovers) SnackbarHost(snackbar, Modifier.align(Alignment.BottomCenter).navigationBarsPadding().padding(bottom = 12.dp))
         }
         if (opening) {
             com.opentune.ui.components.OpeningReveal(onDive = { dive = it }, onDone = { opening = false; dive = 1f })

@@ -163,7 +163,8 @@ class CarLibrary(private val context: Context) {
         val now = System.currentTimeMillis()
         val shelves = homeCache?.takeIf { now - it.first < HOME_FRESH_MS }?.second
             ?: com.opentune.data.ContentFilter.shelves(MusicRepository.home() + MusicRepository.homeMore.value).also { homeCache = now to it }
-        return shelves.take(MAX_SHELVES).flatMapIndexed { index, shelf ->
+        // Hidden songs are taken off on every read, so hiding one shows at once rather than when the cache runs out.
+        return LibraryStore.hidden.value.shelves(shelves).take(MAX_SHELVES).flatMapIndexed { index, shelf ->
             val parent = "$HOME_SHELF$index"
             val shelfSongs = shelf.items.mapNotNull { it.toSongOrNull() }
             listed[parent] = shelfSongs

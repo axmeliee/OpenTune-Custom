@@ -268,6 +268,13 @@ data class PlaybackSettings(
     val noRepeatInSession: Boolean = false,
     /** Whose suggestions autoplay and Home's "Because you played" follow. */
     val recommender: Recommender = Recommender.YOUTUBE,
+    /**
+     * Smart shuffle can be chosen: the player's shuffle button gets a third
+     * state, and a long press on a playlist or album's Shuffle starts it.
+     * Plain shuffle never mixes anything in, so this is on by default; off
+     * takes the extra state and the long press away.
+     */
+    val smartShuffle: Boolean = true,
     val stopOnTaskRemoved: Boolean = true,
     /** Swiping a song row plays it next (toward the end of the line) or adds it to the queue (toward the start). */
     val swipeToQueue: Boolean = true,

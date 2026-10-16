@@ -1290,7 +1290,8 @@ class PlaybackService : MediaLibraryService() {
             if (count == 0 || player.getMediaItemAt(count - 1).mediaId != seed) return@launch
 
             val queued = (0 until count).mapTo(HashSet()) { player.getMediaItemAt(it).mediaId }
-            val liked = radio.filterNot { LibraryStore.isDisliked(it.videoId) }
+            // Disliked and hidden songs and artists are never queued on their own.
+            val liked = LibraryStore.hidden.value.songs(radio.filterNot { LibraryStore.isDisliked(it.videoId) })
             // Songs already heard this session are skipped when asked, unless that leaves nothing to play.
             val additions = Autoplay.newTracks(if (AppSettings.playback.value.noRepeatInSession) queued + sessionIds else queued, liked)
                 .ifEmpty { Autoplay.newTracks(queued, liked) }

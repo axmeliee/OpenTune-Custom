@@ -69,7 +69,8 @@ internal class ConnectionPlayer(private val c: PlayerConnection) : RoomPlayer {
     override fun seekTo(positionMs: Long) = c.seekTo(positionMs)
     override fun seekToItem(index: Int, positionMs: Long) = c.seekToItem(index, positionMs)
     override fun playAll(songs: List<Song>, startIndex: Int, shuffle: Boolean, source: String?, startPositionMs: Long) =
-        c.playAll(songs, startIndex, shuffle, source, startPositionMs)
+        // The room's queue, not a list of the listener's own: smart shuffle stays out of it.
+        c.playAll(songs, startIndex, shuffle, source, startPositionMs, fromList = false)
     override fun replaceUpcoming(songs: List<Song>) = c.replaceUpcoming(songs)
     override fun addToQueue(song: Song) = c.addToQueue(song)
     override fun playNow(song: Song) {

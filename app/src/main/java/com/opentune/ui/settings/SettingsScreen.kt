@@ -363,6 +363,8 @@ private fun settingsSections(
     var playerStyleDialog by remember { mutableStateOf(false) }
     var recommenderDialog by remember { mutableStateOf(false) }
     var followedDialog by remember { mutableStateOf(false) }
+    var hiddenDialog by remember { mutableStateOf(false) }
+    val hidden by LibraryStore.hidden.collectAsState()
     val followedArtists by NewReleases.followed.collectAsState()
     val listenBrainz by ListenBrainz.account.collectAsState()
     val listensWaiting by ListenBrainz.queued.collectAsState()
@@ -454,6 +456,7 @@ private fun settingsSections(
     )
     if (supportDialog) com.opentune.ui.components.SupportDialog(onDismiss = { supportDialog = false })
     if (followedDialog) FollowedArtistsDialog(onDismiss = { followedDialog = false })
+    if (hiddenDialog) HiddenDialog(onDismiss = { hiddenDialog = false })
     if (playerStyleDialog) {
         ChoiceSheet(
             title = "Player layout",
@@ -768,6 +771,22 @@ private fun settingsSections(
                 },
                 Entry("Don't repeat songs in current session", "autoplay duplicates") {
                     ToggleRow("Don't repeat songs in current session", pb.noRepeatInSession, { v -> AppSettings.updatePlayback { it.copy(noRepeatInSession = v) } }, summary = "Autoplay won't add a song already played or queued this session", icon = Icons.Rounded.History)
+                },
+                Entry("Smart shuffle", "shuffle similar songs mix recommendations playlist album sparkle") {
+                    ToggleRow("Smart shuffle", pb.smartShuffle, { v -> AppSettings.updatePlayback { it.copy(smartShuffle = v) } }, summary = "Mixes a similar song in after every four. Tap the player's shuffle button twice, or long-press Shuffle on a playlist or album", icon = Icons.Rounded.AutoAwesome)
+                },
+                Entry("Hidden songs and artists", "not interested don't play hide block artist unhide suggestions") {
+                    val count = hidden.songs.size + hidden.artists.size
+                    NavRow(
+                        "Hidden songs and artists",
+                        { hiddenDialog = true },
+                        summary = if (count == 0) "Kept out of autoplay, radio and Home. Nothing hidden yet"
+                        else listOfNotNull(
+                            hidden.songs.size.takeIf { it > 0 }?.let { if (it == 1) "1 song" else "$it songs" },
+                            hidden.artists.size.takeIf { it > 0 }?.let { if (it == 1) "1 artist" else "$it artists" },
+                        ).joinToString(" and ") + " kept out of suggestions",
+                        icon = Icons.Rounded.VisibilityOff,
+                    )
                 },
                 Entry("Resume when headphones connect", "bluetooth headset wired auto play resume connect car") {
                     ToggleRow("Resume when headphones connect", pb.resumeOnConnect, { v -> AppSettings.updatePlayback { it.copy(resumeOnConnect = v) } }, summary = "Carries on playing when headphones are plugged in or a Bluetooth device connects, while OpenTune is open or in the notification", icon = Icons.Rounded.Headphones)

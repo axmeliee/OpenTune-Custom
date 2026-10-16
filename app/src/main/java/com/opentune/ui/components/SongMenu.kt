@@ -33,6 +33,9 @@ import androidx.compose.material.icons.rounded.Favorite
 import androidx.compose.material.icons.rounded.FavoriteBorder
 import androidx.compose.material.icons.rounded.NotificationsActive
 import androidx.compose.material.icons.rounded.Person
+import androidx.compose.material.icons.rounded.PersonOff
+import androidx.compose.material.icons.rounded.Visibility
+import androidx.compose.material.icons.rounded.VisibilityOff
 import androidx.compose.material.icons.rounded.Radio
 import androidx.compose.material.icons.rounded.Share
 import androidx.compose.material.icons.rounded.ThumbDownOffAlt
@@ -64,6 +67,7 @@ import com.opentune.data.Ringtones
 import com.opentune.data.download.DownloadState
 import com.opentune.data.download.Downloads
 import com.opentune.data.isYouTubeId
+import com.opentune.data.library.HiddenList
 import com.opentune.data.library.LibraryStore
 import com.opentune.data.local.LocalMusic
 import com.opentune.data.model.ROW_ART_PX
@@ -85,6 +89,12 @@ class SongMenuActions(
     val viewArtist: ((Song) -> Unit)? = null,
     /** Where the song is and how long it runs, when it's the one playing; for the share picture. */
     val progressOf: (Song) -> Pair<Long, Long>? = { null },
+    /** "Not interested": keeps the song out of suggestions; the shell offers Undo. */
+    val notInterested: (Song) -> Unit = { LibraryStore.hideSong(it) },
+    /** "Don't play [artist]": keeps the song's artist out of suggestions. */
+    val dontPlayArtist: (Song) -> Unit = { LibraryStore.hideArtist(it) },
+    /** Adds a song smart shuffle mixed in to the playlist the queue came from. */
+    val keepInPlaylist: (Song, String) -> Unit = { s, id -> LibraryStore.addToPlaylist(id, s); com.opentune.playback.SmartShuffle.keep(s.videoId) },
 )
 
 val LocalSongMenu = staticCompositionLocalOf<SongMenuActions?> { null }
@@ -110,6 +120,13 @@ fun SongMenuSheet(
     val liked by LibraryStore.liked.collectAsState()
     val downloads by Downloads.entries.collectAsState()
     val isLiked = liked.any { it.videoId == song.videoId }
+    val hidden by LibraryStore.hidden.collectAsState()
+    val playlists by LibraryStore.playlists.collectAsState()
+    val origin by com.opentune.playback.SmartShuffle.origin.collectAsState()
+    // A song smart shuffle mixed into one of the app's own playlists can be kept there.
+    val keepIn = origin?.playlistId?.takeIf { song.smartShuffle }
+        ?.let { id -> playlists.firstOrNull { it.id == id } }
+        ?.takeIf { p -> p.songs.none { it.videoId == song.videoId } }
     val download = downloads[song.videoId]
     // Files on this phone and songs on your server: no YouTube actions.
     val local = !isYouTubeId(song.videoId)
@@ -187,6 +204,7 @@ fun SongMenuSheet(
             if (actions != null) {
                 MenuRow(Icons.AutoMirrored.Rounded.PlaylistPlay, "Play next") { actions.playNext(song); close() }
                 MenuRow(Icons.AutoMirrored.Rounded.QueueMusic, "Add to queue") { actions.addToQueue(song); close() }
+                keepIn?.let { p -> MenuRow(Icons.AutoMirrored.Rounded.PlaylistAdd, "Keep in playlist") { close(); actions.keepInPlaylist(song, p.id) } }
                 if (!local) MenuRow(Icons.Rounded.Radio, "Start radio") { actions.startRadio(song); close() }
                 when {
                     actions.viewArtist != null && !local -> MenuRow(Icons.Rounded.Person, "View artist") { close(); actions.viewArtist.invoke(song) }
@@ -205,6 +223,23 @@ fun SongMenuSheet(
                 MenuRow(Icons.Rounded.NotificationsActive, "Set as ringtone") { ringtone = true }
             }
             if (actions != null) MenuRow(Icons.Rounded.ThumbDownOffAlt, "Not for me (dislike)") { close(); actions.dislike(song) }
+            // Only suggestions are affected: the song still plays when picked, and stays in playlists.
+            if (actions != null && !com.opentune.data.radio.Radio.isRadio(song.videoId)) {
+                if (hidden.hidesSong(song.videoId)) {
+                    MenuRow(Icons.Rounded.Visibility, "Suggest this song again") { LibraryStore.unhideSong(song.videoId); close() }
+                } else {
+                    MenuRow(Icons.Rounded.VisibilityOff, "Not interested") { close(); actions.notInterested(song) }
+                }
+                val artist = HiddenList.mainArtist(song.artist)
+                if (artist.isNotBlank()) {
+                    val entry = hidden.artists.firstOrNull { it.key == HiddenList.normalize(artist) }
+                    if (entry != null) {
+                        MenuRow(Icons.Rounded.Person, "Suggest $artist again") { LibraryStore.unhideArtist(entry.key); close() }
+                    } else {
+                        MenuRow(Icons.Rounded.PersonOff, "Don't play $artist") { close(); actions.dontPlayArtist(song) }
+                    }
+                }
+            }
             end?.invoke(this, close)
             Spacer(Modifier.size(12.dp))
         }

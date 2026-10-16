@@ -67,6 +67,10 @@ private data class LibraryDocument(
     val disliked: Set<String> = emptySet(),
     /** Albums and playlists saved with their heart, newest first. */
     val savedLists: List<SavedList> = emptyList(),
+    /** "Not interested": kept out of suggestions, newest first. */
+    val hiddenSongs: List<HiddenSong> = emptyList(),
+    /** "Don't play [artist]": their songs kept out of suggestions, newest first. */
+    val hiddenArtists: List<HiddenArtist> = emptyList(),
 )
 
 /**
@@ -89,6 +93,32 @@ object LibraryStore {
     private val _savedLists = MutableStateFlow<List<SavedList>>(emptyList())
     /** Albums and playlists saved with their heart, newest first. */
     val savedLists: StateFlow<List<SavedList>> = _savedLists.asStateFlow()
+
+    private val _hidden = MutableStateFlow(HiddenList.EMPTY)
+    /** Songs and artists kept out of autoplay, radio, smart shuffle and Home's picks. */
+    val hidden: StateFlow<HiddenList> = _hidden.asStateFlow()
+
+    /** Keeps [song] out of suggestions; undone with [unhideSong]. */
+    fun hideSong(song: Song): HiddenSong {
+        val entry = HiddenSong(song.videoId, song.title, song.artist, song.thumbnailUrl, System.currentTimeMillis())
+        update { d -> d.copy(hiddenSongs = listOf(entry) + d.hiddenSongs.filterNot { it.videoId == song.videoId }) }
+        return entry
+    }
+
+    fun unhideSong(videoId: String) = update { d -> d.copy(hiddenSongs = d.hiddenSongs.filterNot { it.videoId == videoId }) }
+
+    /**
+     * Keeps every song by [song]'s first credited artist out of suggestions;
+     * null when the song names no artist. Undone with [unhideArtist].
+     */
+    fun hideArtist(song: Song): HiddenArtist? {
+        val name = HiddenList.mainArtist(song.artist).takeIf { it.isNotBlank() } ?: return null
+        val entry = HiddenArtist(name, song.artistId, System.currentTimeMillis())
+        update { d -> d.copy(hiddenArtists = listOf(entry) + d.hiddenArtists.filterNot { it.key == entry.key }) }
+        return entry
+    }
+
+    fun unhideArtist(key: String) = update { d -> d.copy(hiddenArtists = d.hiddenArtists.filterNot { it.key == key }) }
 
     fun isSaved(browseId: String): Boolean = _savedLists.value.any { it.browseId == browseId }
 
@@ -118,6 +148,7 @@ object LibraryStore {
         _liked.value = d.liked
         _playlists.value = d.playlists
         _savedLists.value = d.savedLists
+        _hidden.value = HiddenList(d.hiddenSongs, d.hiddenArtists)
         LibraryArtwork.keep(d.liked.map { it.thumbnailUrl } + d.playlists.flatMap { p -> p.songs.map { it.thumbnailUrl } })
     }
 

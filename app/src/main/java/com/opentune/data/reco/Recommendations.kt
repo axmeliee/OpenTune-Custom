@@ -4,6 +4,7 @@ import com.opentune.data.ContentFilter
 import com.opentune.data.DebugLog as Log
 import com.opentune.data.innertube.Innertube
 import com.opentune.data.innertube.InnertubeParser
+import com.opentune.data.library.LibraryStore
 import com.opentune.data.model.Song
 import com.opentune.data.settings.Recommender
 import com.opentune.data.spotify.PlaylistImport
@@ -23,6 +24,10 @@ import kotlinx.coroutines.withContext
  * imported playlist is; whatever can't be found is left out. When the
  * engine knows nothing about the song, YouTube Music's radio steps in, so
  * the music never stops for want of a match.
+ *
+ * Whatever the user hid ("Not interested", "Don't play [artist]") is left
+ * out here, so every caller — autoplay, smart shuffle, Home's "Because you
+ * played" — gets the same filtered picks.
  */
 object Recommendations {
     private const val TAG = "Recommendations"
@@ -38,7 +43,9 @@ object Recommendations {
     suspend fun after(seed: Song, engine: Recommender): Result {
         if (engine != Recommender.YOUTUBE) {
             val songs = try {
-                matched(seed, picks(seed, engine))
+                // A hidden artist's picks are dropped before the lookups, so they don't use up the batch.
+                val hidden = LibraryStore.hidden.value
+                matched(seed, picks(seed, engine).filterNot { hidden.hidesArtist(it.artists.joinToString(", ")) })
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
@@ -52,7 +59,7 @@ object Recommendations {
     }
 
     suspend fun youtube(videoId: String): List<Song> = withContext(Dispatchers.IO) {
-        ContentFilter.songs(InnertubeParser.parseWatchQueue(Innertube.next(videoId)))
+        LibraryStore.hidden.value.songs(ContentFilter.songs(InnertubeParser.parseWatchQueue(Innertube.next(videoId))))
     }
 
     private suspend fun picks(seed: Song, engine: Recommender): List<Spotify.Track> {
@@ -72,7 +79,7 @@ object Recommendations {
             .filterNotNull()
             .filter { it.videoId != seed.videoId }
             .distinctBy { it.videoId }
-            .let { ContentFilter.songs(it) }
+            .let { LibraryStore.hidden.value.songs(ContentFilter.songs(it)) }
     }
 
     /** "Arijit Singh, Shreya Ghoshal" and "A & B" as their first name, which lookups match best. */

@@ -15,6 +15,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
 import android.os.Build
 import androidx.compose.foundation.background
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -43,7 +44,6 @@ import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Shuffle
 import androidx.compose.material3.Button
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -57,6 +57,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.drawWithContent
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.draw.blur
 import androidx.compose.ui.draw.shadow
@@ -75,6 +76,7 @@ import com.opentune.data.model.UiState
 import com.opentune.data.model.artworkAt
 import com.opentune.ui.components.Artwork
 import com.opentune.ui.components.GlassBackButton
+import com.opentune.ui.components.glass
 import com.opentune.ui.components.ErrorState
 import com.opentune.ui.components.ItemCard
 import com.opentune.ui.components.Placeholder
@@ -94,6 +96,8 @@ class SongActions(
     val playAll: (List<Song>, Int, Boolean, String?) -> Unit,
     val playNext: (Song) -> Unit,
     val addToQueue: (Song) -> Unit,
+    /** Shuffle with similar songs mixed in: a long press on Shuffle. */
+    val smartShuffle: (List<Song>, String?) -> Unit = { songs, source -> playAll(songs, 0, true, source) },
 )
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -162,17 +166,60 @@ internal fun CollapsingBar(title: String, listState: LazyListState, onBack: () -
 private val FROST_TAIL = 22.dp
 
 @Composable
-private fun PlayShuffleButtons(enabled: Boolean, onPlay: () -> Unit, onShuffle: () -> Unit, modifier: Modifier = Modifier) {
+private fun PlayShuffleButtons(enabled: Boolean, onPlay: () -> Unit, onShuffle: () -> Unit, modifier: Modifier = Modifier, onSmartShuffle: (() -> Unit)? = null) {
     Row(modifier, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
         Button(onClick = onPlay, enabled = enabled, modifier = Modifier.weight(1f).height(52.dp)) {
             Icon(Icons.Filled.PlayArrow, null)
             Spacer(Modifier.width(8.dp))
             Text("Play")
         }
-        FilledTonalButton(onClick = onShuffle, enabled = enabled, modifier = Modifier.weight(1f).height(52.dp)) {
-            Icon(Icons.Filled.Shuffle, null)
-            Spacer(Modifier.width(8.dp))
-            Text("Shuffle")
+        ShuffleButton(onShuffle, onSmartShuffle, Modifier.weight(1f), enabled = enabled)
+    }
+}
+
+/**
+ * A list's Shuffle button; a long press starts smart shuffle, with similar
+ * songs mixed in. The player's shuffle button cycles through a third state
+ * instead, but this one starts a queue rather than holding a state, so a
+ * second tap would have nothing to move on to. [compact] is the small round
+ * glass button.
+ */
+@Composable
+internal fun ShuffleButton(onShuffle: () -> Unit, onSmartShuffle: (() -> Unit)?, modifier: Modifier = Modifier, enabled: Boolean = true, compact: Boolean = false) {
+    val smartAllowed = com.opentune.data.settings.AppSettings.playback.collectAsState().value.smartShuffle
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val onLong: (() -> Unit)? = onSmartShuffle?.takeIf { smartAllowed && enabled }?.let { smart ->
+        {
+            android.widget.Toast.makeText(context, "Smart shuffle: similar songs mixed in", android.widget.Toast.LENGTH_SHORT).show()
+            smart()
+        }
+    }
+    val shape = if (compact) androidx.compose.foundation.shape.CircleShape else androidx.compose.material3.ButtonDefaults.filledTonalShape
+    val press = Modifier.clip(shape).combinedClickable(
+        enabled = enabled,
+        role = androidx.compose.ui.semantics.Role.Button,
+        onLongClickLabel = if (onLong != null) "Smart shuffle" else null,
+        onLongClick = onLong,
+        onClick = onShuffle,
+    )
+    if (compact) {
+        Box(modifier.size(44.dp).glass(androidx.compose.foundation.shape.CircleShape).then(press), contentAlignment = Alignment.Center) {
+            Icon(Icons.Filled.Shuffle, "Shuffle", Modifier.size(20.dp), tint = MaterialTheme.colorScheme.onSurface)
+        }
+    } else {
+        // Drawn like a FilledTonalButton, which has no long press of its own.
+        val colors = MaterialTheme.colorScheme
+        androidx.compose.material3.Surface(
+            shape = shape,
+            color = if (enabled) colors.secondaryContainer else colors.onSurface.copy(alpha = 0.12f),
+            contentColor = if (enabled) colors.onSecondaryContainer else colors.onSurface.copy(alpha = 0.38f),
+            modifier = modifier.height(52.dp).then(press),
+        ) {
+            Row(horizontalArrangement = Arrangement.Center, verticalAlignment = Alignment.CenterVertically) {
+                Icon(Icons.Filled.Shuffle, null)
+                Spacer(Modifier.width(8.dp))
+                Text("Shuffle", style = MaterialTheme.typography.labelLarge)
+            }
         }
     }
 }
@@ -279,6 +326,7 @@ fun CollectionScreen(
                                     enabled = !c?.songs.isNullOrEmpty(),
                                     onPlay = { c?.let { actions.playAll(it.songs, 0, false, it.title) } },
                                     onShuffle = { c?.let { actions.playAll(it.songs, 0, true, it.title) } },
+                                    onSmartShuffle = { c?.let { actions.smartShuffle(it.songs, it.title) } },
                                     modifier = Modifier.fillMaxWidth().padding(top = 20.dp, bottom = 12.dp),
                                 )
                                 if (c != null) {
@@ -399,6 +447,7 @@ fun ArtistScreen(
                         enabled = !page?.songs.isNullOrEmpty(),
                         onPlay = { page?.let { actions.playAll(it.songs, 0, false, it.name) } },
                         onShuffle = { page?.let { actions.playAll(it.songs, 0, true, it.name) } },
+                        onSmartShuffle = { page?.let { actions.smartShuffle(it.songs, it.name) } },
                         modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 16.dp),
                     )
                 }

@@ -1,5 +1,6 @@
 package com.opentune.data.history
 
+import com.opentune.data.library.HiddenList
 import com.opentune.data.model.Song
 import java.util.Calendar
 import java.util.TimeZone
@@ -30,7 +31,18 @@ object DailyMixes {
     /** Plays this close together count as one sitting. */
     private const val SITTING = 30 * 60 * 1000L
 
-    fun build(records: List<PlayRecord>, nowMs: Long = System.currentTimeMillis(), zone: TimeZone = TimeZone.getDefault()): List<Mix> {
+    /**
+     * @param hidden songs and artists the user said not to suggest. Their
+     *   plays are left out before anything is counted, so a hidden artist
+     *   doesn't get a mix of their own either.
+     */
+    fun build(
+        allRecords: List<PlayRecord>,
+        nowMs: Long = System.currentTimeMillis(),
+        zone: TimeZone = TimeZone.getDefault(),
+        hidden: HiddenList = HiddenList.EMPTY,
+    ): List<Mix> {
+        val records = hidden.records(allRecords)
         if (records.size < MIN_SONGS) return emptyList()
         val cal = Calendar.getInstance(zone).apply { timeInMillis = nowMs }
         val today = cal.get(Calendar.YEAR) * 1000 + cal.get(Calendar.DAY_OF_YEAR)

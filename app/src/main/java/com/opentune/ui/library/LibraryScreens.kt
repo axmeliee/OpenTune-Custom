@@ -29,9 +29,7 @@ import androidx.compose.material.icons.rounded.Folder
 import androidx.compose.material.icons.rounded.History
 import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material.icons.rounded.Settings
-import androidx.compose.material.icons.rounded.Shuffle
 import androidx.compose.material3.Button
-import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -60,6 +58,7 @@ import com.opentune.data.model.Song
 import com.opentune.data.model.artworkAt
 import com.opentune.data.settings.AppSettings
 import com.opentune.ui.browse.SongActions
+import com.opentune.ui.browse.ShuffleButton
 import com.opentune.ui.components.Artwork
 import com.opentune.ui.components.GlassIconButton
 import com.opentune.ui.components.MessageState
@@ -70,18 +69,16 @@ import com.opentune.ui.components.SongRowPlaceholder
 import java.util.concurrent.TimeUnit
 
 @Composable
-internal fun PlayButtons(onPlay: () -> Unit, onShuffle: () -> Unit, modifier: Modifier = Modifier, compact: Boolean = false) {
+internal fun PlayButtons(onPlay: () -> Unit, onShuffle: () -> Unit, modifier: Modifier = Modifier, compact: Boolean = false, onSmartShuffle: (() -> Unit)? = null) {
     Row(modifier, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
         if (compact) {
-            GlassIconButton(Icons.Rounded.Shuffle, "Shuffle", onShuffle, size = 44.dp)
+            ShuffleButton(onShuffle, onSmartShuffle, compact = true)
             GlassIconButton(Icons.Rounded.PlayArrow, "Play", onPlay, size = 44.dp)
         } else {
             Button(onClick = onPlay, modifier = Modifier.weight(1f).height(52.dp)) {
                 Icon(Icons.Rounded.PlayArrow, null); Spacer(Modifier.width(8.dp)); Text("Play")
             }
-            FilledTonalButton(onClick = onShuffle, modifier = Modifier.weight(1f).height(52.dp)) {
-                Icon(Icons.Rounded.Shuffle, null); Spacer(Modifier.width(8.dp)); Text("Shuffle")
-            }
+            ShuffleButton(onShuffle, onSmartShuffle, Modifier.weight(1f))
         }
     }
 }
@@ -214,7 +211,7 @@ fun ReplayScreen(contentPadding: PaddingValues, actions: SongActions, onBack: ()
         }
         item {
             SectionHeader("Top songs", action = {
-                PlayButtons(onPlay = { actions.playAll(topSongs, 0, false, "Replay") }, onShuffle = { actions.playAll(topSongs, 0, true, "Replay") }, compact = true)
+                PlayButtons(onPlay = { actions.playAll(topSongs, 0, false, "Replay") }, onShuffle = { actions.playAll(topSongs, 0, true, "Replay") }, compact = true, onSmartShuffle = { actions.smartShuffle(topSongs, "Replay") })
             })
         }
         itemsIndexed(summary.topSongs, key = { i, e -> "s:$i:${e.key}" }) { i, entry ->

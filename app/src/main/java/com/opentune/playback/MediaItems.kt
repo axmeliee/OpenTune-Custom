@@ -26,6 +26,8 @@ private const val EXTRA_DURATION_TEXT = "durationText"
 private const val EXTRA_ALBUM = "album"
 private const val EXTRA_THUMB = "thumb"
 private const val EXTRA_EXPLICIT = "explicit"
+private const val EXTRA_ARTIST_ID = "artistId"
+private const val EXTRA_SMART_SHUFFLE = "smartShuffle"
 
 /**
  * Local files play straight from MediaStore and downloads from their file;
@@ -87,6 +89,9 @@ fun Song.toMediaItem(): MediaItem =
                         // The cover as the song stores it: a server's carries no credentials.
                         putString(EXTRA_THUMB, thumbnailUrl)
                         isExplicit?.let { putBoolean(EXTRA_EXPLICIT, it) }
+                        // Kept so "Don't play [artist]" from the player knows the artist by id too.
+                        artistId?.let { putString(EXTRA_ARTIST_ID, it) }
+                        if (smartShuffle) putBoolean(EXTRA_SMART_SHUFFLE, true)
                     },
                 )
                 .build(),
@@ -102,6 +107,8 @@ fun MediaItem.toSong(): Song =
         durationText = mediaMetadata.extras?.getString(EXTRA_DURATION_TEXT),
         albumName = mediaMetadata.extras?.getString(EXTRA_ALBUM) ?: mediaMetadata.albumTitle?.toString(),
         isExplicit = mediaMetadata.extras?.takeIf { it.containsKey(EXTRA_EXPLICIT) }?.getBoolean(EXTRA_EXPLICIT),
+        artistId = mediaMetadata.extras?.getString(EXTRA_ARTIST_ID),
+        smartShuffle = mediaMetadata.extras?.getBoolean(EXTRA_SMART_SHUFFLE) == true,
     )
 
 /**
