@@ -13,16 +13,9 @@ import androidx.compose.foundation.Canvas
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
 import androidx.compose.animation.core.LinearEasing
-import androidx.compose.animation.core.Animatable
-import androidx.compose.animation.core.spring
-import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.runtime.collectAsState
-import androidx.compose.runtime.rememberCoroutineScope
-import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalDensity
 import com.opentune.data.settings.AppSettings
-import kotlinx.coroutines.launch
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.infiniteRepeatable
@@ -53,7 +46,6 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.QueueMusic
 import androidx.compose.material.icons.filled.Album
 import androidx.compose.material.icons.filled.CloudOff
 import androidx.compose.material.icons.filled.MoreVert
@@ -62,7 +54,6 @@ import androidx.compose.material.icons.filled.ErrorOutline
 import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.automirrored.filled.PlaylistPlay
-import androidx.compose.material.icons.filled.SkipNext
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.Icon
@@ -115,6 +106,8 @@ fun Artwork(
     placeholder: ImageVector = Icons.Filled.MusicNote,
     /** Applied to the image inside the clipped frame, e.g. to move it within it. */
     imageModifier: Modifier = Modifier,
+    /** Hears whether the cover is showing (loaded, so cached) each time that changes. */
+    onLoaded: ((Boolean) -> Unit)? = null,
 ) {
     var loaded by remember(url) { mutableStateOf(false) }
     Box(
@@ -135,7 +128,10 @@ fun Artwork(
                 contentDescription = null,
                 contentScale = ContentScale.Crop,
                 modifier = Modifier.matchParentSize().then(imageModifier),
-                onState = { loaded = it is AsyncImagePainter.State.Success },
+                onState = {
+                    loaded = it is AsyncImagePainter.State.Success
+                    onLoaded?.invoke(loaded)
+                },
             )
         }
     }
@@ -194,7 +190,11 @@ fun SongListItem(
     leading: (@Composable () -> Unit)? = null,
     onPlayNext: (() -> Unit)? = null,
     onAddToQueue: (() -> Unit)? = null,
-    /** Off for rows inside a sideways-scrolling list, whose scroll the swipe would otherwise take. */
+    /**
+     * Swiping the row plays it next or queues it (see [SwipeToQueueRow]), when
+     * Settings allow. Off for rows inside a sideways-scrolling list, whose
+     * scroll the swipe would otherwise take.
+     */
     swipeToQueue: Boolean = true,
     trailing: @Composable RowScope.() -> Unit = {},
 ) {
@@ -204,54 +204,18 @@ fun SongListItem(
         .collectAsState(Downloads.entryNow(song.videoId))
     if (menuOpen) SongMenuSheet(song, onDismiss = { menuOpen = false })
     val playback by AppSettings.playback.collectAsState()
-    val onSwipe = when {
-        !swipeToQueue -> null
-        playback.playNextOnSwipe -> onPlayNext
-        else -> onAddToQueue
-    }
-    val offsetX = remember { Animatable(0f) }
-    val scope = rememberCoroutineScope()
-    val haptics = com.opentune.ui.components.rememberHaptics()
-    val threshold = with(LocalDensity.current) { 88.dp.toPx() }
-    Box(modifier.fillMaxWidth()) {
-        if (onSwipe != null && offsetX.value > 1f) {
-            val reached = offsetX.value >= threshold
-            Box(
-                Modifier.matchParentSize().background(
-                    if (reached) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceContainerHigh,
-                ),
-                contentAlignment = Alignment.CenterStart,
-            ) {
-                Icon(
-                    if (playback.playNextOnSwipe) Icons.Filled.SkipNext else Icons.AutoMirrored.Filled.QueueMusic,
-                    null,
-                    tint = if (reached) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.padding(start = 24.dp),
-                )
-            }
-        }
+    // Toward the end of the line plays next, toward the start adds to the queue.
+    val swipes = swipeToQueue && playback.swipeToQueue
+    SwipeToQueueRow(
+        title = song.title,
+        onPlayNext = onPlayNext.takeIf { swipes },
+        onAddToQueue = onAddToQueue.takeIf { swipes },
+        modifier = modifier.fillMaxWidth(),
+    ) { swipeActions ->
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .graphicsLayer { translationX = offsetX.value }
-                .background(if (offsetX.value > 1f) MaterialTheme.colorScheme.background else Color.Transparent)
-                .then(
-                    if (onSwipe == null) Modifier else Modifier.pointerInput(onSwipe) {
-                        detectHorizontalDragGestures(
-                            onDragEnd = {
-                                if (offsetX.value >= threshold) {
-                                    haptics.press()
-                                    onSwipe()
-                                }
-                                scope.launch { offsetX.animateTo(0f, spring(dampingRatio = 0.7f)) }
-                            },
-                            onDragCancel = { scope.launch { offsetX.animateTo(0f) } },
-                        ) { change, amount ->
-                            change.consume()
-                            scope.launch { offsetX.snapTo((offsetX.value + amount * 0.8f).coerceIn(0f, threshold * 1.6f)) }
-                        }
-                    },
-                )
+                .then(swipeActions)
                 .combinedClickable(onClick = onClick, onLongClick = { if (hasMenu) menuOpen = true })
                 .padding(start = 16.dp, end = 4.dp, top = 6.dp, bottom = 6.dp),
             verticalAlignment = Alignment.CenterVertically,
@@ -293,7 +257,7 @@ fun SongListItem(
                     Icon(Icons.Filled.MoreVert, contentDescription = "More options")
                 }
             }
-    }
+        }
     }
 }
 
@@ -324,6 +288,10 @@ fun ItemCard(
     modifier: Modifier = Modifier,
     width: Dp = 156.dp,
     explicit: Boolean = false,
+    /** Applied to the cover inside its frame, e.g. to move it (see livingArt). */
+    imageModifier: Modifier = Modifier,
+    /** Hears whether the cover has loaded (see [Artwork]). */
+    onArtLoaded: ((Boolean) -> Unit)? = null,
 ) {
     val round = type == BrowseType.ARTIST
     Column(
@@ -343,6 +311,8 @@ fun ItemCard(
                 BrowseType.PLAYLIST -> Icons.AutoMirrored.Filled.PlaylistPlay
                 else -> Icons.Filled.MusicNote
             },
+            imageModifier = imageModifier,
+            onLoaded = onArtLoaded,
         )
         Spacer(Modifier.height(8.dp))
         Text(

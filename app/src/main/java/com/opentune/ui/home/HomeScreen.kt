@@ -46,6 +46,10 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.snapshotFlow
+import androidx.compose.ui.input.nestedscroll.nestedScroll
+import androidx.compose.ui.platform.LocalLayoutDirection
+import androidx.compose.ui.unit.LayoutDirection
 import com.opentune.data.account.AccountStore
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -87,6 +91,8 @@ fun HomeScreen(
     onOpenSettings: () -> Unit,
     /** Opens the page that names a song from what the microphone hears. */
     onRecognize: (() -> Unit)? = null,
+    /** The full player is open over the page, so nothing on it needs to move. */
+    covered: Boolean = false,
 ) {
     val loader = rememberLoader("home") { MusicRepository.home() }
     val state by loader.state.collectAsState()
@@ -124,12 +130,19 @@ fun HomeScreen(
         }
     }
 
+    // One or two of the big cards below move their cover while the page sits still.
+    val covers = rememberMovingCovers(LocalLayoutDirection.current == LayoutDirection.Rtl, covered)
+    val listState = rememberLazyListState()
+    LaunchedEffect(listState, covers) {
+        snapshotFlow { listState.isScrollInProgress }.collect { covers.pageScrolling = it }
+    }
+
     com.opentune.ui.components.MarkRefreshBox(
         isRefreshing = refreshing,
         onRefresh = { loader.reload(keepContent = true) },
         modifier = Modifier.fillMaxSize(),
     ) {
-        LazyColumn(contentPadding = contentPadding, modifier = Modifier.fillMaxSize()) {
+        LazyColumn(state = listState, contentPadding = contentPadding, modifier = Modifier.fillMaxSize().nestedScroll(covers.scrollWatch)) {
             item(key = "top") {
                 // A greeting for the time of day, by name when signed in, with the
                 // account (and settings) one tap away on the right.
@@ -183,8 +196,8 @@ fun HomeScreen(
                     ErrorState(s.message, onRetry = { loader.reload() }, modifier = Modifier.padding(top = 24.dp))
                 }
                 is UiState.Success -> {
-                    itemsIndexed(feed.cards, key = { i, shelf -> "shelf:$i:${shelf.title}" }, contentType = { _, _ -> "cards" }) { _, shelf ->
-                        HomeShelfView(shelf, onItemClick, songRows = false)
+                    itemsIndexed(feed.cards, key = { i, shelf -> "shelf:$i:${shelf.title}" }, contentType = { _, _ -> "cards" }) { i, shelf ->
+                        HomeShelfView(shelf, onItemClick, songRows = false, covers = covers, coverKey = "shelf:$i")
                     }
                 }
             }
@@ -276,14 +289,40 @@ internal fun arrangeHomeShelves(shelves: List<HomeShelf>): HomeSections {
     return HomeSections(available.getOrNull(pickIndex), cards)
 }
 
+/**
+ * A shelf of cards, or quick picks for a shelf of songs. Given Home's
+ * [covers], its song and album cards can move their covers, under [coverKey].
+ */
 @Composable
-fun HomeShelfView(shelf: HomeShelf, onItemClick: (ShelfItem) -> Unit, modifier: Modifier = Modifier, songRows: Boolean = true) {
+fun HomeShelfView(shelf: HomeShelf, onItemClick: (ShelfItem) -> Unit, modifier: Modifier = Modifier, songRows: Boolean = true, covers: MovingCovers? = null, coverKey: String = "") {
     Box(modifier) {
         if (songRows && shelf.isQuickPicks()) {
             QuickPicks(shelf, onItemClick)
         } else {
-            Shelf(title = shelf.title, subtitle = shelf.subtitle, items = shelf.items) { item ->
-                ItemCard(item.title, item.subtitle, item.thumbnailUrl, item.type(), onClick = { onItemClick(item) }, explicit = item.explicit)
+            if (covers == null) {
+                Shelf(title = shelf.title, subtitle = shelf.subtitle, items = shelf.items) { item ->
+                    ItemCard(item.title, item.subtitle, item.thumbnailUrl, item.type(), onClick = { onItemClick(item) }, explicit = item.explicit)
+                }
+            } else {
+                // By place in the shelf, since a shelf can hold the same item twice.
+                val indexed = remember(shelf.items) { shelf.items.withIndex().toList() }
+                Shelf(title = shelf.title, subtitle = shelf.subtitle, items = indexed) { (i, item) ->
+                    val type = item.type()
+                    val motion = rememberCoverMotion(
+                        covers,
+                        key = "$coverKey:$i",
+                        shelf = coverKey,
+                        hasMovingArt = MovingCoverRules.hasMovingArt(isSong = item.videoId != null && item.browseId == null, type = type),
+                    )
+                    ItemCard(
+                        item.title, item.subtitle, item.thumbnailUrl, type,
+                        onClick = { onItemClick(item) },
+                        modifier = motion.spot,
+                        explicit = item.explicit,
+                        imageModifier = motion.art,
+                        onArtLoaded = motion.onArtLoaded,
+                    )
+                }
             }
         }
     }

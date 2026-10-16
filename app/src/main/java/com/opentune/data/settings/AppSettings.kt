@@ -269,8 +269,8 @@ data class PlaybackSettings(
     /** Whose suggestions autoplay and Home's "Because you played" follow. */
     val recommender: Recommender = Recommender.YOUTUBE,
     val stopOnTaskRemoved: Boolean = true,
-    /** Swiping a row queues it to play next; off queues it at the end. */
-    val playNextOnSwipe: Boolean = true,
+    /** Swiping a song row plays it next (toward the end of the line) or adds it to the queue (toward the start). */
+    val swipeToQueue: Boolean = true,
     /** Buffer the next track and resolve its neighbours early, for instant skips. */
     val preloadUpcoming: Boolean = true,
     /** Swap to a clearly better stream mid-song when one turns up. */
@@ -340,6 +340,8 @@ data class InterfaceSettings(
     val controlStyle: ControlStyle = ControlStyle.BLOOM,
     /** The cover drifts and zooms slowly in the player while a song plays. */
     val movingCover: Boolean = true,
+    /** One or two of Home's song and album cards drift and zoom the same way while the page sits still. */
+    val homeMovingCovers: Boolean = true,
     /** How strong taps and buzzes are, 0 (off) to 1. */
     val hapticStrength: Float = 0.6f,
     /** Look for a new release once a day when the app opens. */

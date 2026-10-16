@@ -71,6 +71,7 @@ import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import com.opentune.data.MusicRepository
+import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.first
 import com.opentune.data.model.SearchResult
 import com.opentune.data.model.SearchFilter
@@ -193,6 +194,8 @@ fun AppRoot(vm: PlayerViewModel) {
     LaunchedEffect(playbackError) { playbackError?.let { snackbar.showSnackbar(it) } }
     LaunchedEffect(Unit) { com.opentune.data.together.Together.notices.collect { snackbar.showSnackbar(it) } }
     LaunchedEffect(Unit) { com.opentune.cast.Cast.messages.collect { snackbar.showSnackbar(it) } }
+    // A swipe's confirmation replaces the last one at once, so a run of swipes doesn't queue up notes.
+    LaunchedEffect(Unit) { com.opentune.ui.components.QueueNotices.messages.collectLatest { snackbar.showSnackbar(it) } }
 
     // Kept across recompositions (opening the player, play/pause): a new
     // instance each time would recompose every screen and list handed one.
@@ -399,6 +402,7 @@ fun AppRoot(vm: PlayerViewModel) {
                             onItemClick = openItem,
                             onOpenSettings = { nav.navigate("settings") },
                             onRecognize = { nav.navigate("recognize") },
+                            covered = playerCovers,
                         )
                     }
                     composable(Tab.EXPLORE.route) {

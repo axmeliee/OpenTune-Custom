@@ -885,6 +885,9 @@ private fun settingsSections(
                 Entry("Moving cover art", "motion artwork canvas animated cover drift zoom") {
                     ToggleRow("Moving cover art", ui.movingCover, { v -> AppSettings.updateUi { it.copy(movingCover = v) } }, summary = "The cover drifts and zooms slowly in the player while a song plays", icon = Icons.Rounded.Animation)
                 },
+                Entry("Moving covers on Home", "motion artwork animated cover drift zoom home cards mixes") {
+                    ToggleRow("Moving covers on Home", ui.homeMovingCovers, { v -> AppSettings.updateUi { it.copy(homeMovingCovers = v) } }, summary = "Song and album covers on Home drift and zoom slowly, one or two at a time, while you're not scrolling. Off in battery saver", icon = Icons.Rounded.Animation)
+                },
                 Entry("Full-screen cover art", "artwork edge") {
                     ToggleRow("Full-screen cover art", ui.fullScreenCover, { v -> AppSettings.updateUi { it.copy(fullScreenCover = v) } }, summary = "Runs the cover to the edges of the player instead of a square sleeve", icon = Icons.Rounded.Fullscreen)
                 },
@@ -1198,8 +1201,8 @@ private fun settingsSections(
         Section(
             "Miscellaneous",
             listOf(
-                Entry("Play next on swipe", "gesture queue") {
-                    ToggleRow("Play next on swipe", pb.playNextOnSwipe, { v -> AppSettings.updatePlayback { it.copy(playNextOnSwipe = v) } }, summary = "When off, swiping a song adds it to the end of the queue", icon = Icons.AutoMirrored.Rounded.PlaylistPlay)
+                Entry("Swipe songs to queue them", "gesture swipe queue play next add to queue") {
+                    ToggleRow("Swipe songs to queue them", pb.swipeToQueue, { v -> AppSettings.updatePlayback { it.copy(swipeToQueue = v) } }, summary = "Swipe a song right to play it next, or left to add it to the end of the queue", icon = Icons.AutoMirrored.Rounded.PlaylistPlay)
                 },
                 Entry("Hide volume bar", "player slider") {
                     ToggleRow("Hide volume bar", ui.hideVolumeBar, { v -> AppSettings.updateUi { it.copy(hideVolumeBar = v) } }, summary = "Removes the volume slider from the player", icon = Icons.AutoMirrored.Rounded.VolumeOff)

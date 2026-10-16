@@ -62,7 +62,7 @@ internal val SETTINGS_CATEGORIES = listOf(
         "player", "Player", "Layout, buttons, cover and background", Icons.Rounded.Album,
         listOf(
             "Layout" to listOf("Player layout", "Player buttons", "Player background"),
-            "Cover art" to listOf("Moving cover art", "Glow under the cover", "Song change", "Full-screen cover art", "Album covers"),
+            "Cover art" to listOf("Moving cover art", "Moving covers on Home", "Glow under the cover", "Song change", "Full-screen cover art", "Album covers"),
             "Controls" to listOf("Wavy seek bar", "Waveform seek bar", "Lyric preview while seeking", "Hide volume bar", "Hide song status", "Show stats for nerds"),
         ),
     ),
@@ -88,7 +88,7 @@ internal val SETTINGS_CATEGORIES = listOf(
             "Downloads" to listOf("Downloaded songs", "Download quality", "Download on Wi-Fi only"),
             "Local music" to listOf("Local music folder", "Filter non-music audio"),
             "New releases" to listOf("New-release alerts", "Followed artists"),
-            "Songs and lists" to listOf("Play next on swipe", "Hide explicit content", "Import a playlist"),
+            "Songs and lists" to listOf("Swipe songs to queue them", "Hide explicit content", "Import a playlist"),
         ),
     ),
     SettingsCategory(
