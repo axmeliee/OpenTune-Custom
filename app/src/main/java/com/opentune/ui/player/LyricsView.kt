@@ -233,8 +233,10 @@ private fun SyncedLyrics(
     }
     // Two singers trade lines: the second voice's sit on the other side.
     val duet = remember(lines) { lines.any { it.voice == VOICE_SECOND } }
-    // The position function changes with the lyrics offset; read the latest.
-    val pos by rememberUpdatedState(position)
+    // A smooth clock that never steps back while playing, so a word that has just
+    // been sung can't count as unsung again and play its motion twice.
+    val clock = rememberLyricsClock(position)
+    val pos by rememberUpdatedState(clock)
     // A line lights a moment before its timestamp, so it's there as the singer starts it.
     val active by remember(lines) { derivedStateOf { lines.activeIndex(pos() + LINE_LEAD_MS) } }
     var following by remember { mutableStateOf(true) }
@@ -283,7 +285,7 @@ private fun SyncedLyrics(
                     isActive = i == active,
                     animation = animation,
                     blurEnabled = blur && following,
-                    position = position,
+                    position = clock,
                     romanized = romanized.getOrNull(i),
                     duet = duet,
                     onClick = {
@@ -358,7 +360,7 @@ internal fun wordPose(motion: WordMotion, t: Float): WordPose {
 
 private fun motionOf(animation: LyricsAnimation) = when (animation) {
     LyricsAnimation.ECHO -> LineMotion(1f, 0.85f, 0f, 0.dp, glow = false, inactiveAlpha = 0.5f, word = WordMotion.ECHO)
-    LyricsAnimation.FLUID -> LineMotion(1f, 0.93f, 1.1f, 0.dp, glow = false, inactiveAlpha = 0.8f)
+    LyricsAnimation.FLUID -> LineMotion(1f, 0.97f, 1.8f, 0.dp, glow = false, inactiveAlpha = 0.8f)
     LyricsAnimation.KARAOKE -> LineMotion(1f, 1f, 0f, 0.dp, glow = true, inactiveAlpha = 0.55f)
     LyricsAnimation.SLIDE -> LineMotion(1f, 0.96f, 0.6f, 18.dp, glow = false, inactiveAlpha = 0.7f)
     LyricsAnimation.ZOOM -> LineMotion(1.08f, 0.86f, 1.9f, 0.dp, glow = false, inactiveAlpha = 0.6f)
@@ -383,26 +385,27 @@ private fun LyricLineView(
 ) {
     val motion = motionOf(animation)
     val bright = MaterialTheme.colorScheme.onSurface
-    val dim = bright.copy(alpha = 0.32f)
+    val dim = bright.copy(alpha = 0.45f)
     val scale by animateFloatAsState(
         if (isActive) motion.activeScale else motion.inactiveScale,
-        if (animation == LyricsAnimation.ECHO) tween(400) else spring(dampingRatio = 0.75f, stiffness = Spring.StiffnessLow),
+        // Critically damped: the line settles into size without overshooting, which read as a bounce.
+        if (animation == LyricsAnimation.ECHO) tween(400) else spring(dampingRatio = 1f, stiffness = Spring.StiffnessMediumLow),
         label = "lineScale",
     )
     val alpha by animateFloatAsState(
-        if (isActive) 1f else if (distance < 0) motion.inactiveAlpha - 0.1f else motion.inactiveAlpha,
+        if (isActive) 1f else (motion.inactiveAlpha - 0.06f * (minOf(abs(distance), 5) - 1) - if (distance < 0) 0.1f else 0f).coerceAtLeast(0.18f),
         tween(when (animation) { LyricsAnimation.MINIMAL -> 200; LyricsAnimation.ECHO -> 300; else -> 400 }),
         label = "lineAlpha",
     )
     val blur by animateDpAsState(
-        if (!blurEnabled || isActive) 0.dp else (minOf(abs(distance), 4) * motion.blurPerLine).dp,
+        if (!blurEnabled || isActive) 0.dp else (minOf(abs(distance), 6) * motion.blurPerLine).dp,
         tween(500),
         label = "lineBlur",
     )
     // Slide: lines wait a little to the right and the current one glides home.
     val shift by animateDpAsState(
         if (isActive || motion.slide == 0.dp) 0.dp else motion.slide,
-        spring(dampingRatio = 0.8f, stiffness = Spring.StiffnessLow),
+        spring(dampingRatio = 1f, stiffness = Spring.StiffnessLow),
         label = "lineShift",
     )
     val ui by AppSettings.ui.collectAsState()
@@ -510,7 +513,8 @@ private fun DrawScope.sweepWords(line: LyricLine, boxes: List<Rect>, positionMs:
         val box = boxes.getOrNull(i) ?: return@forEachIndexed
         if (box.isEmpty) return@forEachIndexed
         val span = (word.endMs - word.startMs).coerceAtLeast(1)
-        val t = easeOut(((positionMs - word.startMs).toFloat() / span).coerceIn(0f, 1f))
+        // Even through the word: an eased fill rushed the start and lagged the end, off the singing.
+        val t = ((positionMs - word.startMs).toFloat() / span).coerceIn(0f, 1f)
         if (t >= 1f) return@forEachIndexed
         val litX = box.left + (box.width + feather) * t
         drawRect(
@@ -560,7 +564,7 @@ private fun DrawScope.drawMovingWords(
             val word = line.words[i]
             val t = ((positionMs - word.startMs).toFloat() / (word.endMs - word.startMs).coerceAtLeast(1)).coerceIn(0f, 1f)
             val w = laid.size.width.toFloat()
-            val fill = easeOut(t)
+            val fill = t
             val brush = when {
                 t >= 1f || motion == WordMotion.REVEAL -> SolidColor(bright)
                 t <= 0f -> SolidColor(dim)
@@ -594,10 +598,9 @@ internal fun wordGroups(words: List<LyricWord>): List<IntRange> {
     return out
 }
 
-/** Cuts bright text down to the dim lyric colour's 0.32 alpha. */
-private val UNLIT = Color.Black.copy(alpha = 0.68f)
+/** Cuts bright text down to the dim lyric colour's 0.45 alpha. */
+private val UNLIT = Color.Black.copy(alpha = 0.55f)
 
-private fun easeOut(t: Float): Float = 1f - (1f - t) * (1f - t)
 
 /** While the sources are asked: a small pill saying the lyrics are on their way, with a turning mark. */
 @Composable

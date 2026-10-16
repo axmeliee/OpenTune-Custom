@@ -213,13 +213,13 @@ val AppTypography = Typography(
     labelSmall = baseType.labelSmall.outfit(FontWeight.Medium),
 )
 
-/** Large, bold lyric lines. */
+/** Large, heavy lyric lines, read at a glance from arm's length. */
 val LyricsTextStyle = TextStyle(
     fontFamily = Outfit,
-    fontSize = 28.sp,
-    lineHeight = 36.sp,
-    fontWeight = FontWeight.Bold,
-    letterSpacing = (-0.3).sp,
+    fontSize = 34.sp,
+    lineHeight = 41.sp,
+    fontWeight = FontWeight.ExtraBold,
+    letterSpacing = (-0.6).sp,
 )
 
 val AppShapes = Shapes(
