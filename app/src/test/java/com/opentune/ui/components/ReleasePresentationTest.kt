@@ -36,7 +36,7 @@ class ReleasePresentationTest {
             WhatsNewSheet(listOf("0.4.15" to listOf(note), "0.4.14" to listOf(note.copy(title = "Earlier improvement"))), "0.4.15") { closed = true }
         } }
         compose.onNodeWithText("Earlier improvement").assertDoesNotExist()
-        compose.onNodeWithText("Also in 0.4.14").performScrollTo().performClick()
+        compose.onNodeWithText("Earlier · 0.4.14").performScrollTo().performClick()
         compose.onNodeWithText("Earlier improvement").assertExists()
         compose.onNodeWithText("Start listening").assertIsDisplayed()
         capture("installed")

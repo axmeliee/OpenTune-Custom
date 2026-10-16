@@ -247,7 +247,7 @@ fun WhatsNewSheet(notes: List<Pair<String, List<WhatsNew.Note>>>, version: Strin
                         Row(Modifier.fillMaxWidth().clickable { expanded = !expanded }.padding(18.dp),
                             verticalAlignment = Alignment.CenterVertically) {
                             Column(Modifier.weight(1f)) {
-                                Text(if (ownNotes) "Also in $releaseVersion" else "In $releaseVersion", style = MaterialTheme.typography.titleMedium)
+                                Text("Earlier · $releaseVersion", style = MaterialTheme.typography.titleMedium)
                                 Text("${list.size} changes", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                             }
                             Icon(if (expanded) Icons.Rounded.ExpandLess else Icons.Rounded.ExpandMore,

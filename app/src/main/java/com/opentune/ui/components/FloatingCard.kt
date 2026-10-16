@@ -283,7 +283,9 @@ fun FloatingCard(
                                 // Glass: the blurred screen behind the window shows through
                                 // a film of the surface, lit a little along the top.
                                 Modifier
-                                    .background(MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = if (dark) 0.62f else 0.7f))
+                                    // Near solid: some phones say they blur behind a window and then
+                                    // don't, and a thinner film lets the page behind read through.
+                                    .background(MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = if (dark) 0.88f else 0.9f))
                                     .background(Brush.verticalGradient(0f to Color.White.copy(alpha = if (dark) 0.07f else 0.18f), 0.35f to Color.Transparent))
                                     .border(1.dp, Brush.verticalGradient(listOf(Color.White.copy(alpha = if (dark) 0.22f else 0.6f), Color.White.copy(alpha = 0.04f))), shape)
                             } else {

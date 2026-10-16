@@ -53,7 +53,7 @@ class WhatsNewTest {
         compose.waitForIdle()
         compose.onNodeWithText("What's new in 0.3.10").assertExists()
         compose.onNodeWithText("In 0.3.9").assertExists()
-        compose.onNodeWithText("In 0.3.8").assertExists()
+        compose.onNodeWithText("Earlier · 0.3.8").assertExists()
     }
 
     @Test fun sheet() {
