@@ -1,0 +1,709 @@
+package com.opentune.ui.welcome
+
+import androidx.activity.compose.BackHandler
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.snap
+import androidx.compose.animation.core.spring
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.scaleOut
+import androidx.compose.animation.togetherWith
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxScope
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.aspectRatio
+import androidx.compose.foundation.layout.asPaddingValues
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.navigationBars
+import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBars
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.windowInsetsPadding
+import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.GridItemSpan
+import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Person
+import androidx.compose.material.icons.rounded.AccountCircle
+import androidx.compose.material.icons.rounded.Check
+import androidx.compose.material.icons.rounded.Close
+import androidx.compose.material.icons.rounded.Explore
+import androidx.compose.material.icons.rounded.Home
+import androidx.compose.material.icons.rounded.LibraryMusic
+import androidx.compose.material.icons.rounded.Podcasts
+import androidx.compose.material.icons.rounded.Search
+import androidx.compose.material.icons.outlined.Explore
+import androidx.compose.material.icons.outlined.Home
+import androidx.compose.material.icons.outlined.LibraryMusic
+import androidx.compose.material.icons.outlined.Podcasts
+import androidx.compose.material3.Button
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Surface
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.material3.TextField
+import androidx.compose.material3.TextFieldDefaults
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateListOf
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.produceState
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.listSaver
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshots.SnapshotStateList
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.role
+import androidx.compose.ui.semantics.selected
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.dp
+import com.opentune.data.ExploreFeed
+import com.opentune.data.MusicRepository
+import com.opentune.data.Welcome
+import com.opentune.data.account.AccountStore
+import com.opentune.data.model.BrowseType
+import com.opentune.data.model.SearchFilter
+import com.opentune.data.model.SearchResult
+import com.opentune.data.model.Song
+import com.opentune.data.model.artworkAt
+import com.opentune.data.releases.NewReleases
+import com.opentune.data.settings.AppSettings
+import com.opentune.data.settings.GlassStyle
+import com.opentune.data.settings.ThemeMode
+import com.opentune.ui.BottomChrome
+import com.opentune.ui.ChromeTab
+import com.opentune.ui.PageMotion
+import com.opentune.ui.ScreenCache
+import com.opentune.ui.account.LoginScreen
+import com.opentune.ui.components.Artwork
+import com.opentune.ui.components.GlassBackButton
+import com.opentune.ui.components.GlassPage
+import com.opentune.ui.components.PillSegmented
+import com.opentune.ui.components.glass
+import com.opentune.ui.components.pressable
+import com.opentune.ui.components.rememberHaptics
+import com.opentune.ui.player.MiniPlayer
+import java.util.Locale
+import kotlinx.coroutines.delay
+
+/** The welcome's steps, in order. */
+internal enum class WelcomeStep { ARTISTS, LOOK, SIGN_IN }
+
+/** Picking fewer than this many artists can only be skipped. */
+internal const val MIN_PICKS = 3
+
+/**
+ * The first-run welcome, shown once before Home on a fresh install (see
+ * [Welcome]): artists to follow, which seed Home's first picks and mixes;
+ * the theme and glass, with a live preview of the dock and mini player; and
+ * an optional YouTube Music sign-in. Back goes a step back. Every choice
+ * goes through the app's own settings, follows and sign-in, so the same
+ * things can be changed later in Settings.
+ */
+@Composable
+fun WelcomeScreen(
+    onDone: () -> Unit,
+    /** The starting grid: the charts' top artists for the phone's country, as Explore and Radio read it. */
+    loadPopular: suspend () -> List<ExploreFeed.Artist> = { MusicRepository.chartArtists(Locale.getDefault().country.takeIf { it.length == 2 }) },
+) {
+    val ui by AppSettings.ui.collectAsState()
+    val context = LocalContext.current
+    var step by rememberSaveable { mutableStateOf(WelcomeStep.ARTISTS) }
+    val picks = rememberSaveable(saver = ArtistListSaver) { mutableStateListOf() }
+    // Artists this welcome followed, so unpicking one after going back unfollows it again.
+    val followedHere = rememberSaveable(saver = idSetSaver) { mutableStateListOf() }
+    var signingIn by rememberSaveable { mutableStateOf(false) }
+    val askNotify = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { }
+
+    fun finish() {
+        Welcome.finish()
+        // Home was perhaps loaded before the picks (the welcome shown again): fetch it afresh.
+        ScreenCache.get("home")?.let { ScreenCache.put("home", it.first, at = 0L) }
+        onDone()
+    }
+
+    fun follow() {
+        val ids = picks.map { it.browseId }
+        followedHere.filter { it !in ids }.forEach { NewReleases.unfollow(context, it) }
+        followedHere.retainAll(ids)
+        // The last followed is the newest, and Home seeds from the newest first:
+        // followed in reverse, the first picked leads.
+        picks.asReversed().forEach { a ->
+            if (!NewReleases.isFollowed(a.browseId)) {
+                NewReleases.follow(context, a.browseId, a.name, a.thumbnailUrl)
+                followedHere += a.browseId
+            }
+        }
+        if (picks.isNotEmpty() && AppSettings.library.value.releaseAlerts && !NewReleases.canNotify(context)) {
+            askNotify.launch(android.Manifest.permission.POST_NOTIFICATIONS)
+        }
+    }
+
+    BackHandler(enabled = signingIn || step != WelcomeStep.ARTISTS) {
+        if (signingIn) signingIn = false else step = WelcomeStep.entries[step.ordinal - 1]
+    }
+
+    // The opening animation dives into the welcome, as it would into Home.
+    var opening by remember { mutableStateOf(!com.opentune.ui.components.Opening.played && ui.openingAnimation && !ui.reduceAnimation) }
+    var dive by remember { mutableFloatStateOf(if (opening) 0f else 1f) }
+    LaunchedEffect(Unit) { com.opentune.ui.components.Opening.played = true }
+
+    Box(
+        Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background).graphicsLayer {
+            if (dive < 1f) {
+                val s = 1.14f - 0.14f * (1f - (1f - dive) * (1f - dive))
+                scaleX = s
+                scaleY = s
+            }
+        },
+    ) {
+        GlassPage(
+            Modifier.fillMaxSize(),
+            overlay = {
+                WelcomeTopBar(
+                    step = step,
+                    onBack = { step = WelcomeStep.entries[step.ordinal - 1] },
+                    onSkip = { step = WelcomeStep.LOOK },
+                    reduceMotion = ui.reduceAnimation,
+                )
+                WelcomeBottomBar(
+                    step = step,
+                    picked = picks.size,
+                    onContinue = {
+                        when (step) {
+                            WelcomeStep.ARTISTS -> { follow(); step = WelcomeStep.LOOK }
+                            WelcomeStep.LOOK -> step = WelcomeStep.SIGN_IN
+                            WelcomeStep.SIGN_IN -> if (AccountStore.signedIn.value) finish() else signingIn = true
+                        }
+                    },
+                    onNotNow = ::finish,
+                )
+            },
+        ) {
+            AnimatedContent(
+                step,
+                transitionSpec = {
+                    val forward = targetState.ordinal > initialState.ordinal
+                    if (forward) PageMotion.enter(ui.pageTransition, ui.reduceAnimation) togetherWith PageMotion.exit(ui.pageTransition, ui.reduceAnimation)
+                    else PageMotion.popEnter(ui.pageTransition, ui.reduceAnimation) togetherWith PageMotion.popExit(ui.pageTransition, ui.reduceAnimation)
+                },
+                label = "welcomeStep",
+            ) { s ->
+                when (s) {
+                    WelcomeStep.ARTISTS -> ArtistsStep(picks, ui.reduceAnimation, loadPopular)
+                    WelcomeStep.LOOK -> LookStep(picks)
+                    WelcomeStep.SIGN_IN -> SignInStep()
+                }
+            }
+        }
+        if (signingIn) {
+            Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
+                // The app's own sign-in page. Its back arrow lands here too; a session means done.
+                LoginScreen(onDone = {
+                    signingIn = false
+                    if (AccountStore.signedIn.value) finish()
+                })
+            }
+        }
+    }
+    if (opening) {
+        com.opentune.ui.components.OpeningReveal(onDive = { dive = it }, onDone = { opening = false; dive = 1f })
+    }
+}
+
+/** Room the steps leave for the bars over them. */
+private val TOP_BAR = 72.dp
+private val BOTTOM_BAR = 112.dp
+
+@Composable
+private fun BoxScope.WelcomeTopBar(step: WelcomeStep, onBack: () -> Unit, onSkip: () -> Unit, reduceMotion: Boolean) {
+    Box(
+        Modifier.align(Alignment.TopCenter).fillMaxWidth()
+            .windowInsetsPadding(WindowInsets.statusBars)
+            .padding(horizontal = 16.dp, vertical = 8.dp)
+            .height(56.dp),
+    ) {
+        AnimatedVisibility(step != WelcomeStep.ARTISTS, Modifier.align(Alignment.CenterStart), enter = fadeIn(), exit = fadeOut()) {
+            GlassBackButton(onBack)
+        }
+        StepDots(step, reduceMotion, Modifier.align(Alignment.Center))
+        AnimatedVisibility(step == WelcomeStep.ARTISTS, Modifier.align(Alignment.CenterEnd), enter = fadeIn(), exit = fadeOut()) {
+            Surface(
+                onClick = onSkip,
+                shape = CircleShape,
+                color = Color.Transparent,
+                contentColor = MaterialTheme.colorScheme.onSurface,
+                modifier = Modifier.height(44.dp).glass(CircleShape),
+            ) {
+                Box(Modifier.padding(horizontal = 20.dp), contentAlignment = Alignment.Center) {
+                    Text("Skip", style = MaterialTheme.typography.labelLarge)
+                }
+            }
+        }
+    }
+}
+
+/** Three dots, the current step's drawn out into a short bar. */
+@Composable
+private fun StepDots(step: WelcomeStep, reduceMotion: Boolean, modifier: Modifier = Modifier) {
+    Row(
+        modifier.semantics(mergeDescendants = true) {
+            contentDescription = "Step ${step.ordinal + 1} of ${WelcomeStep.entries.size}"
+        },
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        WelcomeStep.entries.forEach { s ->
+            val current = s == step
+            val width by animateDpAsState(if (current) 22.dp else 7.dp, if (reduceMotion) snap() else spring(dampingRatio = 0.7f, stiffness = 500f), label = "dot")
+            val colour by animateColorAsState(
+                if (s.ordinal <= step.ordinal) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.22f),
+                label = "dotColour",
+            )
+            Box(Modifier.size(width = width, height = 7.dp).clip(CircleShape).background(colour))
+        }
+    }
+}
+
+@Composable
+private fun BoxScope.WelcomeBottomBar(step: WelcomeStep, picked: Int, onContinue: () -> Unit, onNotNow: () -> Unit) {
+    val signedIn by AccountStore.signedIn.collectAsState()
+    val page = MaterialTheme.colorScheme.background
+    Column(
+        Modifier.align(Alignment.BottomCenter).fillMaxWidth()
+            // The step's content fades out under the buttons rather than stopping at a line.
+            .background(Brush.verticalGradient(0f to Color.Transparent, 0.35f to page.copy(alpha = 0.88f), 1f to page))
+            .navigationBarsPadding()
+            .padding(start = 20.dp, end = 20.dp, top = 28.dp, bottom = 16.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
+        val label = when (step) {
+            WelcomeStep.ARTISTS -> if (picked >= MIN_PICKS) "Continue" else "Pick ${MIN_PICKS - picked} more"
+            WelcomeStep.LOOK -> "Continue"
+            WelcomeStep.SIGN_IN -> if (signedIn) "Start listening" else "Sign in to YouTube Music"
+        }
+        Button(
+            onClick = onContinue,
+            enabled = step != WelcomeStep.ARTISTS || picked >= MIN_PICKS,
+            shape = RoundedCornerShape(28.dp),
+            modifier = Modifier.fillMaxWidth().height(56.dp),
+        ) {
+            Text(label, style = MaterialTheme.typography.titleMedium)
+        }
+        if (step == WelcomeStep.SIGN_IN && !signedIn) {
+            TextButton(onClick = onNotNow, modifier = Modifier.padding(top = 4.dp).height(48.dp)) {
+                Text("Not now", style = MaterialTheme.typography.titleMedium)
+            }
+        }
+    }
+}
+
+/** A step's heading, under the top bar. */
+@Composable
+private fun StepTitle(title: String, line: String) {
+    Column(Modifier.padding(start = 24.dp, end = 24.dp, bottom = 16.dp)) {
+        Text(title, style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.SemiBold)
+        Text(line, style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = 6.dp))
+    }
+}
+
+@Composable
+private fun topInset() = WindowInsets.statusBars.asPaddingValues().calculateTopPadding() + TOP_BAR + 8.dp
+
+@Composable
+private fun bottomInset() = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding() + BOTTOM_BAR
+
+// ---- Step 1: artists ------------------------------------------------------
+
+@Composable
+private fun ArtistsStep(picks: SnapshotStateList<ExploreFeed.Artist>, reduceMotion: Boolean, loadPopular: suspend () -> List<ExploreFeed.Artist>) {
+    var query by rememberSaveable { mutableStateOf("") }
+    var attempt by remember { mutableIntStateOf(0) }
+    val popular by produceState<List<ExploreFeed.Artist>?>(null, attempt) {
+        value = null
+        value = runCatching { loadPopular() }.getOrDefault(emptyList())
+    }
+    var results by remember { mutableStateOf<List<ExploreFeed.Artist>?>(null) }
+    LaunchedEffect(query) {
+        val q = query.trim()
+        if (q.isEmpty()) { results = null; return@LaunchedEffect }
+        delay(350)
+        results = runCatching {
+            MusicRepository.search(q, SearchFilter.ARTISTS)
+                .mapNotNull { (it as? SearchResult.Browse)?.item?.takeIf { b -> b.type == BrowseType.ARTIST } }
+                .map { ExploreFeed.Artist(it.browseId, it.title, it.thumbnailUrl) }
+        }.getOrDefault(emptyList())
+    }
+    val haptics = rememberHaptics()
+    val searching = query.isNotBlank()
+    // Artists picked from a search stay in view, ahead of the popular ones.
+    val shown = when {
+        searching -> results
+        else -> popular?.let { list -> picks.filter { p -> list.none { it.browseId == p.browseId } } + list }
+    }
+
+    Column(Modifier.fillMaxSize().imePadding()) {
+        Spacer(Modifier.height(topInset()))
+        StepTitle("Pick a few artists you like", "Pick at least $MIN_PICKS. Home starts from them, and you'll hear when they release something new.")
+        TextField(
+            value = query,
+            onValueChange = { query = it },
+            singleLine = true,
+            placeholder = { Text("Search artists") },
+            leadingIcon = { Icon(Icons.Rounded.Search, null) },
+            trailingIcon = { if (query.isNotEmpty()) IconButton(onClick = { query = "" }) { Icon(Icons.Rounded.Close, "Clear") } },
+            shape = RoundedCornerShape(20.dp),
+            colors = TextFieldDefaults.colors(
+                focusedIndicatorColor = Color.Transparent,
+                unfocusedIndicatorColor = Color.Transparent,
+                focusedContainerColor = MaterialTheme.colorScheme.surfaceContainer,
+                unfocusedContainerColor = MaterialTheme.colorScheme.surfaceContainer,
+            ),
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp),
+        )
+        LazyVerticalGrid(
+            columns = GridCells.Adaptive(104.dp),
+            contentPadding = PaddingValues(start = 12.dp, end = 12.dp, top = 12.dp, bottom = bottomInset() + 12.dp),
+            modifier = Modifier.fillMaxSize(),
+        ) {
+            when {
+                shown == null -> items(12, key = { "placeholder$it" }) { ArtistPlaceholder() }
+                shown.isEmpty() -> item(span = { GridItemSpan(maxLineSpan) }, key = "empty") {
+                    Column(Modifier.fillMaxWidth().padding(24.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                        Text(
+                            if (searching) "No artists found for \"${query.trim()}\"." else "Couldn't load popular artists. Search for any artist above.",
+                            style = MaterialTheme.typography.bodyLarge,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            textAlign = TextAlign.Center,
+                        )
+                        if (!searching) TextButton(onClick = { attempt++ }) { Text("Try again") }
+                    }
+                }
+                else -> items(shown, key = { it.browseId }) { artist ->
+                    val selected = picks.any { it.browseId == artist.browseId }
+                    ArtistChoice(artist, selected, reduceMotion) {
+                        haptics.tick()
+                        if (selected) picks.removeAll { it.browseId == artist.browseId } else picks += artist
+                    }
+                }
+            }
+        }
+    }
+}
+
+/** A round photo and a name; picked, it eases back a little behind a ring and a check. */
+@Composable
+private fun ArtistChoice(artist: ExploreFeed.Artist, selected: Boolean, reduceMotion: Boolean, onClick: () -> Unit) {
+    val scale by animateFloatAsState(
+        if (selected) 0.9f else 1f,
+        if (reduceMotion) snap() else spring(dampingRatio = 0.55f, stiffness = 420f),
+        label = "pick",
+    )
+    val ring by animateColorAsState(if (selected) MaterialTheme.colorScheme.primary else Color.Transparent, label = "ring")
+    Column(
+        Modifier
+            .padding(horizontal = 6.dp, vertical = 8.dp)
+            .pressable(onClick)
+            .semantics {
+                this.selected = selected
+                role = Role.Checkbox
+            },
+        horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
+        Box(Modifier.fillMaxWidth().aspectRatio(1f)) {
+            Box(
+                Modifier.fillMaxSize().border(3.dp, ring, CircleShape).padding(6.dp)
+                    .graphicsLayer { scaleX = scale; scaleY = scale }
+                    .clip(CircleShape)
+                    .background(MaterialTheme.colorScheme.primaryContainer),
+                contentAlignment = Alignment.Center,
+            ) {
+                Text(
+                    artist.name.take(1).uppercase(),
+                    style = MaterialTheme.typography.headlineSmall,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onPrimaryContainer,
+                )
+                if (artist.thumbnailUrl != null) {
+                    Artwork(artist.thumbnailUrl.artworkAt(240), Modifier.matchParentSize(), CircleShape, placeholder = Icons.Filled.Person)
+                }
+            }
+            androidx.compose.animation.AnimatedVisibility(
+                visible = selected,
+                modifier = Modifier.align(Alignment.BottomEnd),
+                enter = if (reduceMotion) fadeIn(snap()) else scaleIn(spring(dampingRatio = 0.5f, stiffness = 500f)) + fadeIn(),
+                exit = if (reduceMotion) fadeOut(snap()) else scaleOut() + fadeOut(),
+            ) {
+                Box(
+                    Modifier.size(28.dp).border(2.dp, MaterialTheme.colorScheme.background, CircleShape)
+                        .clip(CircleShape).background(MaterialTheme.colorScheme.primary),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Icon(Icons.Rounded.Check, null, Modifier.size(18.dp), tint = MaterialTheme.colorScheme.onPrimary)
+                }
+            }
+        }
+        Text(
+            artist.name,
+            style = MaterialTheme.typography.labelLarge,
+            fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Medium,
+            textAlign = TextAlign.Center,
+            maxLines = 2,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.padding(top = 6.dp),
+        )
+    }
+}
+
+@Composable
+private fun ArtistPlaceholder() {
+    Column(Modifier.padding(horizontal = 6.dp, vertical = 8.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+        Box(Modifier.fillMaxWidth().aspectRatio(1f).padding(6.dp).clip(CircleShape).background(MaterialTheme.colorScheme.surfaceContainerHigh))
+        Box(Modifier.padding(top = 10.dp).size(width = 64.dp, height = 12.dp).clip(CircleShape).background(MaterialTheme.colorScheme.surfaceContainerHigh))
+    }
+}
+
+// ---- Step 2: look ---------------------------------------------------------
+
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun LookStep(picks: List<ExploreFeed.Artist>) {
+    val theme by AppSettings.theme.collectAsState()
+    val ui by AppSettings.ui.collectAsState()
+    Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
+        Spacer(Modifier.height(topInset()))
+        StepTitle("Make it yours", "Change these any time in Settings › Look and feel.")
+        LookPreview(picks, Modifier.padding(horizontal = 16.dp))
+        Label("Theme")
+        PillSegmented(
+            ThemeMode.entries,
+            theme.mode,
+            { it.label },
+            { m -> AppSettings.updateTheme { it.copy(mode = m) } },
+            Modifier.padding(horizontal = 16.dp),
+        )
+        Label("Glass")
+        FlowRow(
+            Modifier.padding(horizontal = 16.dp),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            GlassStyle.entries.forEach { g ->
+                ChoicePill(g.label, g == ui.glassStyle) { AppSettings.updateUi { it.copy(glassStyle = g) } }
+            }
+        }
+        Text(
+            ui.glassStyle.summary,
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.padding(start = 20.dp, end = 20.dp, top = 12.dp),
+        )
+        Spacer(Modifier.height(bottomInset() + 16.dp))
+    }
+}
+
+@Composable
+private fun Label(text: String) {
+    Text(
+        text,
+        style = MaterialTheme.typography.titleSmall,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        modifier = Modifier.padding(start = 20.dp, end = 20.dp, top = 24.dp, bottom = 10.dp),
+    )
+}
+
+@Composable
+private fun ChoicePill(label: String, selected: Boolean, onClick: () -> Unit) {
+    val bg by animateColorAsState(if (selected) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.surfaceContainerHigh, label = "pillBg")
+    val fg by animateColorAsState(if (selected) MaterialTheme.colorScheme.surface else MaterialTheme.colorScheme.onSurface, label = "pillFg")
+    Box(
+        Modifier.height(44.dp).clip(CircleShape).background(bg)
+            .clickable(onClick = onClick)
+            .semantics { this.selected = selected; role = Role.RadioButton }
+            .padding(horizontal = 18.dp),
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(label, style = MaterialTheme.typography.labelLarge, color = fg)
+    }
+}
+
+private val previewTabs = listOf(
+    ChromeTab("Home", Icons.Outlined.Home, Icons.Rounded.Home),
+    ChromeTab("Explore", Icons.Outlined.Explore, Icons.Rounded.Explore),
+    ChromeTab("Podcasts", Icons.Outlined.Podcasts, Icons.Rounded.Podcasts),
+    ChromeTab("Library", Icons.Outlined.LibraryMusic, Icons.Rounded.LibraryMusic),
+)
+
+/**
+ * The real dock and mini player, over a small page of the picked artists,
+ * redrawn as the theme and glass change. The tabs can be tapped.
+ */
+@Composable
+internal fun LookPreview(picks: List<ExploreFeed.Artist>, modifier: Modifier = Modifier) {
+    val ui by AppSettings.ui.collectAsState()
+    var tab by remember { mutableIntStateOf(0) }
+    val lead = picks.firstOrNull()
+    val song = remember(lead) {
+        Song(
+            videoId = "welcome-preview",
+            title = lead?.let { "${it.name} mix" } ?: "Your first song",
+            artist = picks.take(3).joinToString(", ") { it.name }.ifEmpty { "OpenTune" },
+            thumbnailUrl = lead?.thumbnailUrl.artworkAt(240),
+        )
+    }
+    val scheme = MaterialTheme.colorScheme
+    GlassPage(
+        modifier.fillMaxWidth().height(300.dp).clip(RoundedCornerShape(32.dp))
+            .border(1.dp, scheme.onSurface.copy(alpha = 0.08f), RoundedCornerShape(32.dp)),
+        overlay = {
+            BottomChrome(
+                inline = false,
+                tabs = previewTabs,
+                selected = tab,
+                onSelect = { tab = it },
+                onExpand = {},
+                searchSelected = false,
+                onSearch = {},
+                mini = { folded, m ->
+                    MiniPlayer(
+                        song = song,
+                        isPlaying = true,
+                        isBuffering = false,
+                        hasNext = true,
+                        progress = { 0.35f },
+                        onTogglePlay = {},
+                        onNext = {},
+                        onPrevious = {},
+                        onClick = {},
+                        modifier = m,
+                        inline = folded,
+                    )
+                },
+                modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 12.dp),
+                motion = ui.dockMotion,
+                lens = ui.dockLens,
+                reduceMotion = ui.reduceAnimation,
+            )
+        },
+    ) {
+        // Colour and faces for the glass to sit on: the accent washing in from
+        // one corner, the picked artists across the top and a large photo
+        // running under the dock, so frost and refraction both show.
+        Box(
+            Modifier.fillMaxSize().background(
+                Brush.linearGradient(listOf(scheme.primaryContainer, scheme.background, scheme.tertiaryContainer)),
+            ),
+        )
+        Column(Modifier.fillMaxSize().padding(20.dp)) {
+            Text("Home", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.SemiBold)
+            Row(Modifier.padding(top = 12.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                val faces = picks.take(4)
+                if (faces.isEmpty()) {
+                    repeat(4) { Box(Modifier.size(56.dp).clip(CircleShape).background(scheme.primary.copy(alpha = 0.25f + 0.15f * it))) }
+                } else {
+                    faces.forEach { Artwork(it.thumbnailUrl.artworkAt(160), Modifier.size(56.dp), CircleShape, placeholder = Icons.Filled.Person) }
+                }
+            }
+            Row(Modifier.padding(top = 16.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                listOf(scheme.primary, scheme.tertiary, scheme.secondary).forEachIndexed { i, colour ->
+                    val photo = picks.getOrNull(i + 1)?.thumbnailUrl ?: lead?.thumbnailUrl
+                    Box(Modifier.width(120.dp).height(140.dp).clip(RoundedCornerShape(20.dp)).background(colour.copy(alpha = 0.45f))) {
+                        if (photo != null) Artwork(photo.artworkAt(320), Modifier.matchParentSize(), RoundedCornerShape(20.dp))
+                    }
+                }
+            }
+        }
+    }
+}
+
+// ---- Step 3: sign in ------------------------------------------------------
+
+@Composable
+private fun SignInStep() {
+    val signedIn by AccountStore.signedIn.collectAsState()
+    val account by AccountStore.account.collectAsState()
+    Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
+        Spacer(Modifier.height(topInset()))
+        StepTitle(
+            "Sign in",
+            if (signedIn) "You're signed in${account?.name?.let { " as $it" }.orEmpty()}. Your playlists and liked songs are in Library."
+            else "Sign in to YouTube Music to bring your playlists, liked songs and recommendations. It's optional, and you can do it later in Settings › Account.",
+        )
+        Box(Modifier.fillMaxWidth().padding(top = 24.dp), contentAlignment = Alignment.Center) {
+            Box(Modifier.size(132.dp).clip(CircleShape).glass(CircleShape), contentAlignment = Alignment.Center) {
+                val photo = account?.thumbnailUrl
+                if (signedIn && photo != null) Artwork(photo, Modifier.size(132.dp), CircleShape)
+                else Icon(Icons.Rounded.AccountCircle, null, Modifier.size(72.dp), tint = MaterialTheme.colorScheme.primary)
+            }
+        }
+        Column(Modifier.padding(start = 24.dp, end = 24.dp, top = 28.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            listOf(
+                "Your YouTube Music playlists and likes in Library",
+                "Home's recommendations from your account",
+                "Your sign-in stays on this phone; the password goes only to Google",
+            ).forEach { line ->
+                Row(verticalAlignment = Alignment.Top, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Icon(Icons.Rounded.Check, null, Modifier.size(20.dp).padding(top = 2.dp), tint = MaterialTheme.colorScheme.primary)
+                    Text(line, style = MaterialTheme.typography.bodyLarge)
+                }
+            }
+        }
+        Spacer(Modifier.height(bottomInset() + 56.dp))
+    }
+}
+
+/** Picks kept across rotation and process death, as id, name and photo. */
+private val ArtistListSaver = listSaver<SnapshotStateList<ExploreFeed.Artist>, String?>(
+    save = { list -> list.flatMap { listOf(it.browseId, it.name, it.thumbnailUrl) } },
+    restore = { flat -> mutableStateListOf(*flat.chunked(3).map { ExploreFeed.Artist(it[0]!!, it[1]!!, it[2]) }.toTypedArray()) },
+)
+
+private val idSetSaver = listSaver<SnapshotStateList<String>, String>(
+    save = { it.toList() },
+    restore = { mutableStateListOf(*it.toTypedArray()) },
+)

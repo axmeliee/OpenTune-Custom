@@ -99,5 +99,7 @@ class OpenTuneApp : Application(), SingletonImageLoader.Factory {
         InnerTubeXResolver.init(this)
         // Last session's Home, shown at once and refreshed in the background.
         MusicRepository.init(this)?.let { ScreenCache.put("home", it, at = 0L) }
+        // After history, library, downloads and account: they tell an existing user from a new one.
+        com.opentune.data.Welcome.settle(this)
     }
 }

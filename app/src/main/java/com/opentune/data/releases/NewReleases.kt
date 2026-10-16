@@ -85,8 +85,19 @@ object NewReleases {
      * only releases after today are announced.
      */
     fun follow(context: Context, browseId: String, page: ArtistPage) {
-        val artist = Followed(browseId, page.name ?: "Artist", page.thumbnailUrl, releasesOf(page).mapTo(HashSet()) { it.browseId!! })
-        _followed.value = listOf(artist) + _followed.value.filterNot { it.browseId == browseId }
+        add(context, Followed(browseId, page.name ?: "Artist", page.thumbnailUrl, releasesOf(page).mapTo(HashSet()) { it.browseId!! }))
+    }
+
+    /**
+     * Follows an artist known only by name and photo, as the welcome's picks
+     * are. With nothing seen yet, the first check takes what's out as seen
+     * (see [diff]), so nothing old is announced.
+     */
+    fun follow(context: Context, browseId: String, name: String, thumbnailUrl: String?) =
+        add(context, Followed(browseId, name, thumbnailUrl))
+
+    private fun add(context: Context, artist: Followed) {
+        _followed.value = listOf(artist) + _followed.value.filterNot { it.browseId == artist.browseId }
         save()
         schedule(context)
     }

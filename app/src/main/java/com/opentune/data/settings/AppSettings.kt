@@ -374,7 +374,23 @@ data class InterfaceSettings(
     val playerMotion: PlayerMotion = PlayerMotion.SPRING,
     /** How the player's cover gives way to the next song's. */
     val coverChange: CoverChange = CoverChange.FADE,
+    /** The first-run welcome: whether it's still to be shown. See [com.opentune.data.Welcome]. */
+    val welcome: WelcomeState = WelcomeState.UNDECIDED,
 )
+
+/**
+ * Where the first-run welcome stands. Settings saved before it existed read
+ * back as [UNDECIDED], like a fresh install's, and the first start after
+ * that decides once which of the other two it is.
+ */
+@Serializable
+enum class WelcomeState {
+    UNDECIDED,
+    /** To be shown: a fresh install, or "Show the welcome again". */
+    DUE,
+    /** Seen, skipped, or not needed because the app was already in use. */
+    SEEN,
+}
 
 /** How the cover changes when the song does. */
 @Serializable

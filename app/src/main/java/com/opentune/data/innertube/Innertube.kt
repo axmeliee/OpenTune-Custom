@@ -537,6 +537,20 @@ object Innertube {
         }
 
     /**
+     * The charts page for [country], an ISO 3166 code such as "IN", picked
+     * the way the page's own country menu does it. A country YouTube has no
+     * charts for gets the global ones; null gets the default (this client's
+     * region, the US).
+     */
+    suspend fun charts(country: String?): JsonObject =
+        postMusic("browse") {
+            put("browseId", "FEmusic_charts")
+            country?.let { c ->
+                putJsonObject("formData") { putJsonArray("selectedValues") { add(c) } }
+            }
+        }
+
+    /**
      * The next page of a paged browse response — playlists and library feeds
      * come back roughly 100 rows at a time. YouTube Music takes the token as
      * query parameters rather than in the body, and answers with a bare

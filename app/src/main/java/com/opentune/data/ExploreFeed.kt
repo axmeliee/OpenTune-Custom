@@ -37,8 +37,7 @@ object ExploreFeed {
         val charts = async { runCatching { MusicRepository.shelves("FEmusic_charts", null) }.getOrDefault(emptyList()) }
 
         val chartShelves = charts.await()
-        val chartArtists = chartShelves.flatMap { it.items }.filter { it.browseId?.startsWith("UC") == true }
-            .map { Artist(it.browseId!!, it.title, it.thumbnailUrl) }
+        val chartArtists = artistsOf(chartShelves)
         val mine = run {
             val since = System.currentTimeMillis() - 90L * 24 * 60 * 60 * 1000
             History.replay(History.records.value, since).topArtists.take(8).mapNotNull { e ->
@@ -60,6 +59,12 @@ object ExploreFeed {
         }
         Canvas(artists, weave(listOf(moodTiles, newTiles, chartTiles)).distinctBy { it.key })
     }
+
+    /** The artists on a page's shelves (the charts' "Top artists"), each once, in order. */
+    internal fun artistsOf(shelves: List<com.opentune.data.model.HomeShelf>): List<Artist> =
+        shelves.flatMap { it.items }.filter { it.browseId?.startsWith("UC") == true }
+            .map { Artist(it.browseId!!, it.title, it.thumbnailUrl) }
+            .distinctBy { it.browseId }
 
     /**
      * Takes from each list in turn, so the board mixes them instead of

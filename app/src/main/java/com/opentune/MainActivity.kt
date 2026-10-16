@@ -15,8 +15,11 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.ui.Modifier
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.opentune.data.account.AccountStore
+import androidx.compose.animation.togetherWith
 import com.opentune.data.settings.AppSettings
+import com.opentune.data.settings.WelcomeState
 import com.opentune.ui.AppRoot
+import com.opentune.ui.welcome.WelcomeScreen
 import com.opentune.ui.Links
 import com.opentune.ui.PlayerViewModel
 import com.opentune.ui.theme.OpenTuneTheme
@@ -35,7 +38,23 @@ class MainActivity : ComponentActivity() {
             val song by vm.currentSong.collectAsState()
             OpenTuneTheme(theme, artworkSeed = rememberArtworkSeed(song?.thumbnailUrl)) {
                 Surface(modifier = Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
-                    AppRoot(vm)
+                    // A fresh install's welcome comes first; Home, built after it, starts from the picks.
+                    androidx.compose.animation.AnimatedContent(
+                        ui.welcome == WelcomeState.DUE,
+                        transitionSpec = {
+                            if (ui.reduceAnimation) {
+                                androidx.compose.animation.fadeIn(androidx.compose.animation.core.tween(160)) togetherWith
+                                    androidx.compose.animation.fadeOut(androidx.compose.animation.core.tween(120))
+                            } else {
+                                (androidx.compose.animation.fadeIn(androidx.compose.animation.core.tween(320, delayMillis = 80)) +
+                                    androidx.compose.animation.scaleIn(androidx.compose.animation.core.tween(420), initialScale = 0.96f)) togetherWith
+                                    androidx.compose.animation.fadeOut(androidx.compose.animation.core.tween(200))
+                            }
+                        },
+                        label = "welcome",
+                    ) { welcome ->
+                        if (welcome) WelcomeScreen(onDone = {}) else AppRoot(vm)
+                    }
                 }
             }
         }

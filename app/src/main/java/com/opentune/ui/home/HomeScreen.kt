@@ -109,7 +109,16 @@ fun HomeScreen(
     val first = (state as? UiState.Success<List<HomeShelf>>)?.data?.let { hidden.shelves(ContentFilter.shelves(it, hideExplicit)) }.orEmpty()
     val allShelves = first + more
     val feed = remember(allShelves) { arrangeHomeShelves(allShelves) }
-    val mixes = remember(records, hidden) { com.opentune.data.history.DailyMixes.build(records, hidden = hidden) }
+    // With little history, mixes from the followed artists fill in (see HomeSeed);
+    // what the user hid stays out of both.
+    val seedsAll by MusicRepository.seeds.collectAsState()
+    val seeds = remember(seedsAll, hidden) {
+        seedsAll.filterNot { hidden.hidesArtist(it.name, it.browseId) }
+            .map { it.copy(top = hidden.songs(it.top), radio = hidden.songs(it.radio)) }
+    }
+    val mixes = remember(records, seeds, hidden) {
+        com.opentune.data.reco.HomeSeed.mixes(com.opentune.data.history.DailyMixes.build(records, hidden = hidden), seeds, records.size)
+    }
     val ui by AppSettings.ui.collectAsState()
     val signedIn by AccountStore.signedIn.collectAsState()
     val account by AccountStore.account.collectAsState()
@@ -190,7 +199,11 @@ fun HomeScreen(
                 else SectionHeader("Quick picks", action = historyAction)
             }
             if (mixes.isNotEmpty()) {
-                item(key = "mixes") { MixesShelf(mixes, actions) }
+                item(key = "mixes") {
+                    // Before any listening, every mix comes from the followed artists.
+                    val seededOnly = mixes.all { it.id.startsWith("seed:") }
+                    MixesShelf(mixes, actions, if (seededOnly) "From the artists you follow, until you've played more" else MIXES_LINE)
+                }
             }
             when (val s = state) {
                 is UiState.Loading -> items(3) { ShelfPlaceholder() }
@@ -271,11 +284,16 @@ private fun HomeShelf.isQuickPicks(): Boolean =
 /** Home uses a single paged track list followed by collection and track cards. */
 internal data class HomeSections(val quickPicks: HomeShelf?, val cards: List<HomeShelf>)
 
-/** One track list, then collections and varied card shelves. Keep every recommendation. */
+/**
+ * One track list, then collections and varied card shelves. Keep every recommendation.
+ * The picks are the followed artists' seed while there's little history (it's
+ * only made then), else the radio off the last song, else the first songs shelf.
+ */
 internal fun arrangeHomeShelves(shelves: List<HomeShelf>): HomeSections {
     val available = shelves.filter { it.items.isNotEmpty() }
-    val pickIndex = available.indexOfFirst { it.isQuickPicks() && it.title.startsWith("Because you played", ignoreCase = true) }
-        .takeIf { it >= 0 } ?: available.indexOfFirst { it.isQuickPicks() }
+    val pickIndex = listOf(com.opentune.data.reco.HomeSeed.TITLE_PREFIX, "Because you played").firstNotNullOfOrNull { prefix ->
+        available.indexOfFirst { it.isQuickPicks() && it.title.startsWith(prefix, ignoreCase = true) }.takeIf { it >= 0 }
+    } ?: available.indexOfFirst { it.isQuickPicks() }
     val remaining = available.filterIndexed { index, _ -> index != pickIndex }
     val (collections, tracks) = remaining.partition { shelf -> shelf.items.any { it.browseId != null } }
     // Playlist/mix collections first, retaining the provider's order within each kind.
@@ -356,9 +374,11 @@ private fun QuickPicks(shelf: HomeShelf, onItemClick: (ShelfItem) -> Unit, actio
     }
 }
 
+private const val MIXES_LINE = "Daily mixes from what you play, new each day"
+
 /** Today's mixes from this phone's listening, each a card of four covers. */
 @Composable
-internal fun MixesShelf(mixes: List<com.opentune.data.history.DailyMixes.Mix>, actions: SongActions) {
+internal fun MixesShelf(mixes: List<com.opentune.data.history.DailyMixes.Mix>, actions: SongActions, line: String = MIXES_LINE) {
     Column(Modifier.padding(top = 18.dp)) {
         Text(
             "Made for you today",
@@ -367,7 +387,7 @@ internal fun MixesShelf(mixes: List<com.opentune.data.history.DailyMixes.Mix>, a
             modifier = Modifier.padding(horizontal = 20.dp),
         )
         Text(
-            "Daily mixes from what you play, new each day",
+            line,
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier.padding(horizontal = 20.dp),
