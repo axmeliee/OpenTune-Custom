@@ -46,6 +46,7 @@ internal val SETTINGS_CATEGORIES = listOf(
             "Between songs" to listOf("Crossfade", "Skip silence", "Preload upcoming songs"),
             "Autoplay" to listOf("Autoplay", "Recommendations", "Don't repeat songs in current session"),
             "Headphones and devices" to listOf("Resume when headphones connect", "Pause at zero volume", "Background playback", "Stop music on close from recents"),
+            "Notification" to listOf("Show in the status bar"),
             "Music videos" to listOf("SponsorBlock", "SponsorBlock categories"),
         ),
     ),

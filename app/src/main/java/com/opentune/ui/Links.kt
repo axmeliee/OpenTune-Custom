@@ -20,6 +20,8 @@ sealed interface LinkTarget {
     data class Together(val code: String) : LinkTarget
     /** From the widget or Quick Settings tile: start listening for a song nearby. */
     data object Recognize : LinkTarget
+    /** From the Live Update: open the player. */
+    data object Player : LinkTarget
 }
 
 /**
@@ -29,6 +31,9 @@ sealed interface LinkTarget {
 object Links {
     private val HOSTS = setOf("music.youtube.com", "www.youtube.com", "youtube.com", "m.youtube.com", "youtu.be")
     private val ID = Regex("[A-Za-z0-9_-]+")
+
+    /** Opens the app with the player up, as tapping the Live Update does. */
+    const val ACTION_OPEN_PLAYER = "com.opentune.action.OPEN_PLAYER"
 
     fun parse(text: String?): LinkTarget? {
         val raw = text?.let { Regex("""https?://\S+""").find(it)?.value } ?: return null
@@ -64,6 +69,10 @@ object Links {
         intent ?: return
         if (intent.action == com.opentune.widget.RecognizeLaunch.ACTION) {
             _incoming.value = LinkTarget.Recognize
+            return
+        }
+        if (intent.action == ACTION_OPEN_PLAYER) {
+            _incoming.value = LinkTarget.Player
             return
         }
         if (intent.action == MediaStore.INTENT_ACTION_MEDIA_PLAY_FROM_SEARCH) {

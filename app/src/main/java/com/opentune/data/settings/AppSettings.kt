@@ -292,6 +292,8 @@ data class PlaybackSettings(
     val resumeOnConnect: Boolean = false,
     /** Pause when the media volume is turned all the way down, and resume when it comes back up. */
     val pauseAtZeroVolume: Boolean = false,
+    /** The playing song as a Live Update in the status bar (Android 16 and newer). */
+    val liveUpdate: Boolean = true,
     /** Skip the non-music parts of music videos, from SponsorBlock. */
     val sponsorBlock: Boolean = true,
     /** SponsorBlock categories to skip, by API name. */

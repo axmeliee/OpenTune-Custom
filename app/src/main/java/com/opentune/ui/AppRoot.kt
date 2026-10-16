@@ -293,6 +293,7 @@ fun AppRoot(vm: PlayerViewModel) {
             is LinkTarget.SpotifyImport -> nav.navigate("import?link=${Uri.encode(link.text)}")
             is LinkTarget.Together -> { playerOpen = false; nav.navigate("together?code=${link.code}") }
             is LinkTarget.Recognize -> { playerOpen = false; nav.navigate("recognize?listen=true") { launchSingleTop = true } }
+            is LinkTarget.Player -> playerOpen = true
             is LinkTarget.PlaySearch -> {
                 vm.player.connected.first { it }
                 if (link.query.isBlank()) {

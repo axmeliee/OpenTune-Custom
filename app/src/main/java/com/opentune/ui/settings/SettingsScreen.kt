@@ -84,6 +84,7 @@ import androidx.compose.material.icons.rounded.Favorite
 import androidx.compose.material.icons.rounded.Star
 import androidx.compose.material.icons.rounded.SystemUpdate
 import androidx.compose.material.icons.rounded.TextFields
+import androidx.compose.material.icons.rounded.Timer
 import androidx.compose.material.icons.rounded.Upload
 import androidx.compose.material.icons.rounded.Usb
 import androidx.compose.material.icons.rounded.Vibration
@@ -119,6 +120,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.core.net.toUri
+import androidx.lifecycle.compose.LifecycleResumeEffect
 import coil3.SingletonImageLoader
 import com.opentune.BuildConfig
 import com.opentune.data.LogExport
@@ -155,6 +157,9 @@ import com.opentune.data.sponsorblock.SponsorBlock
 import com.opentune.data.subsonic.Subsonic
 import com.opentune.playback.AudioCache
 import com.opentune.playback.BitPerfectUsb
+import com.opentune.playback.LiveUpdateAccess
+import com.opentune.playback.LiveUpdateRules
+import com.opentune.ui.components.AppSwitch
 import com.opentune.ui.components.Artwork
 import com.opentune.ui.components.ChoiceSheet
 import com.opentune.ui.components.FloatingDialog
@@ -779,6 +784,10 @@ private fun settingsSections(
                 Entry("Stop music on close from recents", "swipe away") {
                     ToggleRow("Stop music on close from recents", pb.stopOnTaskRemoved, { v -> AppSettings.updatePlayback { it.copy(stopOnTaskRemoved = v) } }, summary = "Stops playback when swiped away from recent apps", icon = Icons.Rounded.MusicOff)
                 },
+                // Live Updates only exist on Android 16 and newer.
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.BAKLAVA) Entry("Show in the status bar", "live update now bar status bar chip lock screen notification time left") {
+                    LiveUpdateRow(pb.liveUpdate)
+                } else null,
             ),
         ),
         Section(
@@ -1285,3 +1294,30 @@ private fun outputSummary(context: Context, float: Boolean): String {
 
 private fun formatMb(mb: Int): String = if (mb >= 1024) "%.1f GB".format(mb / 1024f) else "$mb MB"
 
+/**
+ * "Show in the status bar". When Android won't show the Live Update (its
+ * notifications, its channel or Live Updates turned off for the app), the
+ * summary says so and tapping the row opens the system page that fixes it;
+ * the switch itself still turns the feature off. Read again on return, as
+ * the fix is made in Android's settings.
+ */
+@Composable
+private fun LiveUpdateRow(on: Boolean) {
+    val context = LocalContext.current
+    val declined by LiveUpdateAccess.declined.collectAsState()
+    var access by remember { mutableStateOf(LiveUpdateAccess.state(context)) }
+    LifecycleResumeEffect(declined) {
+        access = LiveUpdateAccess.state(context)
+        onPauseOrDispose { }
+    }
+    val shown = if (on) access else LiveUpdateRules.Access.READY
+    val fix = LiveUpdateAccess.fixIntent(context, shown)
+    val set = { v: Boolean -> AppSettings.updatePlayback { it.copy(liveUpdate = v) } }
+    SettingRow(
+        "Show in the status bar",
+        summary = LiveUpdateRules.summary(shown),
+        icon = Icons.Rounded.Timer,
+        onClick = { if (fix != null) runCatching { context.startActivity(fix) } else set(!on) },
+        trailing = { AppSwitch(on, set) },
+    )
+}

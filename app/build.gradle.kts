@@ -86,6 +86,9 @@ android {
         unitTests.isReturnDefaultValues = true
         // Robolectric tests (the media library) read the merged manifest and resources.
         unitTests.isIncludeAndroidResources = true
+        // Robolectric's Android 16 (SDK 36) runtime, which the Live Update test needs, sets up
+        // shared memory through JDK internals that JDK 17 and newer close off by default.
+        unitTests.all { it.jvmArgs("--add-opens=java.base/jdk.internal.access=ALL-UNNAMED") }
     }
 }
 
