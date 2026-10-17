@@ -1189,6 +1189,30 @@ object Innertube {
         }
     }
 
+    suspend fun setPlaylistPrivacy(playlistId: String, privacy: PlaylistPrivacy) {
+        editPlaylist(playlistId) {
+            addJsonObject {
+                put("action", "ACTION_SET_PLAYLIST_PRIVACY")
+                put("playlistPrivacy", privacy.apiValue)
+            }
+        }
+    }
+
+    /**
+     * Moves one entry so it sits just before [successorSetVideoId], or to the
+     * end when that is null. Both are set-video-ids, for the same reason
+     * [removeFromPlaylist] takes them: a video id doesn't say which copy.
+     */
+    suspend fun movePlaylistItem(playlistId: String, setVideoId: String, successorSetVideoId: String?) {
+        editPlaylist(playlistId) {
+            addJsonObject {
+                put("action", "ACTION_MOVE_VIDEO_BEFORE")
+                put("setVideoId", setVideoId)
+                successorSetVideoId?.let { put("movedSetVideoIdSuccessor", it) }
+            }
+        }
+    }
+
     /** A fresh client-playback-nonce, identifying one play of one track. */
     fun newCpn(): String = (1..16).map { CPN_ALPHABET.random() }.joinToString("")
 

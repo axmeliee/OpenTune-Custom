@@ -25,6 +25,7 @@ import androidx.compose.material.icons.rounded.KeyboardArrowUp
 import androidx.compose.material.icons.rounded.KeyboardArrowDown
 import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.Close
+import androidx.compose.material.icons.rounded.CloudUpload
 import androidx.compose.material.icons.rounded.DeleteOutline
 import androidx.compose.material.icons.rounded.Dns
 import androidx.compose.material.icons.rounded.Download
@@ -35,6 +36,7 @@ import androidx.compose.material.icons.rounded.Groups
 import androidx.compose.material.icons.rounded.History
 import androidx.compose.material.icons.rounded.LibraryMusic
 import androidx.compose.material.icons.rounded.Radio
+import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material.icons.rounded.Settings
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -48,6 +50,7 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -66,25 +69,33 @@ import com.opentune.data.download.DownloadState
 import com.opentune.data.download.Downloads
 import com.opentune.data.history.History
 import com.opentune.data.library.LibraryStore
+import com.opentune.data.library.PlaylistLinks
+import com.opentune.data.library.PlaylistSync
 import com.opentune.data.model.CARD_ART_PX
+import com.opentune.data.model.PlaylistPrivacy
 import com.opentune.data.model.ShelfItem
 import com.opentune.data.model.artworkAt
 import com.opentune.data.model.HEADER_ART_PX
 import com.opentune.data.subsonic.Subsonic
 import com.opentune.ui.ScreenCache
 import com.opentune.ui.browse.SongActions
+import com.opentune.ui.components.AccountCopyOptions
 import com.opentune.ui.components.Artwork
 import com.opentune.ui.components.FloatingDialog
 import com.opentune.ui.components.GlassIconButton
 import com.opentune.ui.components.MessageState
 import com.opentune.ui.components.PageHeader
+import com.opentune.ui.components.PrivacySheet
+import com.opentune.ui.components.PrivateShareDialog
 import com.opentune.ui.components.SectionHeader
 import com.opentune.ui.components.SheetButton
 import com.opentune.ui.components.SheetTone
 import com.opentune.ui.components.SongListItem
+import com.opentune.ui.components.meaning
 import com.opentune.ui.components.pressable
 import java.util.Calendar
 import java.util.concurrent.TimeUnit
+import kotlinx.coroutines.launch
 
 /** Where Library's tiles lead. */
 class LibraryNav(
@@ -133,15 +144,37 @@ fun LibraryScreen(contentPadding: PaddingValues, actions: SongActions, nav: Libr
     val year = remember { Calendar.getInstance().get(Calendar.YEAR) }
     val summary = remember(records) { History.replay(records, yearStart) }
     val cachedPlaylists by com.opentune.data.library.LibraryCache.playlists.collectAsState()
-    val ytPlaylists = if (signedIn) cachedPlaylists else emptyList()
+    // One linked to a playlist here is listed once, as that one.
+    val ytPlaylists = if (signedIn) remember(cachedPlaylists, playlists) { PlaylistLinks.unlinked(cachedPlaylists, playlists) } else emptyList()
     LaunchedEffect(signedIn, account?.email) {
         if (signedIn) runCatching { MusicRepository.libraryPlaylists() }
     }
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    var refreshing by remember { mutableStateOf(false) }
+    // Playlists made on YouTube Music since, and changes to linked ones both ways.
+    val refresh: () -> Unit = {
+        if (!refreshing) {
+            refreshing = true
+            scope.launch {
+                try {
+                    val sync = PlaylistSync.refresh()
+                    runCatching { MusicRepository.libraryPlaylists() }.onFailure {
+                        android.widget.Toast.makeText(context, "Couldn't refresh your YouTube Music playlists", android.widget.Toast.LENGTH_SHORT).show()
+                    }
+                    sync.join()
+                } finally {
+                    refreshing = false
+                }
+            }
+        }
+    }
     var naming by remember { mutableStateOf(false) }
-    if (naming) NameDialog("New playlist", "", onDismiss = { naming = false }) { name -> naming = false; nav.playlist(LibraryStore.createPlaylist(name)) }
+    if (naming) NewPlaylistDialog(signedIn, onDismiss = { naming = false }) { name, privacy -> naming = false; nav.playlist(LibraryStore.createPlaylist(name, privacy = privacy)) }
     val doneCount = finished.size
+    val listState = androidx.compose.foundation.lazy.rememberLazyListState()
 
-    LazyColumn(contentPadding = contentPadding, modifier = Modifier.fillMaxSize()) {
+    val page: @Composable () -> Unit = { LazyColumn(state = listState, contentPadding = contentPadding, modifier = Modifier.fillMaxSize()) {
         item {
             PageHeader("Library", actions = {
                 com.opentune.ui.components.WithUpdateDot {
@@ -198,7 +231,13 @@ fun LibraryScreen(contentPadding: PaddingValues, actions: SongActions, nav: Libr
         }
         item {
             SectionHeader("Playlists", action = {
-                Row {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    if (signedIn) {
+                        IconButton(onClick = refresh, enabled = !refreshing) {
+                            if (refreshing) androidx.compose.material3.CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
+                            else Icon(Icons.Rounded.Refresh, "Refresh YouTube Music playlists", Modifier.size(20.dp))
+                        }
+                    }
                     TextButton(onClick = nav.importPlaylist) {
                         Icon(Icons.Rounded.Download, null, Modifier.size(18.dp))
                         Spacer(Modifier.width(6.dp))
@@ -232,7 +271,12 @@ fun LibraryScreen(contentPadding: PaddingValues, actions: SongActions, nav: Libr
         }
         items(playlists, key = { it.id }) { p ->
             val saved = p.songs.count { downloadEntries[it.videoId]?.state == com.opentune.data.download.DownloadState.DONE }
-            PlaylistRow(null, p.name, "${p.songs.size} songs · " + if (saved > 0) "$saved downloaded" else "on this phone", { nav.playlist(p.id) }, Modifier.animateItem(), cover = {
+            val where = when {
+                saved > 0 -> "$saved downloaded"
+                signedIn && p.synced -> "on YouTube Music"
+                else -> "on this phone"
+            }
+            PlaylistRow(null, p.name, "${p.songs.size} songs · $where", { nav.playlist(p.id) }, Modifier.animateItem(), cover = {
                 com.opentune.ui.components.PlaylistCover(p.name, p.songs.map { it.thumbnailUrl }, Modifier.size(56.dp))
             })
         }
@@ -278,6 +322,13 @@ fun LibraryScreen(contentPadding: PaddingValues, actions: SongActions, nav: Libr
                 }
             }
         }
+    } }
+
+    // Pull to refresh only when there's an account to refresh from.
+    if (signedIn) {
+        com.opentune.ui.components.MarkRefreshBox(isRefreshing = refreshing, onRefresh = refresh, modifier = Modifier.fillMaxSize()) { page() }
+    } else {
+        page()
     }
 }
 
@@ -347,6 +398,49 @@ internal fun NameDialog(title: String, initial: String, onDismiss: () -> Unit, o
         title = { Text(title) },
         text = { OutlinedTextField(name, { name = it }, singleLine = true, placeholder = { Text("Name") }) },
         confirmButton = { SheetButton("Save", onClick = { onConfirm(name) }) },
+        dismissButton = { SheetButton("Cancel", onClick = onDismiss, closes = true) },
+    )
+}
+
+/**
+ * Names a new playlist. Signed in, it can go on YouTube Music too (on unless
+ * turned off), with a choice of who can see it there; [onCreate] gets that
+ * privacy, or null for a playlist on this phone only.
+ */
+@Composable
+internal fun NewPlaylistDialog(signedIn: Boolean, onDismiss: () -> Unit, onCreate: (String, PlaylistPrivacy?) -> Unit) {
+    var name by remember { mutableStateOf("") }
+    var online by remember { mutableStateOf(true) }
+    var privacy by remember { mutableStateOf(PlaylistPrivacy.PRIVATE) }
+    FloatingDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("New playlist") },
+        text = {
+            Column {
+                OutlinedTextField(name, { name = it }, singleLine = true, placeholder = { Text("Name") })
+                if (signedIn) AccountCopyOptions(online, { online = it }, privacy, { privacy = it }, Modifier.padding(top = 12.dp))
+            }
+        },
+        confirmButton = { SheetButton("Save", onClick = { onCreate(name, privacy.takeIf { signedIn && online }) }) },
+        dismissButton = { SheetButton("Cancel", onClick = onDismiss, closes = true) },
+    )
+}
+
+/** Puts a playlist that so far lives only on this phone on YouTube Music too, with who can see it there. */
+@Composable
+private fun SaveToAccountDialog(name: String, onDismiss: () -> Unit, onSave: (PlaylistPrivacy) -> Unit) {
+    var privacy by remember { mutableStateOf(PlaylistPrivacy.PRIVATE) }
+    FloatingDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Save to YouTube Music") },
+        text = {
+            Column {
+                Text("Makes a copy of $name on YouTube Music, songs and all. Changes you make here go there too.")
+                com.opentune.ui.components.PillSegmented(PlaylistPrivacy.entries, privacy, { it.label }, { privacy = it }, Modifier.padding(top = 16.dp))
+                Text(privacy.meaning, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.padding(top = 8.dp))
+            }
+        },
+        confirmButton = { SheetButton("Save", onClick = { onSave(privacy) }) },
         dismissButton = { SheetButton("Cancel", onClick = onDismiss, closes = true) },
     )
 }
@@ -509,31 +603,120 @@ fun LikedScreen(contentPadding: PaddingValues, actions: SongActions, onBack: () 
     }
 }
 
-/** A playlist made in the app: play, rename, delete, remove songs. */
+/**
+ * A playlist made in the app: play, rename, delete, remove songs. Signed in,
+ * it can also be saved to YouTube Music, after which it's kept in step there
+ * and has a privacy and a link to share.
+ */
 @Composable
 fun LocalPlaylistScreen(id: String, contentPadding: PaddingValues, actions: SongActions, onBack: () -> Unit) {
     val context = LocalContext.current
     val playlists by LibraryStore.playlists.collectAsState()
+    val signedIn by AccountStore.signedIn.collectAsState()
+    val pending by PlaylistSync.pending.collectAsState()
     val playlist = playlists.firstOrNull { it.id == id }
     var renaming by remember { mutableStateOf(false) }
     var deleting by remember { mutableStateOf(false) }
     var adding by remember { mutableStateOf(false) }
+    var savingOnline by remember { mutableStateOf(false) }
+    var choosingPrivacy by remember { mutableStateOf(false) }
+    var privateShare by remember { mutableStateOf(false) }
     if (adding) AddSongsSheet(id, onDismiss = { adding = false })
+    // Changes made on YouTube Music since, once this page's own have gone.
+    val remoteId = playlist?.remoteId
+    LaunchedEffect(id, signedIn, remoteId) {
+        if (signedIn && remoteId != null) PlaylistSync.refresh(id)
+    }
     if (playlist == null) {
         LaunchedEffect(Unit) { onBack() }
         return
     }
     // Tagged with the playlist, so smart shuffle can offer to keep a song it mixed in.
     val songs = remember(playlist) { playlist.songs.map { it.toSong().copy(playbackSourceId = playlist.id) } }
+    val online = signedIn && playlist.synced
     if (renaming) NameDialog("Rename playlist", playlist.name, onDismiss = { renaming = false }) { LibraryStore.renamePlaylist(id, it); renaming = false }
     if (deleting) {
+        // Signed out, the copy on YouTube Music can't be reached, so it's left as it is.
+        val linked = signedIn && remoteId != null
+        var everywhere by remember { mutableStateOf(false) }
         FloatingDialog(
             onDismissRequest = { deleting = false },
             title = { Text("Delete \"${playlist.name}\"?") },
-            text = { Text("The songs stay where they are; only this list goes.") },
-            confirmButton = { SheetButton("Delete", tone = SheetTone.Danger, onClick = { deleting = false; LibraryStore.deletePlaylist(id) }) },
+            text = {
+                Column {
+                    Text("The songs stay where they are; only this list goes.")
+                    if (linked) {
+                        Row(
+                            Modifier.fillMaxWidth().padding(top = 12.dp).clip(MaterialTheme.shapes.medium).clickable { everywhere = !everywhere }.padding(vertical = 6.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Text("Also delete it on YouTube Music", color = MaterialTheme.colorScheme.onSurface, modifier = Modifier.weight(1f))
+                            com.opentune.ui.components.AppSwitch(everywhere, { everywhere = it })
+                        }
+                    }
+                }
+            },
+            confirmButton = { SheetButton("Delete", tone = SheetTone.Danger, onClick = { deleting = false; LibraryStore.deletePlaylist(id, alsoOnAccount = linked && everywhere) }) },
             dismissButton = { SheetButton("Cancel", onClick = { deleting = false }, closes = true) },
         )
+    }
+    if (savingOnline) SaveToAccountDialog(playlist.name, onDismiss = { savingOnline = false }) { privacy ->
+        savingOnline = false
+        LibraryStore.saveToAccount(id, privacy)
+    }
+    if (choosingPrivacy) PrivacySheet(playlist.privacy, { LibraryStore.setPlaylistPrivacy(id, it) }, onDismiss = { choosingPrivacy = false })
+    if (privateShare && remoteId != null) PrivateShareDialog(
+        onMakePublic = {
+            privateShare = false
+            LibraryStore.setPlaylistPrivacy(id, PlaylistPrivacy.PUBLIC)
+            com.opentune.ui.share.ListShare.sharePlaylist(context, playlist.name, remoteId)
+        },
+        onShareAnyway = {
+            privateShare = false
+            com.opentune.ui.share.ListShare.sharePlaylist(context, playlist.name, remoteId)
+        },
+        onDismiss = { privateShare = false },
+    )
+    // On YouTube Music, the link; otherwise (or signed out, or not made there yet) the songs themselves.
+    val share: () -> Unit = {
+        when {
+            !signedIn || remoteId == null -> com.opentune.ui.share.ListShare.shareLocal(context, playlist.name, songs)
+            playlist.privacy?.linkWorks == true -> com.opentune.ui.share.ListShare.sharePlaylist(context, playlist.name, remoteId)
+            else -> privateShare = true
+        }
+    }
+    val tools: @Composable (Modifier) -> Unit = { modifier ->
+        ListTools(
+            songs,
+            onAddSongs = { adding = true },
+            onShare = share,
+            modifier = modifier,
+            privacy = playlist.privacy,
+            onPrivacy = if (online) ({ choosingPrivacy = true }) else null,
+        )
+    }
+    // Where the playlist stands with YouTube Music, under its cover.
+    val status: (@Composable () -> Unit)? = when {
+        !signedIn -> null
+        !playlist.synced -> ({
+            TextButton(onClick = { savingOnline = true }) {
+                Icon(Icons.Rounded.CloudUpload, null, Modifier.size(18.dp))
+                Spacer(Modifier.width(6.dp))
+                Text("Save to YouTube Music")
+            }
+        })
+        else -> ({
+            val waiting = pending.count { it.playlist == id }
+            Text(
+                when {
+                    pending.any { it.playlist == id && it.kind == com.opentune.data.library.PlaylistEdit.Kind.CREATE } -> "Saving to YouTube Music…"
+                    waiting > 0 -> "On YouTube Music · ${if (waiting == 1) "1 change" else "$waiting changes"} to send"
+                    else -> "On YouTube Music"
+                },
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        })
     }
     LazyColumn(contentPadding = contentPadding, modifier = Modifier.fillMaxSize()) {
         item {
@@ -553,6 +736,9 @@ fun LocalPlaylistScreen(id: String, contentPadding: PaddingValues, actions: Song
                         Modifier.padding(top = 4.dp, bottom = 8.dp).size(200.dp).align(Alignment.CenterHorizontally),
                         RoundedCornerShape(24.dp),
                     )
+                    if (status != null) {
+                        Box(Modifier.fillMaxWidth().padding(horizontal = 16.dp), contentAlignment = Alignment.Center) { status() }
+                    }
                     if (songs.isNotEmpty()) {
                         PlayButtons(
                             onPlay = { actions.playAll(songs, 0, false, playlist.name) },
@@ -568,10 +754,10 @@ fun LocalPlaylistScreen(id: String, contentPadding: PaddingValues, actions: Song
             item {
                 MessageState(Icons.AutoMirrored.Rounded.QueueMusic, "Nothing here yet", Modifier.padding(top = 32.dp), message = "Add songs here, or use Add to playlist in any song's menu.")
             }
-            item { ListTools(songs, onAddSongs = { adding = true }, onShare = { com.opentune.ui.share.ListShare.shareLocal(context, playlist.name, songs) }, modifier = Modifier.fillMaxWidth().padding(16.dp)) }
+            item { tools(Modifier.fillMaxWidth().padding(16.dp)) }
             return@LazyColumn
         }
-        item { ListTools(songs, onAddSongs = { adding = true }, onShare = { com.opentune.ui.share.ListShare.shareLocal(context, playlist.name, songs) }, modifier = Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, bottom = 8.dp)) }
+        item { tools(Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, bottom = 8.dp)) }
         itemsIndexed(songs, key = { i, s -> "$i:${s.videoId}" }) { i, song ->
             SongListItem(
                 song = song,

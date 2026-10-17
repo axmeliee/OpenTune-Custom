@@ -10,6 +10,7 @@ import com.opentune.data.model.LibraryState
 import com.opentune.data.model.LikeStatus
 import com.opentune.data.model.MoodGenre
 import com.opentune.data.model.MoodGenreSection
+import com.opentune.data.model.PlaylistPrivacy
 import com.opentune.data.model.SearchResult
 import com.opentune.data.model.ShelfItem
 import com.opentune.data.model.Song
@@ -1278,6 +1279,17 @@ object InnertubeParser {
     private val OWNER_ICONS = setOf("DELETE", "EDIT")
 
     /**
+     * Who can see a playlist the account owns, or null when the page doesn't
+     * say. Only the owner's page states it, in the edit form that
+     * `musicEditablePlaylistDetailHeaderRenderer` carries alongside the
+     * header; anyone else's page has nothing to read it from.
+     */
+    fun parsePlaylistPrivacy(root: JsonElement): PlaylistPrivacy? =
+        collectRenderers(root, "musicPlaylistEditHeaderRenderer").firstNotNullOfOrNull {
+            PlaylistPrivacy.fromApi(it.s("privacy"))
+        }
+
+    /**
      * The playlists the account can be asked to add a track to.
      *
      * `FEmusic_liked_playlists` also carries the "New playlist" tile (no
@@ -1295,14 +1307,20 @@ object InnertubeParser {
      * list the picker wants, and [parsePlaylistOwned] is what rules a saved
      * playlist out of being renamed or deleted.
      */
+    /**
+     * Whether [browseId] is a playlist page that could take an edit at all:
+     * not Liked Music, an album's playlist or one of YouTube's own mixes.
+     * Says nothing about who owns it — see [parsePlaylistOwned].
+     */
+    fun isEditablePlaylist(browseId: String): Boolean =
+        browseId.startsWith("VL") && NOT_EDITABLE.none { browseId.startsWith("VL$it") }
+
     fun parseUserPlaylists(root: JsonElement): List<UserPlaylist> =
         parseUserPlaylists(parseLibraryItems(root))
 
     fun parseUserPlaylists(items: List<ShelfItem>): List<UserPlaylist> =
         items.mapNotNull { item ->
-            val browseId = item.browseId ?: return@mapNotNull null
-            if (!browseId.startsWith("VL")) return@mapNotNull null
-            if (NOT_EDITABLE.any { browseId.startsWith("VL$it") }) return@mapNotNull null
+            val browseId = item.browseId?.takeIf(::isEditablePlaylist) ?: return@mapNotNull null
             UserPlaylist(
                 playlistId = browseId.removePrefix("VL"),
                 title = item.title,

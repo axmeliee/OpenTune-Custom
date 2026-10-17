@@ -12,6 +12,12 @@ class ListShareTest {
         assertEquals("https://music.youtube.com/browse/MPREb_abc", ListShare.linkFor("MPREb_abc"))
     }
 
+    @Test fun aPlaylistLinkTakesTheIdWithoutItsBrowsePrefix() {
+        assertEquals("https://music.youtube.com/playlist?list=PLabc123", ListShare.playlistLink("PLabc123"))
+        assertEquals("https://music.youtube.com/playlist?list=PLabc123", ListShare.playlistLink("VLPLabc123"))
+        assertEquals("https://music.youtube.com/playlist?list=PLabc123", ListShare.linkFor("PLabc123"))
+    }
+
     @Test fun anAppPlaylistGoesAsItsSongs() {
         val songs = List(52) { Song("id$it", "Song $it", "Artist", null, "3:00") }
         val text = ListShare.localText("Road trip", songs)

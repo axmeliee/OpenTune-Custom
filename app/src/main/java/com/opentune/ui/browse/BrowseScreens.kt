@@ -332,6 +332,7 @@ fun CollectionScreen(
                                     val savedLists by com.opentune.data.library.LibraryStore.savedLists.collectAsState()
                                     val saved = savedLists.any { it.browseId == c.browseId }
                                     val context = androidx.compose.ui.platform.LocalContext.current
+                                    val own = rememberOwnPlaylist(c)
                                     com.opentune.ui.library.ListTools(
                                         c.songs, onAddSongs = null, Modifier.fillMaxWidth().padding(bottom = 16.dp),
                                         list = com.opentune.ui.library.DownloadedListInfo(c.browseId, c.title, c.subtitle, c.thumbnailUrl),
@@ -341,7 +342,9 @@ fun CollectionScreen(
                                                 com.opentune.data.library.SavedList(c.browseId, c.title, c.subtitle, c.thumbnailUrl), !saved,
                                             )
                                         },
-                                        onShare = { com.opentune.ui.share.ListShare.shareList(context, c.title, c.browseId) },
+                                        onShare = { own?.share() ?: com.opentune.ui.share.ListShare.shareList(context, c.title, c.browseId) },
+                                        privacy = own?.privacy,
+                                        onPrivacy = own?.let { o -> { o.choose() } },
                                     )
                                 }
                             }

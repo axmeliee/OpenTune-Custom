@@ -96,6 +96,8 @@ class OpenTuneApp : Application(), SingletonImageLoader.Factory {
         com.opentune.data.download.DownloadedLists.init(this)
         AccountStore.init(this)
         com.opentune.data.library.LibraryCache.init(this)
+        // After library and account: it sends playlist changes still waiting, when signed in.
+        com.opentune.data.library.PlaylistSync.init(this)
         InnerTubeXResolver.init(this)
         // Last session's Home, shown at once and refreshed in the background.
         MusicRepository.init(this)?.let { ScreenCache.put("home", it, at = 0L) }

@@ -69,7 +69,10 @@ import com.opentune.data.download.Downloads
 import com.opentune.data.isYouTubeId
 import com.opentune.data.library.HiddenList
 import com.opentune.data.library.LibraryStore
+import com.opentune.data.library.PlaylistLinks
+import com.opentune.data.library.PlaylistSync
 import com.opentune.data.local.LocalMusic
+import com.opentune.data.model.PlaylistPrivacy
 import com.opentune.data.model.ROW_ART_PX
 import com.opentune.data.model.Song
 import com.opentune.data.model.artworkAt
@@ -331,18 +334,35 @@ fun MenuRow(icon: ImageVector, label: String, onClick: () -> Unit) {
     }
 }
 
-/** Picks one of the playlists made in the app, or makes a new one with [song] in it. */
+/**
+ * Picks one of the playlists made in the app, or makes a new one with [song]
+ * in it. Signed in, the account's own YouTube Music playlists are listed too,
+ * and a song picked for one of those goes straight there; one linked to a
+ * playlist here is listed once, as that one.
+ */
 @Composable
 fun AddToPlaylistDialog(song: Song, onDone: () -> Unit, onDismiss: () -> Unit) {
+    val context = LocalContext.current.applicationContext
     val playlists by LibraryStore.playlists.collectAsState()
-    var naming by remember { mutableStateOf(playlists.isEmpty()) }
+    val signedIn by com.opentune.data.account.AccountStore.signedIn.collectAsState()
+    val account by com.opentune.data.library.LibraryCache.playlists.collectAsState()
+    val owned by com.opentune.data.library.LibraryCache.owned.collectAsState()
+    // A file on this phone can't go on YouTube Music.
+    val online = signedIn && isYouTubeId(song.videoId)
+    val accountPlaylists = if (online) remember(account, owned, playlists) { PlaylistLinks.pickable(account, owned, playlists) } else emptyList()
+    var naming by remember { mutableStateOf(playlists.isEmpty() && accountPlaylists.isEmpty()) }
     var name by remember { mutableStateOf("") }
+    var saveOnline by remember { mutableStateOf(true) }
+    var privacy by remember { mutableStateOf(PlaylistPrivacy.PRIVATE) }
     FloatingDialog(
         onDismissRequest = onDismiss,
         title = { Text(if (naming) "New playlist" else "Add to playlist") },
         text = {
             if (naming) {
-                OutlinedTextField(name, { name = it }, singleLine = true, placeholder = { Text("Name") })
+                Column {
+                    OutlinedTextField(name, { name = it }, singleLine = true, placeholder = { Text("Name") })
+                    if (online) AccountCopyOptions(saveOnline, { saveOnline = it }, privacy, { privacy = it }, Modifier.padding(top = 12.dp))
+                }
             } else {
                 LazyColumn(Modifier.heightIn(max = 360.dp)) {
                     item { MenuRow(Icons.Rounded.Add, "New playlist") { naming = true } }
@@ -352,12 +372,31 @@ fun AddToPlaylistDialog(song: Song, onDone: () -> Unit, onDismiss: () -> Unit) {
                             onDone()
                         }
                     }
+                    if (accountPlaylists.isNotEmpty()) {
+                        item {
+                            Text(
+                                "On YouTube Music",
+                                style = MaterialTheme.typography.labelLarge,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.padding(start = 24.dp, top = 12.dp, bottom = 4.dp),
+                            )
+                        }
+                        items(accountPlaylists, key = { "yt:${it.playlistId}" }) { p ->
+                            MenuRow(Icons.AutoMirrored.Rounded.QueueMusic, p.title) {
+                                PlaylistSync.addToAccountPlaylist(p.playlistId, song) { ok ->
+                                    val text = if (ok) "Added to ${p.title}" else "Couldn't add it to ${p.title}"
+                                    android.widget.Toast.makeText(context, text, android.widget.Toast.LENGTH_SHORT).show()
+                                }
+                                onDone()
+                            }
+                        }
+                    }
                 }
             }
         },
         confirmButton = {
             if (naming) {
-                SheetButton("Create", onClick = { LibraryStore.createPlaylist(name, song); onDone() })
+                SheetButton("Create", onClick = { LibraryStore.createPlaylist(name, song, privacy.takeIf { online && saveOnline }); onDone() })
             }
         },
         dismissButton = { SheetButton("Cancel", onClick = onDismiss, closes = true) },

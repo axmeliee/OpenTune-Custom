@@ -6,6 +6,7 @@ import com.opentune.data.model.ArtistPage
 import com.opentune.data.model.BrowseType
 import com.opentune.data.model.HomeShelf
 import com.opentune.data.model.MoodGenreSection
+import com.opentune.data.model.PlaylistPrivacy
 import com.opentune.data.model.SearchFilter
 import com.opentune.data.model.SearchResult
 import com.opentune.data.model.ShelfItem
@@ -45,7 +46,21 @@ data class Collection(
     val subtitle: String,
     val thumbnailUrl: String?,
     val songs: List<Song>,
+    /**
+     * Made by the signed-in account, so it can be edited; null when the page
+     * didn't say. See [InnertubeParser.parsePlaylistOwned].
+     */
+    val owned: Boolean? = null,
+    /** Who can see it, when the account owns it and the page said. */
+    val privacy: PlaylistPrivacy? = null,
 )
+
+/**
+ * One of the account's own playlists as it stands on YouTube Music, read to
+ * bring a linked playlist up to date: every row, unfiltered, each with the
+ * set-video-id that removing or moving it takes.
+ */
+class RemotePlaylist(val title: String, val privacy: PlaylistPrivacy?, val songs: List<Song>)
 
 /**
  * The screens' one way into Innertube: every call runs off the main thread
@@ -369,13 +384,12 @@ object MusicRepository {
         val response = Innertube.browse(browseId)
         val header = InnertubeParser.parseBrowseHeader(response)
         val page = InnertubeParser.parsePlaylistShelf(response)
-        val songs = (page?.songs?.takeIf { it.isNotEmpty() } ?: InnertubeParser.collectSongsDeep(response)).toMutableList()
-        var token = page?.continuation
-        val seen = HashSet<String>()
-        while (token != null && seen.add(token) && seen.size <= 100) {
-            val next = InnertubeParser.parsePlaylistContinuation(Innertube.browseContinuation(token))
-            songs += next.songs
-            token = next.continuation
+        val songs = (page?.songs?.takeIf { it.isNotEmpty() } ?: InnertubeParser.collectSongsDeep(response)) + laterPages(page?.continuation)
+        // Signed out, no page has a save button, which would read as "owned".
+        val owned = if (Innertube.cookie != null && InnertubeParser.isEditablePlaylist(browseId)) {
+            InnertubeParser.parsePlaylistOwned(response)
+        } else {
+            false
         }
         Collection(
             browseId = browseId,
@@ -384,7 +398,39 @@ object MusicRepository {
             // Album rows carry no art of their own; the cover is the header's.
             thumbnailUrl = header?.thumbnailUrl,
             songs = ContentFilter.songs(songs.map { song -> if (song.thumbnailUrl == null) song.copy(thumbnailUrl = header?.thumbnailUrl) else song }),
+            owned = owned,
+            privacy = if (owned == true) InnertubeParser.parsePlaylistPrivacy(response) else null,
         ).also { com.opentune.data.library.LibraryCache.save(it, owner) }
+    }
+
+    /** The rest of a playlist's songs, page by page after the first. */
+    private suspend fun laterPages(first: String?): List<Song> {
+        val songs = mutableListOf<Song>()
+        var token = first
+        val seen = HashSet<String>()
+        while (token != null && seen.add(token) && seen.size <= 100) {
+            val next = InnertubeParser.parsePlaylistContinuation(Innertube.browseContinuation(token))
+            songs += next.songs
+            token = next.continuation
+        }
+        return songs
+    }
+
+    /**
+     * An own playlist as YouTube Music has it now, for syncing. Unlike
+     * [collection] nothing is filtered out, since a hidden row is still an
+     * entry on the account; and a page with no playlist list on it is an
+     * error rather than an empty playlist, so a cut-down answer can't read
+     * as "every song was removed".
+     */
+    suspend fun remotePlaylist(playlistId: String): RemotePlaylist = io {
+        val response = Innertube.browse("VL${playlistId.removePrefix("VL")}")
+        val page = InnertubeParser.parsePlaylistShelf(response) ?: error("no playlist on the page")
+        RemotePlaylist(
+            title = InnertubeParser.parseBrowseHeader(response)?.title.orEmpty(),
+            privacy = InnertubeParser.parsePlaylistPrivacy(response),
+            songs = page.songs + laterPages(page.continuation),
+        )
     }
 
     suspend fun artist(browseId: String): ArtistPage = io {

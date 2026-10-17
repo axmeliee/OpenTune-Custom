@@ -64,6 +64,8 @@ class MainActivity : ComponentActivity() {
         super.onStart()
         // The process may have started in the background, offline (after an update, say).
         AccountStore.ensureProfile()
+        // Playlist changes that couldn't reach YouTube Music last time try again.
+        if (com.opentune.data.library.PlaylistSync.pending.value.isNotEmpty()) com.opentune.data.library.PlaylistSync.flush()
     }
 
     override fun onNewIntent(intent: Intent) {

@@ -194,7 +194,9 @@ class CarLibrary(private val context: Context) {
             add(folder(SERVER, "Your music server", subtitle = server.url.substringAfter("://"), browsableStyle = MediaConstants.EXTRAS_VALUE_CONTENT_STYLE_GRID_ITEM))
         }
         if (AccountStore.signedIn.value) {
-            runCatching { MusicRepository.libraryPlaylists() }.getOrDefault(emptyList()).forEach { p ->
+            // One linked to a playlist above is already listed, as that one.
+            val account = runCatching { MusicRepository.libraryPlaylists() }.getOrDefault(emptyList())
+            com.opentune.data.library.PlaylistLinks.unlinked(account, LibraryStore.playlists.value).forEach { p ->
                 p.browseId?.let { add(browseFolder(it, p.title, p.subtitle, p.thumbnailUrl, null)) }
             }
         }

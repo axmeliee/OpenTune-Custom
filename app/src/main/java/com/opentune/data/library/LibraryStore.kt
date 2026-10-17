@@ -4,7 +4,9 @@ import android.content.Context
 import com.opentune.data.DebugLog as Log
 import com.opentune.data.account.AccountStore
 import com.opentune.data.innertube.Innertube
+import com.opentune.data.isYouTubeId
 import com.opentune.data.model.LikeStatus
+import com.opentune.data.model.PlaylistPrivacy
 import com.opentune.data.model.Song
 import java.io.File
 import java.util.UUID
@@ -33,6 +35,13 @@ data class SongRef(
     val albumName: String? = null,
     /** YouTube Music's "E" mark; null for songs saved before it was kept. */
     val explicit: Boolean? = null,
+    /**
+     * In a playlist linked to YouTube Music, this entry's id there, which
+     * removing or moving it takes; null until YouTube Music has said, and
+     * everywhere else. Never copied from a [Song], whose own one names a
+     * slot in some other playlist.
+     */
+    val setVideoId: String? = null,
 ) {
     fun toSong() = Song(videoId, title, artist, thumbnailUrl, durationText, albumName = albumName, isExplicit = explicit)
 
@@ -47,7 +56,18 @@ data class LocalPlaylist(
     val name: String,
     val songs: List<SongRef> = emptyList(),
     val createdAt: Long = System.currentTimeMillis(),
-)
+    /**
+     * The copy on YouTube Music this playlist is kept in step with (its id,
+     * no `VL`); null for one that lives only on this phone, or whose copy
+     * hasn't been made yet. See [PlaylistSync].
+     */
+    val remoteId: String? = null,
+    /** Who can see the copy on YouTube Music; null when there isn't meant to be one. */
+    val privacy: PlaylistPrivacy? = null,
+) {
+    /** Kept in step with YouTube Music, or waiting for its copy to be made there. */
+    val synced: Boolean get() = remoteId != null || privacy != null
+}
 
 /** An album or playlist from YouTube Music saved to the library with its heart. */
 @Serializable
@@ -76,7 +96,8 @@ private data class LibraryDocument(
 /**
  * Liked songs and playlists made in the app, kept on the device. Liking also
  * rates the track on YouTube Music when signed in, so likes follow the
- * account too.
+ * account too, and a playlist can be linked to a copy on YouTube Music that
+ * every change here is passed on to (see [PlaylistSync]).
  */
 object LibraryStore {
     private val json = Json { ignoreUnknownKeys = true }
@@ -152,6 +173,8 @@ object LibraryStore {
         LibraryArtwork.keep(d.liked.map { it.thumbnailUrl } + d.playlists.flatMap { p -> p.songs.map { it.thumbnailUrl } })
     }
 
+    // Locked: the playlist sync writes back from its own thread.
+    @Synchronized
     private fun update(t: (LibraryDocument) -> LibraryDocument) = publish(t(doc.value))
 
     fun isLiked(videoId: String): Boolean = _liked.value.any { it.videoId == videoId }
@@ -185,40 +208,140 @@ object LibraryStore {
         }
     }
 
-    fun createPlaylist(name: String, first: Song? = null): String {
+    // Every change to a playlist below is made here at once and, for one kept
+    // in step with YouTube Music, queued to be made there too (see
+    // [PlaylistSync]). Each is one locked step, change and queueing both, so
+    // the sync never sees a change it wasn't also handed, or the reverse.
+
+    /**
+     * A new playlist; with [privacy], also made on YouTube Music with that
+     * privacy and kept in step with it from then on.
+     */
+    @Synchronized
+    fun createPlaylist(name: String, first: Song? = null, privacy: PlaylistPrivacy? = null): String {
         val id = UUID.randomUUID().toString()
-        val p = LocalPlaylist(id, name.trim().ifEmpty { "New playlist" }, listOfNotNull(first?.let(SongRef::of)))
+        val p = LocalPlaylist(id, name.trim().ifEmpty { "New playlist" }, listOfNotNull(first?.let(SongRef::of)), privacy = privacy)
         update { it.copy(playlists = listOf(p) + it.playlists) }
+        if (privacy != null) PlaylistSync.enqueue(PlaylistEdit(PlaylistEdit.Kind.CREATE, id))
         return id
     }
 
+    /** Makes a YouTube Music copy of a playlist that so far lived only here, songs and all, and links the two. */
+    @Synchronized
+    fun saveToAccount(id: String, privacy: PlaylistPrivacy) {
+        if (playlist(id)?.synced != false) return
+        editPlaylist(id) { it.copy(privacy = privacy) }
+        PlaylistSync.enqueue(PlaylistEdit(PlaylistEdit.Kind.CREATE, id))
+    }
+
     /** Adds [songs] in order, skipping any already there; one write for the lot. */
-    fun addAllToPlaylist(id: String, songs: List<Song>) = editPlaylist(id) { p ->
-        val have = p.songs.mapTo(HashSet()) { it.videoId }
-        p.copy(songs = p.songs + songs.filter { have.add(it.videoId) }.map(SongRef::of))
+    @Synchronized
+    fun addAllToPlaylist(id: String, songs: List<Song>) {
+        var added = emptyList<SongRef>()
+        editPlaylist(id) { p ->
+            val have = p.songs.mapTo(HashSet()) { it.videoId }
+            added = songs.filter { have.add(it.videoId) }.map(SongRef::of)
+            p.copy(songs = p.songs + added)
+        }
+        mirror(id) { remote -> PlaylistEdit(PlaylistEdit.Kind.ADD, id, remote, videoIds = added.map { it.videoId }.filter(::isYouTubeId)) }
     }
 
-    fun addToPlaylist(id: String, song: Song) = editPlaylist(id) { p ->
-        if (p.songs.any { it.videoId == song.videoId }) p else p.copy(songs = p.songs + SongRef.of(song))
+    fun addToPlaylist(id: String, song: Song) = addAllToPlaylist(id, listOf(song))
+
+    @Synchronized
+    fun removeFromPlaylist(id: String, index: Int) {
+        val gone = playlist(id)?.songs?.getOrNull(index) ?: return
+        editPlaylist(id) { p -> p.copy(songs = p.songs.filterIndexed { i, _ -> i != index }) }
+        if (!isYouTubeId(gone.videoId)) return
+        mirror(id) { remote -> PlaylistEdit(PlaylistEdit.Kind.REMOVE, id, remote, videoIds = listOf(gone.videoId), setVideoId = gone.setVideoId) }
     }
 
-    fun removeFromPlaylist(id: String, index: Int) = editPlaylist(id) { p ->
-        p.copy(songs = p.songs.filterIndexed { i, _ -> i != index })
+    @Synchronized
+    fun movePlaylistItem(id: String, from: Int, to: Int) {
+        val p = playlist(id) ?: return
+        if (from !in p.songs.indices || to !in p.songs.indices || from == to) return
+        val songs = p.songs.toMutableList().apply { add(to, removeAt(from)) }
+        editPlaylist(id) { it.copy(songs = songs) }
+        val moved = songs[to].videoId
+        if (!isYouTubeId(moved)) return
+        // A file on this phone isn't on YouTube Music, so it can't be the one to sit before.
+        val before = songs.drop(to + 1).firstOrNull { isYouTubeId(it.videoId) }?.videoId
+        mirror(id) { remote -> PlaylistEdit(PlaylistEdit.Kind.MOVE, id, remote, videoIds = listOf(moved), before = before) }
     }
 
-    fun movePlaylistItem(id: String, from: Int, to: Int) = editPlaylist(id) { p ->
-        if (from !in p.songs.indices || to !in p.songs.indices) p
-        else p.copy(songs = p.songs.toMutableList().apply { add(to, removeAt(from)) })
+    @Synchronized
+    fun renamePlaylist(id: String, name: String) {
+        val old = playlist(id)?.name ?: return
+        val new = name.trim().ifEmpty { old }
+        if (new == old) return
+        editPlaylist(id) { it.copy(name = new) }
+        mirror(id) { remote -> PlaylistEdit(PlaylistEdit.Kind.RENAME, id, remote, name = new) }
     }
 
-    fun renamePlaylist(id: String, name: String) = editPlaylist(id) { it.copy(name = name.trim().ifEmpty { it.name }) }
+    /** Who can see a linked playlist's copy on YouTube Music. */
+    @Synchronized
+    fun setPlaylistPrivacy(id: String, privacy: PlaylistPrivacy) {
+        val p = playlist(id)?.takeIf { it.synced } ?: return
+        if (p.privacy == privacy) return
+        editPlaylist(id) { it.copy(privacy = privacy) }
+        mirror(id) { remote -> PlaylistEdit(PlaylistEdit.Kind.PRIVACY, id, remote, privacy = privacy) }
+    }
 
-    fun deletePlaylist(id: String) = update { d -> d.copy(playlists = d.playlists.filterNot { it.id == id }) }
+    /**
+     * Deletes the playlist here; with [alsoOnAccount], its copy on YouTube
+     * Music too. A copy not made yet is never made.
+     */
+    @Synchronized
+    fun deletePlaylist(id: String, alsoOnAccount: Boolean = false) {
+        val p = playlist(id)
+        update { d -> d.copy(playlists = d.playlists.filterNot { it.id == id }) }
+        if (p != null && p.synced && (alsoOnAccount || p.remoteId == null)) {
+            PlaylistSync.enqueue(PlaylistEdit(PlaylistEdit.Kind.DELETE, id, p.remoteId))
+        }
+    }
 
     fun playlist(id: String): LocalPlaylist? = _playlists.value.firstOrNull { it.id == id }
 
     private fun editPlaylist(id: String, t: (LocalPlaylist) -> LocalPlaylist) = update { d ->
         d.copy(playlists = d.playlists.map { if (it.id == id) t(it) else it })
+    }
+
+    /** Queues the edit [make] builds, when playlist [id] is kept in step with YouTube Music. */
+    private fun mirror(id: String, make: (remoteId: String?) -> PlaylistEdit) {
+        val p = playlist(id)?.takeIf { it.synced } ?: return
+        PlaylistSync.enqueue(make(p.remoteId))
+    }
+
+    // ---- Written back by [PlaylistSync] --------------------------------------
+
+    /** Records that playlist [id]'s copy on YouTube Music is [remoteId]. */
+    @Synchronized
+    internal fun link(id: String, remoteId: String) = editPlaylist(id) { it.copy(remoteId = remoteId) }
+
+    /** Takes back a copy that couldn't be made, so "Save to YouTube Music" is offered again. */
+    @Synchronized
+    internal fun unlink(id: String) = editPlaylist(id) { if (it.remoteId == null) it.copy(privacy = null) else it }
+
+    /** Keeps the set-video-ids YouTube Music gave the entries of playlist [id], by video id. */
+    @Synchronized
+    internal fun rememberEntries(id: String, setVideoIds: Map<String, String>) {
+        if (setVideoIds.isEmpty()) return
+        val p = playlist(id) ?: return
+        if (p.songs.none { s -> setVideoIds[s.videoId]?.let { it != s.setVideoId } == true }) return
+        editPlaylist(id) { pl -> pl.copy(songs = pl.songs.map { s -> setVideoIds[s.videoId]?.let { s.copy(setVideoId = it) } ?: s }) }
+    }
+
+    /**
+     * Folds what YouTube Music has into linked playlist [id] (see
+     * [PlaylistMerge.pull]); not while changes made here are still on their
+     * way, since YouTube Music is behind until they land.
+     */
+    @Synchronized
+    internal fun applyRemote(id: String, remote: com.opentune.data.RemotePlaylist) {
+        if (PlaylistSync.isWaiting(id)) return
+        val p = playlist(id)?.takeIf { it.remoteId != null } ?: return
+        val merged = PlaylistMerge.pull(p, remote)
+        if (merged != p) editPlaylist(id) { merged }
     }
 
     fun exportJson(): JsonElement = json.encodeToJsonElement(LibraryDocument.serializer(), doc.value)

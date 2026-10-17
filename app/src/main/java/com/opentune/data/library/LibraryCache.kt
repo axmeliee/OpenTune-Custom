@@ -3,6 +3,7 @@ package com.opentune.data.library
 import android.content.Context
 import com.opentune.data.Collection
 import com.opentune.data.account.AccountStore
+import com.opentune.data.innertube.InnertubeParser
 import com.opentune.data.model.ShelfItem
 import java.io.File
 import java.security.MessageDigest
@@ -14,6 +15,8 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
 import kotlinx.serialization.builtins.ListSerializer
+import kotlinx.serialization.builtins.MapSerializer
+import kotlinx.serialization.builtins.serializer
 import kotlinx.serialization.json.Json
 
 /** Private, account-scoped snapshots; music files are still managed by Downloads. */
@@ -23,6 +26,14 @@ object LibraryCache {
     private var root: File? = null
     private val _playlists = MutableStateFlow<List<ShelfItem>>(emptyList())
     val playlists = _playlists.asStateFlow()
+    private val _owned = MutableStateFlow<Map<String, Boolean>>(emptyMap())
+
+    /**
+     * Whether the account made each of its library's playlists, by browse
+     * id, for those whose page has been read. The library list itself can't
+     * say; see [com.opentune.data.innertube.InnertubeParser.parsePlaylistOwned].
+     */
+    val owned = _owned.asStateFlow()
     fun owner(): String = AccountStore.account.value?.email?.takeIf { it.isNotBlank() }
         ?.let(::hash) ?: if (AccountStore.signedIn.value) "unidentified" else "guest"
 
@@ -31,11 +42,18 @@ object LibraryCache {
         scope.launch {
             AccountStore.account.collectLatest {
                 _playlists.value = emptyList()
+                _owned.value = emptyMap()
                 val key = owner()
                 val saved = runCatching {
                     json.decodeFromString(ListSerializer(ShelfItem.serializer()), file(key, "index").readText())
                 }.getOrDefault(emptyList())
-                if (owner() == key) _playlists.value = saved
+                val owned = runCatching {
+                    json.decodeFromString(OWNED, file(key, "owned").readText())
+                }.getOrDefault(emptyMap())
+                if (owner() == key) {
+                    _playlists.value = saved
+                    _owned.value = owned
+                }
             }
         }
     }
@@ -55,7 +73,15 @@ object LibraryCache {
         if (this.owner() != owner || owner == "unidentified") return
         write(file(owner, collection.browseId), json.encodeToString(Collection.serializer(), collection))
         LibraryArtwork.keep(listOf(collection.thumbnailUrl) + collection.songs.map { it.thumbnailUrl })
+        val isOwn = collection.owned
+        if (isOwn != null && InnertubeParser.isEditablePlaylist(collection.browseId) && _owned.value[collection.browseId] != isOwn) {
+            val owned = _owned.value + (collection.browseId to isOwn)
+            _owned.value = owned
+            write(file(owner, "owned"), json.encodeToString(OWNED, owned))
+        }
     }
+
+    private val OWNED = MapSerializer(String.serializer(), Boolean.serializer())
 
     @Synchronized
     fun savePlaylists(items: List<ShelfItem>, owner: String) {

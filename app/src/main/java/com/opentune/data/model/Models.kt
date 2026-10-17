@@ -446,6 +446,14 @@ enum class PlaylistPrivacy(val label: String, val apiValue: String) {
     PRIVATE("Private", "PRIVATE"),
     UNLISTED("Unlisted", "UNLISTED"),
     PUBLIC("Public", "PUBLIC"),
+    ;
+
+    /** Whether a link to the playlist opens for someone other than its owner. */
+    val linkWorks: Boolean get() = this != PRIVATE
+
+    companion object {
+        fun fromApi(value: String?): PlaylistPrivacy? = entries.firstOrNull { it.apiValue == value }
+    }
 }
 
 /**

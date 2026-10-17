@@ -11,13 +11,20 @@ object ListShare {
      * has it: playlists as playlist?list=, albums and the rest as browse/.
      */
     fun linkFor(browseId: String): String = when {
-        browseId.startsWith("VL") -> "https://music.youtube.com/playlist?list=${browseId.removePrefix("VL")}"
-        browseId.startsWith("PL") || browseId.startsWith("OLAK") || browseId.startsWith("RD") -> "https://music.youtube.com/playlist?list=$browseId"
+        browseId.startsWith("VL") || browseId.startsWith("PL") || browseId.startsWith("OLAK") || browseId.startsWith("RD") ->
+            playlistLink(browseId)
         else -> "https://music.youtube.com/browse/$browseId"
     }
 
+    /** A YouTube Music playlist's address, from its id with or without the `VL` it's browsed under. */
+    fun playlistLink(playlistId: String): String = "https://music.youtube.com/playlist?list=${playlistId.removePrefix("VL")}"
+
     fun shareList(context: Context, title: String, browseId: String) =
         send(context, "$title\n${linkFor(browseId)}", title)
+
+    /** A playlist on YouTube Music, by its id: anyone it's shared with can open it there and save it. */
+    fun sharePlaylist(context: Context, title: String, playlistId: String) =
+        send(context, "$title\n${playlistLink(playlistId)}", title)
 
     /**
      * A playlist made in the app has no address of its own, so it goes as
