@@ -174,18 +174,23 @@ fun AppRoot(vm: PlayerViewModel) {
     if (whatsNew.isNotEmpty() && update == null) {
         com.opentune.ui.components.WhatsNewSheet(whatsNew, com.opentune.BuildConfig.VERSION_NAME, onDismiss = { whatsNew = emptyList() })
     }
-    // Now and then, after some days of use, a request for a star on GitHub;
-    // never over an update or What's new, and not straight after opening.
+    // Twice a month, after some days of use, a request for a star on GitHub,
+    // sliding up above the dock; never over an update or What's new, and not
+    // straight after opening.
     var askStar by remember { mutableStateOf(false) }
-    var supporting by remember { mutableStateOf(false) }
     LaunchedEffect(Unit) {
         kotlinx.coroutines.delay(45_000)
         askStar = com.opentune.ui.components.Support.shouldAsk(appContext)
     }
-    if (askStar && update == null && whatsNew.isEmpty()) {
-        com.opentune.ui.components.StarPrompt(onDismiss = { askStar = false }, onSupport = { askStar = false; supporting = true })
+    val starCard: @Composable () -> Unit = {
+        androidx.compose.animation.AnimatedVisibility(
+            visible = askStar && update == null && whatsNew.isEmpty(),
+            enter = androidx.compose.animation.slideInVertically(spring(dampingRatio = 0.8f, stiffness = 300f)) { it } + fadeIn(),
+            exit = androidx.compose.animation.slideOutVertically(tween(220)) { it } + fadeOut(tween(180)),
+        ) {
+            com.opentune.ui.components.StarCard(onDismiss = { askStar = false })
+        }
     }
-    if (supporting) com.opentune.ui.components.SupportDialog(onDismiss = { supporting = false })
     update?.let { r ->
         com.opentune.ui.settings.UpdateDialog(
             r,
@@ -675,6 +680,7 @@ fun AppRoot(vm: PlayerViewModel) {
             }
             if (layout.nav == NavChrome.DOCK) {
             Column(Modifier.align(Alignment.BottomCenter).fillMaxWidth().navigationBarsPadding().padding(bottom = 12.dp)) {
+                starCard()
                 SnackbarHost(snackbar)
                 BottomChrome(
                     inline = chromeScroll.inline,
@@ -709,6 +715,7 @@ fun AppRoot(vm: PlayerViewModel) {
                     Modifier.align(Alignment.BottomCenter).then(pageArea).fillMaxWidth()
                         .navigationBarsPadding().padding(start = 12.dp, end = 12.dp, bottom = 12.dp),
                 ) {
+                    starCard()
                     SnackbarHost(snackbar)
                     if (layout.nowPlaying == NowPlaying.BAR) {
                         MiniPlayerBar(vm, onExpand = { openPlayer(false) }, modifier = Modifier.fillMaxWidth().height(CHROME_MINI_HEIGHT))

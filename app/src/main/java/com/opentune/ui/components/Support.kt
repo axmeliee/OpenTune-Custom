@@ -3,14 +3,16 @@ package com.opentune.ui.components
 import android.content.Context
 import android.content.Intent
 import android.widget.Toast
-import androidx.compose.foundation.clickable
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.Favorite
 import androidx.compose.material.icons.rounded.Star
 import androidx.compose.material3.FilterChip
@@ -24,6 +26,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
@@ -59,12 +62,12 @@ object Support {
         }
     }
 
-    // ---- Asking for a star, now and then ----
+    // ---- Asking for a star, twice a month ----
 
-    /** Days of use before the first ask, and between asks after "Later". */
+    /** Days of use before the first ask. */
     private const val DAYS_BEFORE = 5
-    private val LATER_MS = TimeUnit.DAYS.toMillis(21)
-    private const val MAX_ASKS = 3
+    /** However the halves of the month fall, asks are at least this far apart. */
+    private val MIN_GAP_MS = TimeUnit.DAYS.toMillis(7)
 
     private fun prefs(context: Context) = context.getSharedPreferences("support", Context.MODE_PRIVATE)
 
@@ -76,20 +79,29 @@ object Support {
         p.edit { putLong("lastDay", day); putInt("days", p.getInt("days", 0) + 1) }
     }
 
+    /**
+     * Which half of which month [now] falls in, counted from year 0: the
+     * 1st to the 15th is one half, the 16th to the end the other. One ask
+     * per half makes two a month.
+     */
+    internal fun halfMonth(now: Long, zone: java.time.ZoneId = java.time.ZoneId.systemDefault()): Int {
+        val date = java.time.Instant.ofEpochMilli(now).atZone(zone).toLocalDate()
+        return (date.year * 12 + date.monthValue - 1) * 2 + if (date.dayOfMonth <= 15) 0 else 1
+    }
+
     /** Whether to ask for a star now. */
     fun shouldAsk(context: Context, now: Long = System.currentTimeMillis()): Boolean {
         val p = prefs(context)
-        return shouldAsk(p.getBoolean("done", false), p.getInt("days", 0), p.getInt("asked", 0), p.getLong("nextAt", 0), now)
+        return shouldAsk(p.getBoolean("done", false), p.getInt("days", 0), p.getInt("askedHalf", -1), p.getLong("askedAt", 0), now)
     }
 
-    internal fun shouldAsk(done: Boolean, days: Int, asked: Int, nextAt: Long, now: Long): Boolean =
-        !done && asked < MAX_ASKS && days >= DAYS_BEFORE && now >= nextAt
+    internal fun shouldAsk(done: Boolean, days: Int, askedHalf: Int, askedAt: Long, now: Long, zone: java.time.ZoneId = java.time.ZoneId.systemDefault()): Boolean =
+        !done && days >= DAYS_BEFORE && halfMonth(now, zone) != askedHalf && now - askedAt >= MIN_GAP_MS
 
-    /** The prompt was answered: [never] for a star given or "Don't ask again"; otherwise later. */
+    /** The prompt was answered: [never] for a star given or "Don't ask again"; otherwise it comes back in the next half of the month. */
     fun answered(context: Context, never: Boolean, now: Long = System.currentTimeMillis()) = prefs(context).edit {
-        val p = prefs(context)
-        putInt("asked", p.getInt("asked", 0) + 1)
-        putLong("nextAt", now + LATER_MS)
+        putInt("askedHalf", halfMonth(now))
+        putLong("askedAt", now)
         if (never) putBoolean("done", true)
     }
 }
@@ -139,38 +151,57 @@ fun SupportDialog(onDismiss: () -> Unit) {
     )
 }
 
-/** Now and then, after some days of use: would you star the project on GitHub? */
+/**
+ * Twice a month, after some days of use: a small card that slides up above
+ * the dock asking for a star on GitHub. Starring or "Don't ask again" ends
+ * it; closing it waits for the next half of the month.
+ */
 @Composable
-fun StarPrompt(onDismiss: () -> Unit, onSupport: () -> Unit) {
+fun StarCard(onDismiss: () -> Unit, modifier: Modifier = Modifier) {
     val context = LocalContext.current
-    FloatingDialog(
-        onDismissRequest = { Support.answered(context, never = false); onDismiss() },
-        icon = { Icon(Icons.Rounded.Star, null) },
-        title = { Text("Enjoying OpenTune?") },
-        text = {
-            Column {
-                Text("A star on GitHub helps other people find it. It's free and takes a second.")
+    val shape = androidx.compose.foundation.shape.RoundedCornerShape(26.dp)
+    Column(
+        modifier.fillMaxWidth().padding(horizontal = 12.dp).padding(bottom = 10.dp)
+            .glass(shape)
+            .padding(start = 18.dp, end = 10.dp, top = 16.dp, bottom = 8.dp),
+    ) {
+        Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+            androidx.compose.foundation.layout.Box(
+                Modifier.size(40.dp).clip(androidx.compose.foundation.shape.CircleShape)
+                    .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.18f)),
+                contentAlignment = androidx.compose.ui.Alignment.Center,
+            ) {
+                Icon(Icons.Rounded.Star, null, Modifier.size(22.dp), tint = MaterialTheme.colorScheme.primary)
+            }
+            Column(Modifier.weight(1f).padding(start = 14.dp, end = 4.dp)) {
+                Text("Enjoying OpenTune?", style = MaterialTheme.typography.titleMedium)
                 Text(
-                    "Don't ask again",
-                    style = MaterialTheme.typography.bodySmall,
+                    "A star on GitHub helps other people find it. It's free and takes a second.",
+                    style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.padding(top = 14.dp).clickable { Support.answered(context, never = true); onDismiss() },
-                )
-                Text(
-                    "Or send a small thank-you",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.padding(top = 10.dp).clickable { Support.answered(context, never = false); onSupport() },
                 )
             }
-        },
-        confirmButton = {
-            SheetButton("Star on GitHub", onClick = {
+            // Not now: back in the next half of the month.
+            androidx.compose.material3.IconButton(
+                onClick = { Support.answered(context, never = false); onDismiss() },
+                modifier = Modifier.align(androidx.compose.ui.Alignment.Top).size(36.dp),
+            ) {
+                Icon(Icons.Rounded.Close, "Not now", Modifier.size(20.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+        }
+        Row(Modifier.fillMaxWidth().padding(top = 6.dp), verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+            androidx.compose.material3.TextButton(onClick = { Support.answered(context, never = true); onDismiss() }) {
+                Text("Don't ask again", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+            androidx.compose.foundation.layout.Spacer(Modifier.weight(1f))
+            androidx.compose.material3.Button(onClick = {
                 Support.answered(context, never = true)
                 runCatching { context.startActivity(Intent(Intent.ACTION_VIEW, Support.REPO.toUri())) }
                 onDismiss()
-            })
-        },
-        dismissButton = { SheetButton("Later", onClick = { Support.answered(context, never = false); onDismiss() }, closes = true) },
-    )
+            }) {
+                Icon(Icons.Rounded.Star, null, Modifier.size(18.dp))
+                Text("Star on GitHub", Modifier.padding(start = 6.dp), maxLines = 1)
+            }
+        }
+    }
 }
