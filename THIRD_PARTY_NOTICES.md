@@ -50,3 +50,6 @@ Foundation. Headphone corrections come from
 Skip segments come from [SponsorBlock](https://sponsor.ajay.app) (data
 under CC BY-NC-SA 4.0), and radio stations from the
 [Radio Browser](https://www.radio-browser.info) community directory.
+The QR code on a Listen together invite is made with
+[ZXing](https://github.com/zxing/zxing) (`com.google.zxing:core`), by the
+ZXing authors, under the Apache License 2.0.

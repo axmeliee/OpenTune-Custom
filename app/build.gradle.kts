@@ -165,6 +165,9 @@ dependencies {
     implementation("androidx.media3:media3-exoplayer-hls:1.11.0")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-guava:1.11.0")
 
+    // ---- QR codes: the Listen together invite. Encoder only; no Android parts. ----
+    implementation("com.google.zxing:core:3.5.4")
+
     // ---- Images ----
     implementation("io.coil-kt.coil3:coil-compose:3.0.4")
     implementation("io.coil-kt.coil3:coil-network-okhttp:3.0.4")

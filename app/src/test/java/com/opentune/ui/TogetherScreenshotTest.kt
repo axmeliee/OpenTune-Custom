@@ -9,7 +9,10 @@ import androidx.compose.material3.darkColorScheme
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
+import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
+import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performTextInput
 import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.foundation.layout.PaddingValues
 import org.junit.Assert.assertNull
@@ -62,6 +65,25 @@ class TogetherScreenshotTest {
         compose.onNodeWithText("Start a room").assertDoesNotExist()
         compose.onNodeWithText("Room code").assertDoesNotExist()
         assertNull("Opening an invite must not join before confirmation", Together.room.value)
+    }
+
+    /** Start a room: the button turns into a spinner until the room opens, then the invite rises over it. */
+    @Test fun startingARoomOpensTheInvite() {
+        try {
+            shoot("together-starting") { TogetherScreen(PaddingValues(), null, onBack = {}) }
+            compose.onNodeWithContentDescription("Your name").performTextInput("Asha")
+            compose.onNodeWithText("Start a room").performClick()
+            compose.waitForIdle()
+            compose.onNodeWithText("Opening the room…").assertExists()
+            // No relays here, so the room opens when the wait runs out.
+            compose.mainClock.advanceTimeBy(6_000)
+            compose.waitForIdle()
+            compose.onNodeWithText("Your room").assertExists()
+            compose.onNodeWithText("Invite friends to your room").assertExists()
+            compose.onNodeWithText("Share link").assertExists()
+        } finally {
+            Together.leave()
+        }
     }
 
     @Test fun room() {
