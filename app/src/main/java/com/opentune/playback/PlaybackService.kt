@@ -820,6 +820,7 @@ class PlaybackService : MediaLibraryService() {
     private var effectSession = C.AUDIO_SESSION_ID_UNSET
 
     private fun openEffectSession(session: Int) {
+        PhoneEqualizer.session = session
         if (!AppSettings.playback.value.systemEffects || BitPerfectUsb.active) return closeEffectSession()
         if (session == C.AUDIO_SESSION_ID_UNSET || session == effectSession) return
         closeEffectSession()

@@ -31,6 +31,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.PhoneAndroid
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.Equalizer
 import androidx.compose.material.icons.rounded.Headphones
@@ -101,6 +102,8 @@ fun EqualizerScreen(contentPadding: PaddingValues, onBack: () -> Unit) {
     val eq by AppSettings.equalizer.collectAsState()
     val preset = EqPreset.entries.firstOrNull { it.bands == eq.bands }
     var picking by remember { mutableStateOf(false) }
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val phoneEq = remember { com.opentune.playback.PhoneEqualizer.available(context) }
     var group by remember { mutableStateOf(preset?.group ?: EqGroup.SIGNATURE) }
     if (picking) HeadphonePickerDialog(onDismiss = { picking = false })
     // Each band's shown value springs to the saved one, so a preset morphs into place.
@@ -194,6 +197,25 @@ fun EqualizerScreen(contentPadding: PaddingValues, onBack: () -> Unit) {
                 )
                 if (hp != null) {
                     SettingRow("Turn off headphone correction", icon = Icons.Rounded.Close, onClick = { AppSettings.updateEqualizer { it.copy(headphone = null) } })
+                }
+            }
+        }
+        if (phoneEq) {
+            item { GroupLabel("Phone") }
+            item {
+                GroupCard {
+                    val effectsOn = AppSettings.playback.collectAsState().value.systemEffects
+                    NavRow(
+                        "Phone's equalizer",
+                        {
+                            // It only reaches playback while the phone's effects are let in.
+                            if (!effectsOn) AppSettings.updatePlayback { it.copy(systemEffects = true) }
+                            com.opentune.playback.PhoneEqualizer.open(context)
+                        },
+                        summary = if (effectsOn) "The equalizer that came with your phone, on top of this one"
+                        else "The equalizer that came with your phone. Opening it turns on System audio effects",
+                        icon = Icons.Rounded.PhoneAndroid,
+                    )
                 }
             }
         }

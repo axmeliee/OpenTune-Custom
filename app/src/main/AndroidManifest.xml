@@ -32,6 +32,13 @@
     <!-- Installing an update downloaded from GitHub Releases; Android still asks each time. -->
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
 
+    <!-- The phone's own equalizer, opened from the Equalizer page. -->
+    <queries>
+        <intent>
+            <action android:name="android.media.action.DISPLAY_AUDIO_EFFECT_CONTROL_PANEL" />
+        </intent>
+    </queries>
+
     <application
         android:name=".OpenTuneApp"
         android:allowBackup="true"

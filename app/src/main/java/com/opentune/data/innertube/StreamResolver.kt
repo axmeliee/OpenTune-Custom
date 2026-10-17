@@ -372,8 +372,8 @@ object StreamResolver {
         if (upgrades[videoId]?.let { SystemClock.elapsedRealtime() - it.at < URL_TTL_MS } == true) return@withContext true
         val maxKbps = AppSettings.effectiveAudioQuality.maxKbps
         val candidates = buildList {
-            runCatching { authenticatedWebRemixStream(videoId, ::rankForPlayback) }.getOrNull()?.let { add(it to "InnerTube · signed-in account") }
-            if ("opus" !in current.mimeType.lowercase(Locale.ROOT)) innerTubeXStream(videoId, maxKbps)?.let { add(it to "InnerTubeX") }
+            runCatching { authenticatedWebRemixStream(videoId, ::rankForPlayback) }.getOrNull()?.let { add(it to "YouTube Music · your account") }
+            if ("opus" !in current.mimeType.lowercase(Locale.ROOT)) innerTubeXStream(videoId, maxKbps)?.let { add(it to "YouTube Music") }
         }.filter { it.first.kbps <= maxKbps && it.first.url != current.url }
         val selected = candidates.maxByOrNull { it.first.score() } ?: return@withContext false
         val best = selected.first
@@ -541,7 +541,7 @@ object StreamResolver {
     private val resolverScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
     /** The two ways to a stream that [resolveUncached] switches between. */
-    enum class Engine(val label: String) { OWN("OpenTune"), INNERTUBEX("InnerTubeX") }
+    enum class Engine(val label: String) { OWN("YouTube Music · backup"), INNERTUBEX("YouTube Music") }
 
     /**
      * The engine the next track starts on. InnerTubeX by default, as it picks
@@ -564,7 +564,7 @@ object StreamResolver {
             switchedAt = SystemClock.elapsedRealtime()
         }
         engine = e
-        sourceEngines[videoId] = if (e == Engine.OWN) "InnerTube (OpenTune)" else e.label
+        sourceEngines[videoId] = e.label
         NerdStats.onEngine(e.label)
     }
 
