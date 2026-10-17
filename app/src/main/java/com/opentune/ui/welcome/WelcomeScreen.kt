@@ -80,8 +80,8 @@ import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.listSaver
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
@@ -130,16 +130,18 @@ import com.opentune.ui.components.rememberHaptics
 import com.opentune.ui.player.MiniPlayer
 import java.util.Locale
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 
 /** The welcome's steps, in order. */
 internal enum class WelcomeStep { ARTISTS, LOOK, SIGN_IN }
 
-/** Picking fewer than this many artists can only be skipped. */
-internal const val MIN_PICKS = 3
+/** Done needs this many picks; with none, the step can only be skipped. */
+internal const val MIN_PICKS = 1
 
 /**
  * The first-run welcome, shown once before Home on a fresh install (see
- * [Welcome]): artists to follow, which seed Home's first picks and mixes;
+ * [Welcome]): artists to follow, where each pick brings in more like it (see
+ * [ArtistChain]), which seed Home's first picks and mixes;
  * the theme and glass, with a live preview of the dock and mini player; and
  * an optional YouTube Music sign-in. Back goes a step back. Every choice
  * goes through the app's own settings, follows and sign-in, so the same
@@ -150,11 +152,21 @@ fun WelcomeScreen(
     onDone: () -> Unit,
     /** The starting grid: the charts' top artists for the phone's country, as Explore and Radio read it. */
     loadPopular: suspend () -> List<ExploreFeed.Artist> = { MusicRepository.chartArtists(Locale.getDefault().country.takeIf { it.length == 2 }) },
+    /** Artists like a picked one, to place after it. */
+    loadSimilar: suspend (String) -> List<ExploreFeed.Artist> = ArtistChain::load,
 ) {
     val ui by AppSettings.ui.collectAsState()
     val context = LocalContext.current
     var step by rememberSaveable { mutableStateOf(WelcomeStep.ARTISTS) }
     val picks = rememberSaveable(saver = ArtistListSaver) { mutableStateListOf() }
+    // The artists on offer, grown by the picks; kept here so going back to the step finds it as it was.
+    val grid = rememberSaveable(saver = ArtistListSaver) { mutableStateListOf() }
+    // Picks that have already brought in their similar artists, and those still loading them.
+    val grown = rememberSaveable(saver = idSetSaver) { mutableStateListOf() }
+    val growing = remember { mutableStateListOf<String>() }
+    // Which pick brought each artist in, by id, for the "Like …" line under them.
+    val broughtBy = remember { androidx.compose.runtime.mutableStateMapOf<String, String>() }
+    val scope = rememberCoroutineScope()
     // Artists this welcome followed, so unpicking one after going back unfollows it again.
     val followedHere = rememberSaveable(saver = idSetSaver) { mutableStateListOf() }
     var signingIn by rememberSaveable { mutableStateOf(false) }
@@ -213,7 +225,7 @@ fun WelcomeScreen(
                 )
                 WelcomeBottomBar(
                     step = step,
-                    picked = picks.size,
+                    picks = picks,
                     onContinue = {
                         when (step) {
                             WelcomeStep.ARTISTS -> { follow(); step = WelcomeStep.LOOK }
@@ -235,7 +247,31 @@ fun WelcomeScreen(
                 label = "welcomeStep",
             ) { s ->
                 when (s) {
-                    WelcomeStep.ARTISTS -> ArtistsStep(picks, ui.reduceAnimation, loadPopular)
+                    WelcomeStep.ARTISTS -> ArtistsStep(
+                        picks = picks,
+                        grid = grid,
+                        growing = growing,
+                        broughtBy = broughtBy,
+                        reduceMotion = ui.reduceAnimation,
+                        loadPopular = loadPopular,
+                        onPicked = { artist ->
+                            if (artist.browseId !in grown) {
+                                grown += artist.browseId
+                                growing += artist.browseId
+                                scope.launch {
+                                    val found = runCatching { loadSimilar(artist.browseId) }.getOrDefault(emptyList())
+                                    val next = ArtistChain.grow(grid.toList(), artist.browseId, found)
+                                    if (next.size != grid.size) {
+                                        val had = grid.mapTo(HashSet()) { it.browseId }
+                                        next.filter { it.browseId !in had }.forEach { broughtBy[it.browseId] = artist.name }
+                                        grid.clear()
+                                        grid.addAll(next)
+                                    }
+                                    growing -= artist.browseId
+                                }
+                            }
+                        },
+                    )
                     WelcomeStep.LOOK -> LookStep(picks)
                     WelcomeStep.SIGN_IN -> SignInStep()
                 }
@@ -311,7 +347,8 @@ private fun StepDots(step: WelcomeStep, reduceMotion: Boolean, modifier: Modifie
 }
 
 @Composable
-private fun BoxScope.WelcomeBottomBar(step: WelcomeStep, picked: Int, onContinue: () -> Unit, onNotNow: () -> Unit) {
+private fun BoxScope.WelcomeBottomBar(step: WelcomeStep, picks: List<ExploreFeed.Artist>, onContinue: () -> Unit, onNotNow: () -> Unit) {
+    val picked = picks.size
     val signedIn by AccountStore.signedIn.collectAsState()
     val page = MaterialTheme.colorScheme.background
     Column(
@@ -323,7 +360,11 @@ private fun BoxScope.WelcomeBottomBar(step: WelcomeStep, picked: Int, onContinue
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
         val label = when (step) {
-            WelcomeStep.ARTISTS -> if (picked >= MIN_PICKS) "Continue" else "Pick ${MIN_PICKS - picked} more"
+            WelcomeStep.ARTISTS -> when {
+                picked < MIN_PICKS -> "Pick an artist to start"
+                picked == 1 -> "Done · 1 artist"
+                else -> "Done · $picked artists"
+            }
             WelcomeStep.LOOK -> "Continue"
             WelcomeStep.SIGN_IN -> if (signedIn) "Start listening" else "Sign in to YouTube Music"
         }
@@ -333,6 +374,7 @@ private fun BoxScope.WelcomeBottomBar(step: WelcomeStep, picked: Int, onContinue
             shape = RoundedCornerShape(28.dp),
             modifier = Modifier.fillMaxWidth().height(56.dp),
         ) {
+            if (step == WelcomeStep.ARTISTS && picked > 0) PickedFaces(picks.takeLast(3).asReversed())
             Text(label, style = MaterialTheme.typography.titleMedium)
         }
         if (step == WelcomeStep.SIGN_IN && !signedIn) {
@@ -361,12 +403,25 @@ private fun bottomInset() = WindowInsets.navigationBars.asPaddingValues().calcul
 // ---- Step 1: artists ------------------------------------------------------
 
 @Composable
-private fun ArtistsStep(picks: SnapshotStateList<ExploreFeed.Artist>, reduceMotion: Boolean, loadPopular: suspend () -> List<ExploreFeed.Artist>) {
+private fun ArtistsStep(
+    picks: SnapshotStateList<ExploreFeed.Artist>,
+    grid: SnapshotStateList<ExploreFeed.Artist>,
+    growing: List<String>,
+    broughtBy: Map<String, String>,
+    reduceMotion: Boolean,
+    loadPopular: suspend () -> List<ExploreFeed.Artist>,
+    onPicked: (ExploreFeed.Artist) -> Unit,
+) {
     var query by rememberSaveable { mutableStateOf("") }
     var attempt by remember { mutableIntStateOf(0) }
-    val popular by produceState<List<ExploreFeed.Artist>?>(null, attempt) {
-        value = null
-        value = runCatching { loadPopular() }.getOrDefault(emptyList())
+    // The grid starts from the charts; once it has anything, it only grows.
+    var failed by remember { mutableStateOf(false) }
+    LaunchedEffect(attempt) {
+        if (grid.isNotEmpty()) return@LaunchedEffect
+        failed = false
+        val popular = runCatching { loadPopular() }.getOrDefault(emptyList())
+        if (grid.isEmpty()) grid.addAll(picks.filter { p -> popular.none { it.browseId == p.browseId } } + popular)
+        failed = grid.isEmpty()
     }
     var results by remember { mutableStateOf<List<ExploreFeed.Artist>?>(null) }
     LaunchedEffect(query) {
@@ -381,15 +436,34 @@ private fun ArtistsStep(picks: SnapshotStateList<ExploreFeed.Artist>, reduceMoti
     }
     val haptics = rememberHaptics()
     val searching = query.isNotBlank()
-    // Artists picked from a search stay in view, ahead of the popular ones.
-    val shown = when {
+    val shown: List<ExploreFeed.Artist>? = when {
         searching -> results
-        else -> popular?.let { list -> picks.filter { p -> list.none { it.browseId == p.browseId } } + list }
+        grid.isEmpty() && !failed -> null
+        else -> grid
+    }
+    val gridState = androidx.compose.foundation.lazy.grid.rememberLazyGridState()
+
+    fun toggle(artist: ExploreFeed.Artist) {
+        haptics.tick()
+        if (picks.any { it.browseId == artist.browseId }) {
+            picks.removeAll { it.browseId == artist.browseId }
+            return
+        }
+        picks += artist
+        if (searching) {
+            // A pick from search joins the grid at the top, where its similar artists follow it.
+            if (grid.none { it.browseId == artist.browseId }) grid.add(0, artist)
+            query = ""
+        }
+        onPicked(artist)
     }
 
     Column(Modifier.fillMaxSize().imePadding()) {
         Spacer(Modifier.height(topInset()))
-        StepTitle("Pick a few artists you like", "Pick at least $MIN_PICKS. Home starts from them, and you'll hear when they release something new.")
+        StepTitle(
+            "Pick artists you like",
+            "Each one you pick brings in more like them. Keep going as long as you like, then tap Done.",
+        )
         TextField(
             value = query,
             onValueChange = { query = it },
@@ -408,6 +482,7 @@ private fun ArtistsStep(picks: SnapshotStateList<ExploreFeed.Artist>, reduceMoti
         )
         LazyVerticalGrid(
             columns = GridCells.Adaptive(104.dp),
+            state = gridState,
             contentPadding = PaddingValues(start = 12.dp, end = 12.dp, top = 12.dp, bottom = bottomInset() + 12.dp),
             modifier = Modifier.fillMaxSize(),
         ) {
@@ -426,11 +501,38 @@ private fun ArtistsStep(picks: SnapshotStateList<ExploreFeed.Artist>, reduceMoti
                 }
                 else -> items(shown, key = { it.browseId }) { artist ->
                     val selected = picks.any { it.browseId == artist.browseId }
-                    ArtistChoice(artist, selected, reduceMotion) {
-                        haptics.tick()
-                        if (selected) picks.removeAll { it.browseId == artist.browseId } else picks += artist
-                    }
+                    ArtistChoice(
+                        artist,
+                        selected,
+                        loading = artist.browseId in growing,
+                        because = if (searching) null else broughtBy[artist.browseId],
+                        reduceMotion = reduceMotion,
+                        // New arrivals fade and grow in, and the rest slide aside to make room.
+                        modifier = if (reduceMotion) Modifier else Modifier.animateItem(
+                            fadeInSpec = androidx.compose.animation.core.tween(320, delayMillis = 60),
+                            placementSpec = spring(dampingRatio = 0.85f, stiffness = 380f, visibilityThreshold = androidx.compose.ui.unit.IntOffset(1, 1)),
+                            fadeOutSpec = androidx.compose.animation.core.tween(160),
+                        ),
+                    ) { toggle(artist) }
                 }
+            }
+        }
+    }
+}
+
+/** Up to three picked faces, overlapping, at the start of the Done button. */
+@Composable
+private fun PickedFaces(faces: List<ExploreFeed.Artist>) {
+    val ring = MaterialTheme.colorScheme.primary
+    Box(Modifier.padding(end = 10.dp).width(24.dp + 14.dp * (faces.size - 1)).height(24.dp)) {
+        faces.forEachIndexed { i, a ->
+            Box(
+                Modifier.padding(start = 14.dp * i).size(24.dp)
+                    .border(1.5.dp, ring, CircleShape)
+                    .clip(CircleShape)
+                    .background(MaterialTheme.colorScheme.primaryContainer),
+            ) {
+                Artwork(a.thumbnailUrl.artworkAt(96), Modifier.matchParentSize(), CircleShape, placeholder = Icons.Filled.Person)
             }
         }
     }
@@ -438,7 +540,16 @@ private fun ArtistsStep(picks: SnapshotStateList<ExploreFeed.Artist>, reduceMoti
 
 /** A round photo and a name; picked, it eases back a little behind a ring and a check. */
 @Composable
-private fun ArtistChoice(artist: ExploreFeed.Artist, selected: Boolean, reduceMotion: Boolean, onClick: () -> Unit) {
+private fun ArtistChoice(
+    artist: ExploreFeed.Artist,
+    selected: Boolean,
+    loading: Boolean,
+    /** The pick that brought this artist in, if one did. */
+    because: String?,
+    reduceMotion: Boolean,
+    modifier: Modifier = Modifier,
+    onClick: () -> Unit,
+) {
     val scale by animateFloatAsState(
         if (selected) 0.9f else 1f,
         if (reduceMotion) snap() else spring(dampingRatio = 0.55f, stiffness = 420f),
@@ -446,7 +557,7 @@ private fun ArtistChoice(artist: ExploreFeed.Artist, selected: Boolean, reduceMo
     )
     val ring by animateColorAsState(if (selected) MaterialTheme.colorScheme.primary else Color.Transparent, label = "ring")
     Column(
-        Modifier
+        modifier
             .padding(horizontal = 6.dp, vertical = 8.dp)
             .pressable(onClick)
             .semantics {
@@ -473,6 +584,15 @@ private fun ArtistChoice(artist: ExploreFeed.Artist, selected: Boolean, reduceMo
                     Artwork(artist.thumbnailUrl.artworkAt(240), Modifier.matchParentSize(), CircleShape, placeholder = Icons.Filled.Person)
                 }
             }
+            // While the artists like this one load, a turning arc on the ring.
+            if (loading) {
+                androidx.compose.material3.CircularProgressIndicator(
+                    Modifier.fillMaxSize(),
+                    color = MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.9f),
+                    strokeWidth = 3.dp,
+                    trackColor = Color.Transparent,
+                )
+            }
             androidx.compose.animation.AnimatedVisibility(
                 visible = selected,
                 modifier = Modifier.align(Alignment.BottomEnd),
@@ -493,10 +613,21 @@ private fun ArtistChoice(artist: ExploreFeed.Artist, selected: Boolean, reduceMo
             style = MaterialTheme.typography.labelLarge,
             fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Medium,
             textAlign = TextAlign.Center,
-            maxLines = 2,
+            maxLines = if (because != null) 1 else 2,
             overflow = TextOverflow.Ellipsis,
             modifier = Modifier.padding(top = 6.dp),
         )
+        if (because != null) {
+            Text(
+                "Like $because",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.primary,
+                textAlign = TextAlign.Center,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.padding(top = 2.dp),
+            )
+        }
     }
 }
 
