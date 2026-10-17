@@ -331,8 +331,6 @@ data class InterfaceSettings(
     val liquidGlass: Boolean = true,
     /** Draw the played part of the seek bar as a moving wave. */
     val wavySeekbar: Boolean = false,
-    /** The seek bar drawn as the song's waveform, loud and quiet parts. */
-    val waveformSeekbar: Boolean = false,
     /** How thick the seek bar's track is. */
     val seekbarThickness: SeekbarThickness = SeekbarThickness.REGULAR,
     /** What marks the place on the seek bar. */
@@ -347,8 +345,6 @@ data class InterfaceSettings(
     val skipToChorus: Boolean = false,
     /** The pill under the title naming where the audio comes from and its quality. */
     val sourcePill: Boolean = true,
-    /** A tapped song's cover flies down into the now-playing card. */
-    val coverFlight: Boolean = true,
     /** A soft light in the cover's colour under the player's cover. */
     val coverGlow: Boolean = true,
     /** While the seek bar is dragged, the lyric line at that point shows above the finger. */
@@ -558,13 +554,8 @@ enum class SeekbarTime(val label: String) {
 enum class LyricsAnimation(val label: String, val summary: String) {
     FLUID("Fluid", "The current line grows and the rest soften"),
     KARAOKE("Karaoke", "Words fill with a glow; lines stay still"),
-    SLIDE("Slide", "The current line glides into place"),
     ZOOM("Focus zoom", "A big current line, the rest blurred away"),
     MINIMAL("Minimal", "Only the colour changes"),
-    BOUNCE("Bounce", "Each word hops up as it's sung"),
-    POP("Pop", "Words swell and glow as they're sung"),
-    REVEAL("Reveal", "Words appear only as they're sung"),
-    ECHO("Echo", "Soft line focus with a small lift and glow on timed words"),
 }
 
 /** Where lyrics can come from. */
@@ -615,12 +606,6 @@ data class SettingsState(
     val library: LibrarySettings = LibrarySettings(),
     val lyrics: LyricsSettings = LyricsSettings(),
     val recentSearches: List<String> = emptyList(),
-)
-
-/** Apply only the four Echo choices; preserve accessibility and unrelated preferences. */
-internal fun SettingsState.withEchoMotion() = copy(
-    theme = theme.copy(playerBackground = PlayerBackground.ECHO_GLOW),
-    ui = ui.copy(controlStyle = ControlStyle.ECHO, playerMotion = PlayerMotion.ECHO, lyricsAnimation = LyricsAnimation.ECHO),
 )
 
 /** Accent choices offered when Material You is off. */
@@ -709,7 +694,6 @@ object AppSettings {
         prefs?.edit { putString(K_STATE, json.encodeToString(SettingsState.serializer(), s)) }
     }
 
-    fun applyEchoMotion() = update { it.withEchoMotion() }
     fun updateTheme(t: (ThemeSettings) -> ThemeSettings) = update { it.copy(theme = t(it.theme)) }
     fun updateSound(t: (SoundSettings) -> SoundSettings) = update { it.copy(sound = t(it.sound)) }
     fun updateEqualizer(t: (EqualizerSettings) -> EqualizerSettings) = update { it.copy(equalizer = t(it.equalizer)) }

@@ -87,6 +87,8 @@ class OpenTuneApp : Application(), SingletonImageLoader.Factory {
         com.opentune.data.Usage.init(this)
         // Spotify sign-in is gone; drop any tokens an earlier version kept.
         deleteSharedPreferences("spotify")
+        // The waveform seek bar is gone; drop the waveforms an earlier version saved.
+        java.io.File(filesDir, "waveforms").takeIf { it.exists() }?.let { dir -> Thread { dir.deleteRecursively() }.start() }
         com.opentune.data.podcasts.Podcasts.init(this)
         AlbumCovers.init(this)
         AutoEq.init(this)

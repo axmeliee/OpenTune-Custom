@@ -327,9 +327,6 @@ fun ArtworkPane(
         contentAlignment = Alignment.Center,
     ) {
         if (glow) CoverGlow(isPlaying, scale, Modifier.matchParentSize())
-        // Where the mini player's cover grows to when the player opens; hidden until it lands.
-        DisposableEffect(Unit) { onDispose { com.opentune.ui.components.FlyingCover.playerCover = null } }
-        com.opentune.ui.components.FlyingCover.playerCoverScale = scale
         CoverSwap(CoverShown(song.thumbnailUrl, index), change) { url, motion ->
             Artwork(
                 url.artworkAt(com.opentune.data.model.PLAYER_ART_PX),
@@ -338,10 +335,8 @@ fun ArtworkPane(
                 // "Playing from" and the title on screens where the controls take more height.
                 Modifier
                     .aspectRatio(1f)
-                    .then(with(com.opentune.ui.components.FlyingCover) { Modifier.playerLanding() })
                     .then(motion)
                     .graphicsLayer {
-                        alpha = if (com.opentune.ui.components.FlyingCover.expanding) 0f else 1f
                         scaleX = scale
                         scaleY = scale
                         translationX = offsetX.value
@@ -473,10 +468,6 @@ fun SeekBar(
     modifier: Modifier = Modifier,
     wavy: Boolean = false,
     playing: Boolean = false,
-    /** The song's waveform; drawn as bars in place of the track when given. */
-    waveform: com.opentune.playback.Waveforms.Wave? = null,
-    /** Moves on as [waveform] fills in, so the bars are redrawn. */
-    waveVersion: () -> Int = { 0 },
     /** The lyric line sung at a moment, shown above the finger while the bar is dragged. */
     lyricAt: ((Long) -> String?)? = null,
     /** Where the song's parts (verse, chorus) begin, in ms, marked as small gaps in the track. */
@@ -572,30 +563,6 @@ fun SeekBar(
             val r = CornerRadius(h / 2)
             val f = fraction()
             val b = if (durationMs > 0) (buffered().toFloat() / durationMs).coerceIn(0f, 1f) else 0f
-            if (waveform != null) {
-                waveVersion()
-                // Bars from the middle line, scaled so the loudest is full height; steps not
-                // heard yet are dots. They grow taller while the bar is being dragged.
-                val bins = waveform.bins
-                val top = bins.maxOrNull()?.takeIf { it > 0f } ?: 1f
-                val n = bins.size
-                val step = size.width / n
-                val bar = step * 0.62f
-                val full = size.height * (if (dragFraction != null) 1f else 0.82f)
-                for (i in 0 until n) {
-                    val x = i * step + (step - bar) / 2f
-                    val v = bins[i]
-                    val played = (i + 0.5f) / n <= f
-                    val color = when {
-                        played -> active
-                        (i + 0.5f) / n <= b -> bufferedColor
-                        else -> inactive
-                    }
-                    val bh = if (v == com.opentune.playback.Waveforms.UNKNOWN) bar else maxOf(bar, full * (0.12f + 0.88f * (v / top)))
-                    drawRoundRect(color, Offset(x, (size.height - bh) / 2f), Size(bar, bh), CornerRadius(bar / 2f))
-                }
-                return@Canvas
-            }
             drawRoundRect(inactive, Offset(0f, y), Size(size.width, h), r)
             if (sweep != null) {
                 val at = sweep.value * size.width
@@ -708,14 +675,14 @@ fun MiniPlayer(
 
     if (inline) {
         Box(
-            with(com.opentune.ui.components.FlyingCover) { modifier.card() }
+            modifier
                 .glass(CircleShape, tint)
                 .clickable(onClick = onClick)
                 .padding(4.dp),
             contentAlignment = Alignment.Center,
         ) {
             ProgressRing(progress, accent, track, stroke = 3.dp, modifier = Modifier.matchParentSize())
-            Artwork(song.thumbnailUrl.artworkAt(ROW_ART_PX), with(com.opentune.ui.components.FlyingCover) { Modifier.padding(4.dp).fillMaxSize().landing() }, CircleShape)
+            Artwork(song.thumbnailUrl.artworkAt(ROW_ART_PX), Modifier.padding(4.dp).fillMaxSize(), CircleShape)
             if (isBuffering) CircularProgressIndicator(Modifier.matchParentSize(), strokeWidth = 3.dp, color = accent)
         }
         return
@@ -726,7 +693,7 @@ fun MiniPlayer(
         onClick = onClick,
         shape = shape,
         color = Color.Transparent,
-        modifier = with(com.opentune.ui.components.FlyingCover) { modifier.card() }
+        modifier = modifier
             .graphicsLayer { translationX = offsetX.value }
             .glass(shape, tint)
             .pointerInput(Unit) {
@@ -748,7 +715,7 @@ fun MiniPlayer(
         Row(Modifier.fillMaxSize().padding(start = 10.dp, end = 6.dp), verticalAlignment = Alignment.CenterVertically) {
             AnimatedContent(song, transitionSpec = { fadeIn(tween(300)) togetherWith fadeOut(tween(200)) }, label = "mini", modifier = Modifier.weight(1f)) { s ->
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Artwork(s.thumbnailUrl.artworkAt(ROW_ART_PX), with(com.opentune.ui.components.FlyingCover) { Modifier.size(44.dp).landing() }, RoundedCornerShape(12.dp))
+                    Artwork(s.thumbnailUrl.artworkAt(ROW_ART_PX), Modifier.size(44.dp), RoundedCornerShape(12.dp))
                     Column(Modifier.padding(start = 12.dp)) {
                         Text(s.title, maxLines = 1, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
                         com.opentune.ui.components.SubtitleLine(s.artist, explicit = s.isExplicit == true, style = MaterialTheme.typography.bodySmall)
@@ -959,41 +926,6 @@ fun VinylPane(
 }
 
 private const val VINYL_DEGREES_PER_SECOND = 360f * 33.3f / 60f
-
-/**
- * The waveform for [videoId], kept filling in from the app's own audio
- * while it plays, and saved when the song changes or the player goes.
- */
-@Composable
-fun rememberWaveform(videoId: String, position: () -> Long, durationMs: Long, playing: Boolean): Pair<com.opentune.playback.Waveforms.Wave, androidx.compose.runtime.State<Int>> {
-    val context = androidx.compose.ui.platform.LocalContext.current
-    val wave = remember(videoId) { com.opentune.playback.Waveforms.forSong(context, videoId) }
-    val version = remember(videoId) { androidx.compose.runtime.mutableIntStateOf(wave.version) }
-    androidx.compose.runtime.DisposableEffect(wave) {
-        com.opentune.playback.AudioLevels.hold()
-        onDispose {
-            com.opentune.playback.AudioLevels.release()
-            com.opentune.playback.Waveforms.save(wave)
-        }
-    }
-    LaunchedEffect(wave, playing, durationMs) {
-        var lastShown = -1
-        while (true) {
-            androidx.compose.runtime.withFrameNanos { }
-            if (playing && !wave.complete) {
-                com.opentune.playback.AudioLevels.at(System.nanoTime())?.let { com.opentune.playback.Waveforms.observe(wave, position(), durationMs, it.level) }
-            }
-            // A decoded waveform arrives all at once; a heard one a step at a time.
-            if (wave.version != lastShown) {
-                lastShown = wave.version
-                version.intValue = wave.version
-            }
-            if (!playing && wave.complete) break
-            kotlinx.coroutines.delay(60)
-        }
-    }
-    return wave to version
-}
 
 /**
  * While the seek bar is dragged, the line sung at that point in a bubble

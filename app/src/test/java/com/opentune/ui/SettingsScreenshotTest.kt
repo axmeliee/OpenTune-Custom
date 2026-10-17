@@ -11,6 +11,10 @@ import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performTextInput
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.assertIsNotDisplayed
+import androidx.compose.ui.test.hasScrollToNodeAction
+import androidx.compose.ui.test.hasText
+import androidx.compose.ui.test.performScrollToNode
 import androidx.test.core.app.ApplicationProvider
 import com.opentune.data.library.LibraryStore
 import com.opentune.data.settings.AppSettings
@@ -68,22 +72,38 @@ class SettingsScreenshotTest {
         save("settings-search")
     }
 
-    @Test fun echoPresetIsReachableAndPreservesReducedMotion() {
-        val previousUi = AppSettings.ui.value
-        val previousTheme = AppSettings.theme.value
-        try {
-            AppSettings.updateUi { it.copy(reduceAnimation = true) }
-            compose.onNodeWithText("Motion").performScrollTo().performClick()
-            compose.onNodeWithText("Echo motion preset").performClick()
-            compose.onNodeWithText("Applied").assertIsDisplayed()
-            assertTrue(AppSettings.ui.value.reduceAnimation)
-            assertTrue(AppSettings.theme.value.playerBackground == com.opentune.data.settings.PlayerBackground.ECHO_GLOW)
-            save("settings-echo-preset")
-        } finally {
-            AppSettings.updateUi { previousUi }
-            AppSettings.updateTheme { previousTheme }
-        }
+    @Test fun seekBarSettingsFoldUntilSeeMore() {
+        list().performScrollToNode(hasText("Player"))
+        compose.onNodeWithText("Player").performClick()
+        compose.mainClock.advanceTimeBy(600)
+        compose.waitForIdle()
+        list().performScrollToNode(hasText("Wavy seek bar"))
+        compose.onNodeWithText("Wavy seek bar").assertIsDisplayed()
+        compose.onNodeWithText("Seek bar thickness").assertDoesNotExist()
+        list().performScrollToNode(hasText("See 5 more"))
+        compose.onNodeWithText("See 5 more").performClick()
+        compose.waitForIdle()
+        compose.onNodeWithText("Seek bar thickness").assertExists()
+        list().performScrollToNode(hasText("See less"))
+        compose.onNodeWithText("See less").assertIsDisplayed()
+        save("settings-seek-bar")
     }
+
+    @Test fun backFromAPageKeepsTheListWhereItWas() {
+        list().performScrollToNode(hasText("About"))
+        compose.onNodeWithText("About").assertIsDisplayed()
+        compose.onNodeWithText("About").performClick()
+        compose.mainClock.advanceTimeBy(600)
+        compose.waitForIdle()
+        compose.runOnUiThread { compose.activity.onBackPressedDispatcher.onBackPressed() }
+        compose.mainClock.advanceTimeBy(600)
+        compose.waitForIdle()
+        // Still scrolled down: the last category is in view, not the page title.
+        compose.onNodeWithText("About").assertIsDisplayed()
+        compose.onNodeWithText("Search settings").assertIsNotDisplayed()
+    }
+
+    private fun list() = compose.onNode(hasScrollToNodeAction())
 
     private fun save(name: String) {
         compose.waitForIdle()

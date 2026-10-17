@@ -24,6 +24,12 @@ internal class SettingsCategory(
     val groups: List<Pair<String, List<String>>>,
 )
 
+/**
+ * Subsections that show only their first few settings until "See more" is
+ * tapped, by heading. Search always shows every match.
+ */
+internal val FOLDED_GROUPS = mapOf("Seek bar" to 2)
+
 /** Where every setting lives. A setting not named here lands under "More" on its section's page. */
 internal val SETTINGS_CATEGORIES = listOf(
     SettingsCategory(
@@ -34,7 +40,7 @@ internal val SETTINGS_CATEGORIES = listOf(
         "audio", "Audio", "Quality, loudness, effects and output", Icons.Rounded.GraphicEq,
         listOf(
             "Streaming quality" to listOf("On Wi-Fi", "On mobile data", "Upgrade quality while playing"),
-            "Higher-quality sources" to listOf("Lossless streaming", "JioSaavn quality upgrade", "Unmetered networks only", "Prefer hi-res lossless", "Qobuz relay", "SpotiFLAC verification", "Disconnect SpotiFLAC"),
+            "Higher-quality sources" to listOf("Lossless streaming", "Unmetered networks only", "Prefer hi-res lossless", "Qobuz relay", "SpotiFLAC verification", "Disconnect SpotiFLAC"),
             "Loudness" to listOf("Loudness normalization", "Volume level", "Normalize on the phone speaker"),
             "Sound" to listOf("Equalizer", "Clarity", "Spatial audio", "System audio effects"),
             "Output" to listOf("Output precision", "Prefer USB DAC", "Bit-perfect USB output"),
@@ -63,16 +69,15 @@ internal val SETTINGS_CATEGORIES = listOf(
         listOf(
             "Layout" to listOf("Player layout", "Player buttons", "Player background", "Player beside the page"),
             "Cover art" to listOf("Moving cover art", "Moving covers on Home", "Glow under the cover", "Song change", "Full-screen cover art", "Album covers"),
-            "Seek bar" to listOf("Seek bar thickness", "Seek bar handle", "Seek bar colour", "Seek bar time", "Wavy seek bar", "Waveform seek bar", "Song part marks", "Lyric preview while seeking"),
+            "Seek bar" to listOf("Wavy seek bar", "Lyric preview while seeking", "Seek bar thickness", "Seek bar handle", "Seek bar colour", "Seek bar time", "Song part marks"),
             "Controls" to listOf("Source pill", "Skip to chorus", "Hide volume bar", "Hide song status", "Show stats for nerds"),
         ),
     ),
     SettingsCategory(
         "motion", "Motion", "How the dock, pages and player move", Icons.Rounded.Animation,
         listOf(
-            "Presets" to listOf("Echo motion preset"),
             "Dock" to listOf("Dock animation", "Dock lens"),
-            "Pages and player" to listOf("Opening animation", "Page transitions", "Player opening", "Cover flies to the player"),
+            "Pages and player" to listOf("Opening animation", "Page transitions", "Player opening"),
             "Less motion" to listOf("Reduce animation"),
         ),
     ),

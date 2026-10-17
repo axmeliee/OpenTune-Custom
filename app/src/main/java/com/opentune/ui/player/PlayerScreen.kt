@@ -672,12 +672,7 @@ fun PlayerLayout(
                 val lyricAt: ((Long) -> String?)? = if (state.ui.lyricScrubPreview && synced != null) {
                     { ms -> synced.lines.lastOrNull { it.startMs <= ms + offsetMs }?.text?.takeIf { it.isNotBlank() } }
                 } else null
-                if (state.ui.waveformSeekbar) {
-                    val (wave, waveVersion) = rememberWaveform(current.videoId, position, state.durationMs, state.isPlaying)
-                    SeekBar(position, buffered, state.durationMs, onSeek = actions.seekTo, playing = state.isPlaying, waveform = wave, waveVersion = { waveVersion.value }, lyricAt = lyricAt, marks = marks)
-                } else {
-                    SeekBar(position, buffered, state.durationMs, onSeek = actions.seekTo, wavy = state.ui.wavySeekbar && !state.ui.reduceAnimation, playing = state.isPlaying, lyricAt = lyricAt, marks = marks)
-                }
+                SeekBar(position, buffered, state.durationMs, onSeek = actions.seekTo, wavy = state.ui.wavySeekbar && !state.ui.reduceAnimation, playing = state.isPlaying, lyricAt = lyricAt, marks = marks)
                 if (state.ui.statsForNerds) {
                     Box(Modifier.clickable { showSignal = true }) { NerdStatsLine(state.audioFormat) }
                 }

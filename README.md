@@ -459,9 +459,8 @@ iOS 16 or newer.
   before the lookup ("- 2009 Remaster", "(Deluxe Edition)", "feat." and
   video noise go), LRCLIB's exact match and its search run side by side,
   and a last search by title alone catches artists it spells another way,
-  taking only a hit by the same artist. Eight animation
-  styles (Fluid, Karaoke, Slide, Focus zoom, Minimal, and three where the
-  words themselves move: Bounce, Pop and Reveal), a per-song timing
+  taking only a hit by the same artist. Four animation
+  styles (Fluid, Karaoke, Focus zoom and Minimal), a per-song timing
   offset, adjustable text size, left or centred lines, an optional glow on
   the sung line, and lyrics saved with downloads so they work offline.
 - **Lyric cards.** The quote button in the lyrics opens a sheet where you
@@ -481,10 +480,6 @@ iOS 16 or newer.
   the other as the song goes on; Halo, a round cover in a ring of moving
   bars; and Polaroid, the cover as an instant photo that sways gently.
 - **Wavy seek bar** (optional) that ripples while music plays.
-- **Waveform seek bar** (optional): the bar shows the song's loud and
-  quiet parts. Downloaded songs and songs on the phone are read in the
-  background and show the whole shape at once; streamed songs fill it in
-  as they play and keep it, so it's complete the next time.
 - **Quick screens.** Home opens on the last copy saved while the fresh one
   loads; pages you've visited and searches you've made come back at once
   and refresh in the background.
@@ -516,8 +511,6 @@ iOS 16 or newer.
   rushes past you, Dissolve from one blur into the other, turn like a
   Cube, open out of the middle in a Reveal, or Toss the old one aside as
   the new one lands. It applies to the full-screen cover too.
-- **Covers that fly.** Tap a song and its cover lifts off, tilts and arcs
-  down into the now-playing card. Off under Settings › Motion.
 - **Double-tap the cover** on either side to go back or ahead 10 seconds;
   taps in a row add up, with a ripple and the total on the cover.
 - **A glow under the cover** in its own colours, which swells with the

@@ -168,16 +168,6 @@ class ReadmeScreenshotTest {
     @Test fun halo() = shoot("style-halo", content = player(blinding, com.opentune.ui.LyricsState.NotFound, false, 64_000, com.opentune.data.settings.PlayerStyle.HALO))
     @Test fun polaroid() = shoot("style-polaroid", content = player(blinding, com.opentune.ui.LyricsState.NotFound, false, 64_000, com.opentune.data.settings.PlayerStyle.POLAROID))
 
-    @Test fun lyricsBounce() {
-        AppSettings.updateUi { it.copy(lyricsAnimation = com.opentune.data.settings.LyricsAnimation.BOUNCE) }
-        try { lyricsShot("lyrics-bounce") } finally { AppSettings.updateUi { it.copy(lyricsAnimation = com.opentune.data.settings.LyricsAnimation.FLUID) } }
-    }
-
-    @Test fun lyricsReveal() {
-        AppSettings.updateUi { it.copy(lyricsAnimation = com.opentune.data.settings.LyricsAnimation.REVEAL) }
-        try { lyricsShot("lyrics-reveal") } finally { AppSettings.updateUi { it.copy(lyricsAnimation = com.opentune.data.settings.LyricsAnimation.FLUID) } }
-    }
-
     @Test fun lyrics() = lyricsShot("lyrics")
 
     private fun lyricsShot(name: String) {

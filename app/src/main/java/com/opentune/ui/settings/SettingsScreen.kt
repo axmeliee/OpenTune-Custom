@@ -8,8 +8,12 @@ import android.os.PowerManager
 import android.provider.Settings
 import android.text.format.Formatter
 import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.compose.animation.togetherWith
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.animateContentSize
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.spring
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -48,56 +52,57 @@ import androidx.compose.material.icons.rounded.Code
 import androidx.compose.material.icons.rounded.DeleteSweep
 import androidx.compose.material.icons.rounded.Dns
 import androidx.compose.material.icons.rounded.Dock
-import androidx.compose.material.icons.rounded.Speaker
-import androidx.compose.material.icons.rounded.Flare
-import androidx.compose.material.icons.rounded.FormatAlignCenter
-import androidx.compose.material.icons.rounded.Gradient
-import androidx.compose.material.icons.rounded.UnfoldMore
-import androidx.compose.material.icons.rounded.SwapHoriz
-import androidx.compose.material.icons.rounded.Lens
 import androidx.compose.material.icons.rounded.Download
 import androidx.compose.material.icons.rounded.DownloadDone
 import androidx.compose.material.icons.rounded.Equalizer
+import androidx.compose.material.icons.rounded.ExpandMore
 import androidx.compose.material.icons.rounded.FastForward
+import androidx.compose.material.icons.rounded.Favorite
 import androidx.compose.material.icons.rounded.FilterAlt
+import androidx.compose.material.icons.rounded.Flare
 import androidx.compose.material.icons.rounded.Folder
+import androidx.compose.material.icons.rounded.FormatAlignCenter
 import androidx.compose.material.icons.rounded.FormatSize
 import androidx.compose.material.icons.rounded.Fullscreen
+import androidx.compose.material.icons.rounded.Gradient
 import androidx.compose.material.icons.rounded.GraphicEq
 import androidx.compose.material.icons.rounded.Headphones
 import androidx.compose.material.icons.rounded.HighQuality
 import androidx.compose.material.icons.rounded.History
 import androidx.compose.material.icons.rounded.Info
+import androidx.compose.material.icons.rounded.Lens
+import androidx.compose.material.icons.rounded.LineWeight
 import androidx.compose.material.icons.rounded.Lyrics
+import androidx.compose.material.icons.rounded.MoreHoriz
 import androidx.compose.material.icons.rounded.MusicOff
 import androidx.compose.material.icons.rounded.NetworkCell
 import androidx.compose.material.icons.rounded.NotificationsActive
 import androidx.compose.material.icons.rounded.Palette
-import androidx.compose.material.icons.rounded.LineWeight
-import androidx.compose.material.icons.rounded.RadioButtonChecked
-import androidx.compose.material.icons.rounded.Schedule
-import androidx.compose.material.icons.rounded.MoreHoriz
 import androidx.compose.material.icons.rounded.Person
 import androidx.compose.material.icons.rounded.PlayCircle
+import androidx.compose.material.icons.rounded.RadioButtonChecked
+import androidx.compose.material.icons.rounded.Schedule
 import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material.icons.rounded.SpaceBar
+import androidx.compose.material.icons.rounded.Speaker
 import androidx.compose.material.icons.rounded.Speed
-import androidx.compose.material.icons.rounded.TabletAndroid
-import androidx.compose.material.icons.rounded.VerticalSplit
+import androidx.compose.material.icons.rounded.Star
 import androidx.compose.material.icons.rounded.Storage
 import androidx.compose.material.icons.rounded.SurroundSound
-import androidx.compose.material.icons.rounded.Favorite
-import androidx.compose.material.icons.rounded.Star
+import androidx.compose.material.icons.rounded.SwapHoriz
 import androidx.compose.material.icons.rounded.SystemUpdate
-import androidx.compose.material.icons.rounded.WavingHand
+import androidx.compose.material.icons.rounded.TabletAndroid
 import androidx.compose.material.icons.rounded.TextFields
 import androidx.compose.material.icons.rounded.Timer
+import androidx.compose.material.icons.rounded.UnfoldMore
 import androidx.compose.material.icons.rounded.Upload
 import androidx.compose.material.icons.rounded.Usb
+import androidx.compose.material.icons.rounded.VerticalSplit
 import androidx.compose.material.icons.rounded.Vibration
 import androidx.compose.material.icons.rounded.VisibilityOff
 import androidx.compose.material.icons.rounded.Wallpaper
 import androidx.compose.material.icons.rounded.Waves
+import androidx.compose.material.icons.rounded.WavingHand
 import androidx.compose.material.icons.rounded.Wifi
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
@@ -123,6 +128,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -145,18 +151,18 @@ import com.opentune.data.releases.NewReleases
 import com.opentune.data.settings.AppSettings
 import com.opentune.data.settings.AudioQuality
 import com.opentune.data.settings.ControlStyle
-import com.opentune.data.settings.Recommender
 import com.opentune.data.settings.CoverChange
-import com.opentune.data.settings.DockMotion
-import com.opentune.data.settings.LyricsAlign
-import com.opentune.data.settings.PlayerMotion
-import com.opentune.data.settings.PageTransition
-import com.opentune.data.settings.GlassStyle
 import com.opentune.data.settings.DockLens
+import com.opentune.data.settings.DockMotion
+import com.opentune.data.settings.GlassStyle
+import com.opentune.data.settings.LyricsAlign
 import com.opentune.data.settings.LyricsAnimation
+import com.opentune.data.settings.PageTransition
 import com.opentune.data.settings.PaletteStyleOption
 import com.opentune.data.settings.PlayerBackground
+import com.opentune.data.settings.PlayerMotion
 import com.opentune.data.settings.PlayerStyle
+import com.opentune.data.settings.Recommender
 import com.opentune.data.settings.SEED_COLORS
 import com.opentune.data.settings.ThemeMode
 import com.opentune.data.settings.VolumeLevel
@@ -221,6 +227,10 @@ fun SettingsScreen(
     val open = SETTINGS_CATEGORIES.firstOrNull { it.key == openKey }
     androidx.activity.compose.BackHandler(enabled = open != null) { openKey = null }
     val q = query.trim()
+    // Kept out here, so coming back from a page finds the main list where it was left.
+    val mainList = androidx.compose.foundation.lazy.rememberLazyListState()
+    // Which folded subsections have been opened with "See more".
+    var unfolded by rememberSaveable { mutableStateOf(emptySet<String>()) }
 
     androidx.compose.animation.AnimatedContent(
         open,
@@ -232,16 +242,27 @@ fun SettingsScreen(
         },
         label = "settingsPage",
     ) { page ->
-        LazyColumn(contentPadding = contentPadding, modifier = Modifier.fillMaxSize()) {
+        LazyColumn(
+            state = if (page == null) mainList else androidx.compose.foundation.lazy.rememberLazyListState(),
+            contentPadding = contentPadding,
+            modifier = Modifier.fillMaxSize(),
+        ) {
             if (page != null) {
                 item { PageHeader(page.title, onBack = { openKey = null }) }
                 placed.filter { it.category == page }.groupBy { it.group }.forEach { (group, rows) ->
                     item(key = "label:$group") { GroupLabel(group) }
                     item(key = "card:$group") {
-                        GroupCard {
-                            rows.forEachIndexed { i, row ->
+                        val shown = FOLDED_GROUPS[group]?.takeIf { group !in unfolded && it < rows.size }
+                        GroupCard(Modifier.animateContentSize(spring(dampingRatio = 1f, stiffness = Spring.StiffnessMediumLow))) {
+                            rows.take(shown ?: rows.size).forEachIndexed { i, row ->
                                 if (i > 0) RowDivider()
                                 row.entry.content()
+                            }
+                            if (FOLDED_GROUPS[group]?.let { it < rows.size } == true) {
+                                RowDivider()
+                                SeeMoreRow(open = shown == null, hidden = rows.size - (FOLDED_GROUPS[group] ?: 0)) {
+                                    unfolded = if (group in unfolded) unfolded - group else unfolded + group
+                                }
                             }
                         }
                     }
@@ -314,6 +335,24 @@ fun SettingsScreen(
                 }
             }
         }
+    }
+}
+
+/** The last row of a folded subsection: "See more" with how many are tucked away, or "See less". */
+@Composable
+private fun SeeMoreRow(open: Boolean, hidden: Int, onClick: () -> Unit) {
+    val turn by animateFloatAsState(if (open) 180f else 0f, spring(dampingRatio = 1f, stiffness = Spring.StiffnessMediumLow), label = "seeMore")
+    Row(
+        Modifier.fillMaxWidth().clickable(onClick = onClick).padding(start = 72.dp, end = 24.dp, top = 16.dp, bottom = 16.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(
+            if (open) "See less" else "See $hidden more",
+            style = MaterialTheme.typography.titleMedium,
+            color = MaterialTheme.colorScheme.primary,
+            modifier = Modifier.weight(1f),
+        )
+        Icon(Icons.Rounded.ExpandMore, null, Modifier.graphicsLayer { rotationZ = turn }, tint = MaterialTheme.colorScheme.primary)
     }
 }
 
@@ -635,17 +674,12 @@ private fun settingsSections(
         Section(
             "Audio quality",
             listOfNotNull(
+                // The two look alike; the one for the network in use now says so.
                 Entry("On Wi-Fi", "stream quality bitrate") {
-                    NavRow("On Wi-Fi", { qualityDialog = true }, icon = Icons.Rounded.Wifi, value = pb.wifiQuality.label)
+                    NavRow("On Wi-Fi", { qualityDialog = true }, summary = if (!metered) "In use now" else null, icon = Icons.Rounded.Wifi, value = pb.wifiQuality.label)
                 },
                 Entry("On mobile data", "stream quality bitrate cellular") {
-                    SettingRow(
-                        "On mobile data",
-                        icon = Icons.Rounded.NetworkCell,
-                        onClick = { qualityDialog = false },
-                        summary = if (metered) "In use now" else null,
-                        trailing = { Text(pb.mobileQuality.label, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Normal, color = MaterialTheme.colorScheme.onSurfaceVariant) },
-                    )
+                    NavRow("On mobile data", { qualityDialog = false }, summary = if (metered) "In use now" else null, icon = Icons.Rounded.NetworkCell, value = pb.mobileQuality.label)
                 },
                 Entry("Output precision", "16-bit 32-bit float sample rate") {
                     SettingRow("Output precision", summary = outputSummary(context, pb.floatOutput), icon = Icons.Rounded.GraphicEq, beta = true, below = {
@@ -660,9 +694,6 @@ private fun settingsSections(
                 },
                 Entry("Lossless streaming", "flac tidal amazon qobuz spotiflac") {
                     ToggleRow("Lossless below Max", pb.losslessStreaming, { v -> AppSettings.updatePlayback { it.copy(losslessStreaming = v) } }, summary = "Also look for FLAC after playback starts at other quality levels. Max automatically checks highest-quality sources before YouTube.", icon = Icons.Rounded.HighQuality)
-                },
-                Entry("JioSaavn quality upgrade", "320 aac higher quality alternate lossy") {
-                    SettingRow("Max quality sources", summary = "Max checks hi-res FLAC first, then JioSaavn 320 kbps, then YouTube. Checking providers can delay the start. JioSaavn is lossy.", icon = Icons.Rounded.HighQuality)
                 },
                 Entry("Unmetered networks only", "flac saavn mobile wifi data") {
                     ToggleRow("Unmetered networks only", pb.losslessUnmeteredOnly, { v -> AppSettings.updatePlayback { it.copy(losslessUnmeteredOnly = v) } }, summary = "When on, mobile data uses YouTube even at Max. Turn off to try FLAC and JioSaavn on mobile data", icon = Icons.Rounded.Wifi)
@@ -902,18 +933,11 @@ private fun settingsSections(
                 Entry("Glow under the cover", "glow shadow light cover colour bass pulse") {
                     ToggleRow("Glow under the cover", ui.coverGlow, { v -> AppSettings.updateUi { it.copy(coverGlow = v) } }, summary = "A soft light in the cover's colours under it, swelling a little with the bass", icon = Icons.Rounded.AutoAwesome)
                 },
-                Entry("Cover flies to the player", "fly cover animation tap song now playing card shared element") {
-                    ToggleRow("Cover flies to the player", ui.coverFlight, { v -> AppSettings.updateUi { it.copy(coverFlight = v) } }, summary = "Tap a song and its cover lifts off and lands in the now-playing card", icon = Icons.Rounded.AutoAwesome)
-                },
                 Entry("Song change", "cover change next song skip animation flip carousel deck fade") {
                     NavRow("Song change", { coverChangeDialog = true }, summary = ui.coverChange.summary, icon = Icons.Rounded.SwapHoriz, value = ui.coverChange.label)
                 },
                 Entry("Player opening", "now playing sheet open close animation spring smooth bouncy snappy") {
                     NavRow("Player opening", { playerMotionDialog = true }, summary = ui.playerMotion.summary, icon = Icons.Rounded.UnfoldMore, value = ui.playerMotion.label)
-                },
-                Entry("Echo motion preset", "echo music animation glow waves lyrics soft spring") {
-                    val applied = theme.playerBackground == PlayerBackground.ECHO_GLOW && ui.controlStyle == ControlStyle.ECHO && ui.playerMotion == PlayerMotion.ECHO && ui.lyricsAnimation == LyricsAnimation.ECHO
-                    NavRow("Echo motion preset", { AppSettings.applyEchoMotion() }, summary = "Drifting glow, wavy play button, soft player opening and lyric focus. Each can be changed separately.", icon = Icons.Rounded.Animation, value = if (applied) "Applied" else "Apply")
                 },
                 Entry("Player background", "mesh gradient blur echo glow") {
                     SettingRow("Player background", icon = Icons.Rounded.Wallpaper, below = {
@@ -967,9 +991,6 @@ private fun settingsSections(
                 },
                 Entry("Source pill", "audio source quality pill badge codec bitrate jiosaavn youtube") {
                     ToggleRow("Show the source pill", ui.sourcePill, { v -> AppSettings.updateUi { it.copy(sourcePill = v) } }, summary = "The pill under the title that says where the audio comes from and its quality", icon = Icons.Rounded.HighQuality)
-                },
-                Entry("Waveform seek bar", "waveform seek bar loud quiet bars scrub audio shape") {
-                    ToggleRow("Waveform seek bar", ui.waveformSeekbar, { v -> AppSettings.updateUi { it.copy(waveformSeekbar = v) } }, summary = "The bar shows the song's loud and quiet parts. Downloaded songs show it at once; streamed songs fill it in as they play, then keep it", icon = Icons.Rounded.GraphicEq)
                 },
                 Entry("Album covers", "artwork cover musicbrainz cover art archive video thumbnail") {
                     ToggleRow("Album covers from MusicBrainz", ui.albumCovers, { v -> AppSettings.updateUi { it.copy(albumCovers = v) } }, summary = "Shows the album's cover in the player instead of a video frame, and for local files without one", icon = Icons.Rounded.Album)

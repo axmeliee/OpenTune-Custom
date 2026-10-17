@@ -455,7 +455,7 @@ fun AppRoot(vm: PlayerViewModel) {
         LocalOverscrollFactory provides RubberBandOverscrollFactory,
     ) {
         Box(
-            with(com.opentune.ui.components.FlyingCover) { Modifier.watchTaps() }.fillMaxSize().graphicsLayer {
+            Modifier.fillMaxSize().graphicsLayer {
                 if (dive < 1f) {
                     val s = 1.14f - 0.14f * (1f - (1f - dive) * (1f - dive))
                     scaleX = s
@@ -673,11 +673,7 @@ fun AppRoot(vm: PlayerViewModel) {
             // Floating chrome: the mini player above the nav pill and search button.
             // It sits outside the recorded layer, so its Liquid Glass can sample it.
             if (chromeVisible) CompositionLocalProvider(LocalBackdrop provides backdrop.takeIf { sampled }) {
-            val openPlayer: (Boolean) -> Unit = { folded ->
-                // The mini player's cover grows into the player's as it opens.
-                if (chromeUi.coverFlight && !chromeUi.reduceAnimation) com.opentune.ui.components.FlyingCover.startExpand(round = folded)
-                playerOpen = true
-            }
+            val openPlayer: (Boolean) -> Unit = { playerOpen = true }
             if (layout.nav == NavChrome.DOCK) {
             Column(Modifier.align(Alignment.BottomCenter).fillMaxWidth().navigationBarsPadding().padding(bottom = 12.dp)) {
                 starCard()
@@ -753,10 +749,7 @@ fun AppRoot(vm: PlayerViewModel) {
 
             AnimatedVisibility(
                 visible = sheetOpen && song != null,
-                // While the cover grows into place the player fades in under it, so the
-                // spot it's growing to stays put.
-                enter = if (com.opentune.ui.components.FlyingCover.expanding) androidx.compose.animation.fadeIn(androidx.compose.animation.core.tween(320))
-                    else PageMotion.playerIn(chromeUi.playerMotion, chromeUi.reduceAnimation),
+                enter = PageMotion.playerIn(chromeUi.playerMotion, chromeUi.reduceAnimation),
                 exit = PageMotion.playerOut(chromeUi.playerMotion, chromeUi.reduceAnimation),
             ) {
                 // Registered after the NavHost's own handler, so back closes the
@@ -776,15 +769,6 @@ fun AppRoot(vm: PlayerViewModel) {
                     onEqualizer = { playerOpen = false; nav.navigate("equalizer") },
                 )
             }
-            // The mini player's cover growing into the player's as it opens.
-            com.opentune.ui.components.CoverExpand(song?.thumbnailUrl.artworkAt(com.opentune.data.model.PLAYER_ART_PX), song?.thumbnailUrl.artworkAt(ROW_ART_PX))
-            // A tapped song's cover flying down into the now-playing card.
-            com.opentune.ui.components.CoverFlight(
-                song?.videoId,
-                song?.thumbnailUrl.artworkAt(ROW_ART_PX),
-                // Not onto the docked player: it has no now-playing card to land on.
-                enabled = chromeUi.coverFlight && !chromeUi.reduceAnimation && !sheetOpen && layout.nowPlaying != NowPlaying.PANE,
-            )
             // The chrome's snackbar is under the open player; this one shows
             // over it instead, so an Undo for something chosen in the player's
             // menu can be seen. Only one of the two is ever there.
