@@ -1,7 +1,11 @@
+# A signed test APK as a workflow artifact: installs over the released app,
+# but makes no GitHub release and leaves the website alone. Runs on pushes to
+# the working branches, or by hand from the Actions tab (Run workflow).
 name: Test APK (no release)
 on:
+  workflow_dispatch:
   push:
-    branches: [fix/home-library-playback]
+    branches: [claude/wizardly-sagan-8ge2ek, fix/home-library-playback]
 permissions:
   contents: read
 concurrency:
@@ -28,7 +32,9 @@ jobs:
           test -n "$KEYSTORE_BASE64" || { echo "Release signing key is required for an installable update."; exit 1; }
           printf '%s' "$KEYSTORE_BASE64" | base64 --decode > "$RUNNER_TEMP/preview.keystore"
           echo "OPENTUNE_KEYSTORE=$RUNNER_TEMP/preview.keystore" >> "$GITHUB_ENV"
-          sed -i 's/versionName = "[^"]*"/versionName = "0.4.15-preview"/' app/build.gradle.kts
+          # The current version with "-preview", so it's clear in Settings › About which build this is.
+          sed -i 's/versionName = "\([^"]*\)"/versionName = "\1-preview"/' app/build.gradle.kts
+          grep -m1 versionName app/build.gradle.kts
       - name: Build test APK
         env:
           OPENTUNE_KEYSTORE_PASSWORD: ${{ secrets.OPENTUNE_KEYSTORE_PASSWORD }}
@@ -39,6 +45,7 @@ jobs:
         with:
           name: OpenTune-preview-signed
           path: app/build/outputs/apk/release/*.apk
+          retention-days: 14
       - name: Remove temporary key
         if: always()
         run: rm -f "$RUNNER_TEMP/preview.keystore"
