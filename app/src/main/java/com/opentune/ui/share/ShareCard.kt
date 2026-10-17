@@ -1,8 +1,13 @@
 package com.opentune.ui.share
 
 import android.content.ClipData
+import android.content.ContentValues
 import android.content.Context
 import android.content.Intent
+import android.net.Uri
+import android.os.Build
+import android.os.Environment
+import android.provider.MediaStore
 import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.graphics.Color
@@ -95,6 +100,44 @@ object ShareCard {
             send.setType("text/plain")
         }
         context.startActivity(Intent.createChooser(send, null))
+    }
+
+    /** Saving to Pictures needs storage permission only before Android 10. */
+    val saveNeedsPermission get() = Build.VERSION.SDK_INT < Build.VERSION_CODES.Q
+
+    /**
+     * Writes [bitmap] as a PNG to Pictures/OpenTune, where the gallery finds
+     * it. From Android 10 this goes through MediaStore with no permission;
+     * before that it needs WRITE_EXTERNAL_STORAGE, which the caller asks for.
+     */
+    suspend fun saveImage(context: Context, bitmap: Bitmap, fileName: String): Uri = withContext(Dispatchers.IO) {
+        val resolver = context.contentResolver
+        val values = ContentValues().apply {
+            put(MediaStore.Images.Media.DISPLAY_NAME, fileName)
+            put(MediaStore.Images.Media.MIME_TYPE, "image/png")
+        }
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            values.put(MediaStore.Images.Media.RELATIVE_PATH, "${Environment.DIRECTORY_PICTURES}/OpenTune")
+            values.put(MediaStore.Images.Media.IS_PENDING, 1)
+            val collection = MediaStore.Images.Media.getContentUri(MediaStore.VOLUME_EXTERNAL_PRIMARY)
+            val uri = resolver.insert(collection, values) ?: error("Couldn't add the picture")
+            try {
+                resolver.openOutputStream(uri)?.use { bitmap.compress(Bitmap.CompressFormat.PNG, 100, it) } ?: error("Couldn't write the picture")
+                resolver.update(uri, ContentValues().apply { put(MediaStore.Images.Media.IS_PENDING, 0) }, null, null)
+            } catch (e: Exception) {
+                resolver.delete(uri, null, null)
+                throw e
+            }
+            uri
+        } else {
+            @Suppress("DEPRECATION")
+            val dir = File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_PICTURES), "OpenTune").apply { mkdirs() }
+            val file = File(dir, fileName)
+            file.outputStream().use { bitmap.compress(Bitmap.CompressFormat.PNG, 100, it) }
+            @Suppress("DEPRECATION")
+            values.put(MediaStore.Images.Media.DATA, file.absolutePath)
+            resolver.insert(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, values) ?: Uri.fromFile(file)
+        }
     }
 
     /** A cover or photo as a software bitmap, [size] pixels across, for drawing on a Canvas. */

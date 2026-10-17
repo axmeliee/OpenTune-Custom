@@ -40,6 +40,9 @@ data class TopEntry(val key: String, val title: String, val subtitle: String, va
 data class ReplaySummary(
     val totalPlays: Int,
     val listenedMs: Long,
+    /** How many different songs and artists were played; the top lists stop at 25. */
+    val songCount: Int,
+    val artistCount: Int,
     val topSongs: List<TopEntry>,
     val topArtists: List<TopEntry>,
     val topAlbums: List<TopEntry>,
@@ -110,8 +113,10 @@ object History {
         return ReplaySummary(
             totalPlays = window.size,
             listenedMs = window.sumOf { it.listenedMs },
+            songCount = window.distinctBy { it.videoId }.size,
+            artistCount = window.map { Wrapped.mainArtist(it.artist) }.filter { it.isNotBlank() }.distinct().size,
             topSongs = top({ it.videoId }, { p -> p.first().title to p.first().artist }, songOf = true),
-            topArtists = top({ it.artist.substringBefore(",").substringBefore(" & ").trim() }, { p -> p.first().artist.substringBefore(",").substringBefore(" & ").trim() to "" }, songOf = false),
+            topArtists = top({ Wrapped.mainArtist(it.artist) }, { p -> Wrapped.mainArtist(p.first().artist) to "" }, songOf = false),
             topAlbums = top({ it.albumName }, { p -> (p.first().albumName ?: "") to p.first().artist }, songOf = false),
         )
     }

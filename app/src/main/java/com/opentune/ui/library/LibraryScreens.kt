@@ -29,6 +29,7 @@ import androidx.compose.material.icons.rounded.Folder
 import androidx.compose.material.icons.rounded.History
 import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material.icons.rounded.Settings
+import androidx.compose.material.icons.rounded.Share
 import androidx.compose.material3.Button
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
@@ -66,6 +67,7 @@ import com.opentune.ui.components.PageHeader
 import com.opentune.ui.components.SectionHeader
 import com.opentune.ui.components.SongListItem
 import com.opentune.ui.components.SongRowPlaceholder
+import com.opentune.ui.share.ReplayShareSheet
 import java.util.concurrent.TimeUnit
 
 @Composable
@@ -147,11 +149,12 @@ fun LocalMusicScreen(contentPadding: PaddingValues, actions: SongActions, onBack
     }
 }
 
-private enum class ReplayPeriod(val label: String, val days: Long?) {
-    MONTH("4 weeks", 28),
-    HALF_YEAR("6 months", 182),
-    YEAR("This year", 365),
-    ALL("All time", null),
+/** [cardLabel] names the period on the shared Replay card. */
+private enum class ReplayPeriod(val label: String, val days: Long?, val cardLabel: String) {
+    MONTH("4 weeks", 28, "Last 4 weeks"),
+    HALF_YEAR("6 months", 182, "Last 6 months"),
+    YEAR("This year", 365, "This year"),
+    ALL("All time", null, "All time"),
 }
 
 /** Top songs, artists and albums from this device's listening history. */
@@ -164,9 +167,15 @@ fun ReplayScreen(contentPadding: PaddingValues, actions: SongActions, onBack: ()
         History.replay(records, since)
     }
     val topSongs = remember(summary) { summary.topSongs.mapNotNull { it.song } }
+    var sharing by rememberSaveable { mutableStateOf(false) }
+    if (sharing) ReplayShareSheet(summary, period.cardLabel, onDismiss = { sharing = false })
 
     LazyColumn(contentPadding = contentPadding, modifier = Modifier.fillMaxSize()) {
-        item { PageHeader("Replay", onBack = onBack) }
+        item {
+            PageHeader("Replay", onBack = onBack, actions = if (summary.totalPlays == 0) null else {
+                { GlassIconButton(Icons.Rounded.Share, "Share my Replay", { sharing = true }) }
+            })
+        }
         item {
             com.opentune.ui.wrapped.WrappedBanner(
                 "Your Wrapped",
@@ -186,7 +195,7 @@ fun ReplayScreen(contentPadding: PaddingValues, actions: SongActions, onBack: ()
             Row(Modifier.fillMaxWidth().padding(16.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                 StatTile("${TimeUnit.MILLISECONDS.toMinutes(summary.listenedMs)}", "minutes", Modifier.weight(1f))
                 StatTile("${summary.totalPlays}", "plays", Modifier.weight(1f))
-                StatTile("${summary.topArtists.size}", "artists", Modifier.weight(1f))
+                StatTile("${summary.artistCount}", "artists", Modifier.weight(1f))
             }
         }
         if (summary.totalPlays == 0) {
