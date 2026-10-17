@@ -574,7 +574,7 @@ fun AppRoot(vm: PlayerViewModel) {
                     composable("equalizer") { EqualizerScreen(content, onBack = { nav.popBackStack() }) }
                     composable("local") { LocalMusicScreen(content, actions, onBack = { nav.popBackStack() }) }
                     composable("replay") { ReplayScreen(content, actions, onBack = { nav.popBackStack() }, onOpenWrapped = { nav.navigate("wrapped") }) }
-                    composable("wrapped") { WrappedScreen(actions, onBack = { nav.popBackStack() }) }
+                    composable("wrapped") { WrappedScreen(actions, onBack = { nav.popBackStack() }, player = vm.player) }
                     composable("recognize?listen={listen}", listOf(navArgument("listen") { type = NavType.BoolType; defaultValue = false })) { e ->
                         com.opentune.ui.recognize.RecognizeScreen(
                             content, onPlay = { vm.play(it, "Found by listening") }, onBack = { nav.popBackStack() },

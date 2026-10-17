@@ -36,12 +36,15 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowForward
+import androidx.compose.material.icons.automirrored.rounded.VolumeOff
+import androidx.compose.material.icons.automirrored.rounded.VolumeUp
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material.icons.rounded.Shuffle
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -50,6 +53,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.geometry.isSpecified
@@ -86,7 +90,10 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.opentune.data.history.History
 import com.opentune.data.history.Wrapped
+import com.opentune.data.podcasts.Podcasts
+import com.opentune.data.radio.Radio
 import com.opentune.data.settings.AppSettings
+import com.opentune.playback.PlayerConnection
 import com.opentune.ui.browse.SongActions
 import com.opentune.ui.components.Artwork
 import com.opentune.ui.components.rememberHaptics
@@ -97,7 +104,11 @@ import java.util.Locale
 import kotlin.math.PI
 import kotlin.math.cos
 import kotlin.math.sin
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.flowOf
 
 /** Which stretch of the history the story covers. */
 enum class WrappedPeriod(val label: String) { YEAR("This year"), MONTH("Last 30 days"), ALL("All time") }
@@ -125,7 +136,7 @@ internal enum class Art { SUN, WAVE, ARCS, DOTS, PAIR, STRIPES }
 private const val SLIDE_MS = 7_000
 private val Ease = CubicBezierEasing(0.2f, 0f, 0f, 1f)
 
-private enum class Slide(val art: Art) {
+internal enum class Slide(val art: Art) {
     INTRO(Art.SUN), MINUTES(Art.WAVE), TOP_ARTIST(Art.ARCS), ARTISTS(Art.DOTS), TOP_SONG(Art.PAIR),
     SONGS(Art.DOTS), CLOCK(Art.STRIPES), MONTHS(Art.WAVE), REPEAT(Art.ARCS), SUMMARY(Art.SUN),
 }
@@ -135,9 +146,12 @@ private enum class Slide(val art: Art) {
  * flat field of colour with a single shape drifting slowly on it, and the
  * numbers set large. Each slide moves on by itself; a tap on the right goes
  * on, on the left goes back, and holding pauses.
+ *
+ * With the app's [player] at hand, your top songs play behind it (see
+ * [WrappedMusic]); without one (previews, tests) the story runs silent.
  */
 @Composable
-fun WrappedScreen(actions: SongActions, onBack: () -> Unit, nowMs: Long = System.currentTimeMillis()) {
+fun WrappedScreen(actions: SongActions, onBack: () -> Unit, nowMs: Long = System.currentTimeMillis(), player: PlayerConnection? = null) {
     BackHandler(onBack = onBack)
     val records by History.records.collectAsState()
     val ui by AppSettings.ui.collectAsState()
@@ -205,6 +219,42 @@ fun WrappedScreen(actions: SongActions, onBack: () -> Unit, nowMs: Long = System
         under = index
     }
     val context = LocalContext.current
+
+    // ---- Music behind the story ----
+    val music = remember(player) { player?.let { WrappedMusic(context.applicationContext) } }
+    val playlist = remember(summary) { WrappedTune.playlist(topSongs, summary.onRepeat?.song) { !Radio.isRadio(it) && !Podcasts.isEpisode(it) } }
+    val mainBusy by remember(player) {
+        player?.let { p -> combine(p.isPlaying, p.playWhenReady, p.isBuffering) { playing, wants, buffering -> playing || (wants && buffering) } } ?: flowOf(false)
+    }.collectAsState(player?.let { it.isPlaying.value || (it.playWhenReady.value && it.isBuffering.value) } ?: false)
+    // The app's own player was playing when the story opened, or started
+    // since: its music is left alone, and the button offers yours instead.
+    var offer by remember { mutableStateOf(mainBusy) }
+    // Paused here to play yours; it plays again when you leave.
+    var pausedMain by remember { mutableStateOf(false) }
+    LaunchedEffect(player) {
+        var was = mainBusy
+        snapshotFlow { mainBusy }.collect { busy ->
+            if (busy && !was) {
+                offer = true
+                pausedMain = false
+            }
+            was = busy
+        }
+    }
+    val lifecycle = LocalLifecycleOwner.current.lifecycle
+    val lifecycleState by lifecycle.currentStateFlow.collectAsState()
+    val inFront = lifecycleState.isAtLeast(Lifecycle.State.STARTED)
+    // Never two things at once: nothing while the app's player is going.
+    val audible = music != null && ui.wrappedMusic && !offer && !mainBusy && inFront && playlist.isNotEmpty()
+    val cue = cueFor(slides.getOrNull(index), summary)
+    if (music != null) {
+        LaunchedEffect(playlist) { music.setSongs(playlist) }
+        LaunchedEffect(audible) { music.setAudible(audible) }
+        LaunchedEffect(cue) { music.cue(cue) }
+        DisposableEffect(music) {
+            onDispose { music.close { if (pausedMain) player?.play() } }
+        }
+    }
 
     // Each slide runs for SLIDE_MS, then the next comes; holding pauses it where it is.
     // The bar is reset here rather than where the slide changes, so a reset can't
@@ -282,21 +332,81 @@ fun WrappedScreen(actions: SongActions, onBack: () -> Unit, nowMs: Long = System
         ) { key(index) { page(index, false) } }
         Grain(Modifier.fillMaxSize())
         StoryBar(slides.size, index, { progress.value }, ink, Modifier.statusBarsPadding().padding(start = 16.dp, end = 16.dp, top = 12.dp))
-        Box(
-            Modifier
-                .align(Alignment.TopEnd)
-                .statusBarsPadding()
-                .padding(top = 24.dp, end = 12.dp)
-                .size(40.dp)
-                .clip(CircleShape)
-                .clickable(onClick = onBack)
-                .semantics { role = Role.Button; contentDescription = "Close" },
-            contentAlignment = Alignment.Center,
-        ) { Icon(Icons.Rounded.Close, null, tint = ink, modifier = Modifier.size(24.dp)) }
+        Row(
+            Modifier.align(Alignment.TopEnd).statusBarsPadding().padding(top = 24.dp, end = 12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            if (music != null && playlist.isNotEmpty()) {
+                MusicButton(
+                    offer = offer,
+                    on = ui.wrappedMusic,
+                    ink = ink,
+                    onToggle = { AppSettings.updateUi { it.copy(wrappedMusic = !it.wrappedMusic) } },
+                    onOffer = {
+                        if (mainBusy) {
+                            player?.pause()
+                            pausedMain = true
+                        }
+                        offer = false
+                        AppSettings.updateUi { it.copy(wrappedMusic = true) }
+                    },
+                )
+            }
+            Box(
+                Modifier
+                    .size(40.dp)
+                    .clip(CircleShape)
+                    .clickable(onClick = onBack)
+                    .semantics { role = Role.Button; contentDescription = "Close" },
+                contentAlignment = Alignment.Center,
+            ) { Icon(Icons.Rounded.Close, null, tint = ink, modifier = Modifier.size(24.dp)) }
+        }
     }
 }
 
+/** The song a page is about, for the music to move to; null leaves whatever is playing. */
+internal fun cueFor(slide: Slide?, s: Wrapped.Summary): String? = when (slide) {
+    Slide.TOP_SONG -> s.topSongs.firstOrNull()?.song?.videoId
+    Slide.REPEAT -> s.onRepeat?.song?.videoId
+    else -> null
+}
+
 // ---- Story chrome ------------------------------------------------------------
+
+/**
+ * Beside Close: a speaker that mutes and unmutes the music, or, while the
+ * app's own player has the floor, an offer to play your top song instead.
+ */
+@Composable
+private fun MusicButton(offer: Boolean, on: Boolean, ink: Color, onToggle: () -> Unit, onOffer: () -> Unit) {
+    if (offer) {
+        Row(
+            Modifier
+                .padding(end = 4.dp)
+                .height(34.dp)
+                .clip(CircleShape)
+                .border(1.dp, ink.copy(alpha = 0.4f), CircleShape)
+                .clickable(role = Role.Button, onClick = onOffer)
+                .padding(start = 10.dp, end = 14.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Icon(Icons.Rounded.PlayArrow, null, tint = ink, modifier = Modifier.size(18.dp))
+            Spacer(Modifier.width(4.dp))
+            Text("Play your top song", style = TextStyle(color = ink, fontSize = 13.sp, fontWeight = FontWeight.Medium))
+        }
+    } else {
+        Box(
+            Modifier
+                .size(40.dp)
+                .clip(CircleShape)
+                .clickable(onClick = onToggle)
+                .semantics { role = Role.Button; contentDescription = if (on) "Mute" else "Unmute" },
+            contentAlignment = Alignment.Center,
+        ) {
+            Icon(if (on) Icons.AutoMirrored.Rounded.VolumeUp else Icons.AutoMirrored.Rounded.VolumeOff, null, tint = ink, modifier = Modifier.size(22.dp))
+        }
+    }
+}
 
 /** A circle around [origin] (or low in the middle, when the page turned by itself) [fraction] of the way to the far corner. */
 private class RevealShape(private val origin: Offset, private val fraction: Float) : androidx.compose.ui.graphics.Shape {

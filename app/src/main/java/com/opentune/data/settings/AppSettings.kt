@@ -394,6 +394,8 @@ data class InterfaceSettings(
     val wideLayout: Boolean = true,
     /** On large screens, the player stays docked beside the page while a song is loaded. */
     val sidePlayer: Boolean = true,
+    /** Your top songs play behind the Wrapped story; off is its mute button, kept for next time. */
+    val wrappedMusic: Boolean = true,
 )
 
 /**

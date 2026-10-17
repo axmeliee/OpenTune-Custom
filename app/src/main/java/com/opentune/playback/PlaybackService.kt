@@ -14,21 +14,13 @@ import android.media.audiofx.LoudnessEnhancer
 import android.net.Uri
 import android.os.SystemClock
 import androidx.annotation.OptIn
-import androidx.core.net.toUri
 import androidx.media3.common.AudioAttributes
 import androidx.media3.common.C
 import androidx.media3.common.MediaItem
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
 import androidx.media3.common.util.UnstableApi
-import androidx.media3.datasource.DataSource
-import androidx.media3.datasource.DataSpec
-import androidx.media3.datasource.DefaultDataSource
-import androidx.media3.datasource.HttpDataSource
 import androidx.media3.datasource.ResolvingDataSource
-import androidx.media3.datasource.TransferListener
-import androidx.media3.datasource.cache.CacheDataSource
-import androidx.media3.datasource.okhttp.OkHttpDataSource
 import androidx.media3.exoplayer.DefaultLoadControl
 import androidx.media3.exoplayer.DefaultRenderersFactory
 import androidx.media3.exoplayer.ExoPlayer
@@ -60,7 +52,6 @@ import com.opentune.data.DebugLog as Log
 import com.opentune.data.isYouTubeId
 import com.opentune.data.subsonic.Subsonic
 import com.opentune.data.listenbrainz.ListenBrainz
-import com.opentune.data.Http
 import com.opentune.data.download.Downloads
 import com.opentune.data.lastfm.LastFm
 import com.opentune.data.library.LibraryStore
@@ -74,7 +65,6 @@ import com.opentune.data.reco.Recommendations
 import com.opentune.data.settings.AppSettings
 import com.opentune.playback.dsp.DspAudioProcessor
 import com.opentune.playback.dsp.DspParams
-import java.io.IOException
 import java.util.concurrent.ConcurrentHashMap
 import kotlin.math.roundToInt
 import kotlinx.coroutines.CancellationException
@@ -145,22 +135,10 @@ class PlaybackService : MediaLibraryService() {
         super.onCreate()
         val context: Context = this
 
-        // The same OkHttp client Innertube and the stream resolver use — a
-        // stream URL is bound to the connection context of the request that
-        // minted it, so a separate HTTP stack here risks a 403 on playback.
-        // No fixed User-Agent: [resolveTrack] sends the minting client's own.
-        val http = RefusalReportingDataSource.Factory(OkHttpDataSource.Factory(Http.client))
-        val resolving = ResolvingDataSource.Factory(http, ::resolveTrack)
-        val cached = CacheDataSource.Factory()
-            .setCache(AudioCache.get(context))
-            .setUpstreamDataSourceFactory(resolving)
-            .setCacheKeyFactory { spec -> cacheKeyOf(spec.uri) ?: spec.key ?: spec.uri.toString() }
-            .setFlags(CacheDataSource.FLAG_IGNORE_CACHE_ON_ERROR)
-        // Files, content:// and direct http (a song on your own server) go straight
-        // to the platform source, its http side on the app's one OkHttp client.
-        val direct = DefaultDataSource.Factory(context, OkHttpDataSource.Factory(Http.client))
-        val routing = SchemeRoutingDataSource.Factory(streams = cached, local = direct)
-        val sources = DefaultMediaSourceFactory(routing)
+        val songSources = SongSources(context)
+        val cached = songSources.cached
+        val direct = songSources.direct
+        val sources = DefaultMediaSourceFactory(songSources.routing)
         val qualitySources = object : MediaSource.Factory by sources {
             override fun createMediaSource(mediaItem: MediaItem): MediaSource {
                 val input = mediaItem.localConfiguration?.uri ?: return sources.createMediaSource(mediaItem)
@@ -455,28 +433,6 @@ class PlaybackService : MediaLibraryService() {
             mediaSession = null
         }
         super.onDestroy()
-    }
-
-    private fun resolveTrack(dataSpec: DataSpec): DataSpec {
-        val videoId = videoIdOf(dataSpec.uri) ?: return dataSpec
-        val url = try {
-            runBlocking {
-                val losslessKey = externalStreamKeyOf(dataSpec.uri)
-                when {
-                    losslessKey != null -> ExternalStreams.resolve(videoId, losslessKey)
-                    isUpgradedUri(dataSpec.uri) -> StreamResolver.resolveUpgrade(videoId)
-                    else -> StreamResolver.resolve(videoId)
-                }
-            }
-        } catch (e: IOException) {
-            throw e
-        } catch (e: Exception) {
-            throw IOException(e.message ?: "Couldn't resolve a stream for $videoId", e)
-        }
-        // googlevideo expects the media request to look like the client that
-        // minted the URL; these are also the headers StreamResolver probed with.
-        return dataSpec.withUri(url.toUri())
-            .withAdditionalHeaders(if (externalStreamKeyOf(dataSpec.uri) != null) emptyMap() else StreamResolver.mediaHeadersFor(url))
     }
 
     /**
@@ -1408,69 +1364,6 @@ class PlaybackService : MediaLibraryService() {
                 failedInRow = 0
                 retriedMediaId = null
             }
-        }
-    }
-
-    /**
-     * Tells [StreamResolver] when googlevideo refuses a URL it handed out, so
-     * the cached URL is dropped and the next attempt resolves a new one.
-     */
-    private class RefusalReportingDataSource(
-        private val upstream: HttpDataSource,
-    ) : DataSource by upstream {
-        override fun open(dataSpec: DataSpec): Long = try {
-            upstream.open(dataSpec)
-        } catch (e: HttpDataSource.InvalidResponseCodeException) {
-            StreamResolver.onPlaybackRefused(dataSpec.uri.toString(), e.responseCode)
-            throw e
-        }
-
-        class Factory(private val upstream: HttpDataSource.Factory) : DataSource.Factory {
-            override fun createDataSource(): DataSource =
-                RefusalReportingDataSource(upstream.createDataSource())
-        }
-    }
-
-    /**
-     * Sends streamed tracks through the cache and resolver, and anything else
-     * (local `content://` files) straight to the platform data source, so local
-     * files neither fill the cache nor go looking for a YouTube stream.
-     */
-    private class SchemeRoutingDataSource(
-        private val streams: DataSource,
-        private val local: DataSource,
-    ) : DataSource {
-        private var active: DataSource? = null
-
-        override fun addTransferListener(transferListener: TransferListener) {
-            streams.addTransferListener(transferListener)
-            local.addTransferListener(transferListener)
-        }
-
-        override fun open(dataSpec: DataSpec): Long {
-            val target = if (videoIdOf(dataSpec.uri) != null) streams else local
-            active = target
-            return target.open(dataSpec)
-        }
-
-        override fun read(buffer: ByteArray, offset: Int, length: Int): Int =
-            active?.read(buffer, offset, length) ?: C.RESULT_END_OF_INPUT
-
-        override fun getUri(): Uri? = active?.uri
-
-        override fun getResponseHeaders(): Map<String, List<String>> = active?.responseHeaders.orEmpty()
-
-        override fun close() {
-            active?.close()
-            active = null
-        }
-
-        class Factory(
-            private val streams: DataSource.Factory,
-            private val local: DataSource.Factory,
-        ) : DataSource.Factory {
-            override fun createDataSource(): DataSource =
-                SchemeRoutingDataSource(streams.createDataSource(), local.createDataSource())
         }
     }
 
