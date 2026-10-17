@@ -611,7 +611,34 @@ fun AppRoot(vm: PlayerViewModel) {
                         CollectionScreen(e.arguments?.getString("id").orEmpty(), content, actions, onBack = { nav.popBackStack() })
                     }
                     composable("artist/{id}", listOf(navArgument("id") { type = NavType.StringType })) { e ->
-                        ArtistScreen(e.arguments?.getString("id").orEmpty(), content, actions, onBack = { nav.popBackStack() }, onItemClick = openItem)
+                        ArtistScreen(
+                            e.arguments?.getString("id").orEmpty(), content, actions,
+                            onBack = { nav.popBackStack() },
+                            onItemClick = openItem,
+                            onShowAll = { shelf ->
+                                shelf.moreBrowseId?.let { id ->
+                                    nav.navigate("artist-items/${Uri.encode(id)}?params=${Uri.encode(shelf.moreParams.orEmpty())}&title=${Uri.encode(shelf.title)}")
+                                }
+                            },
+                        )
+                    }
+                    composable(
+                        "artist-items/{id}?params={params}&title={title}",
+                        listOf(
+                            navArgument("id") { type = NavType.StringType },
+                            navArgument("params") { type = NavType.StringType; defaultValue = "" },
+                            navArgument("title") { type = NavType.StringType; defaultValue = "" },
+                        ),
+                    ) { e ->
+                        val args = e.arguments
+                        com.opentune.ui.browse.ArtistItemsScreen(
+                            title = args?.getString("title").orEmpty(),
+                            browseId = args?.getString("id").orEmpty(),
+                            params = args?.getString("params")?.takeIf { it.isNotEmpty() },
+                            contentPadding = content,
+                            onBack = { nav.popBackStack() },
+                            onItemClick = openItem,
+                        )
                     }
                     composable(
                         "mood/{id}?params={params}&title={title}",

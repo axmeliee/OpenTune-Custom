@@ -325,6 +325,8 @@ data class InterfaceSettings(
     val lyricsFocus: Boolean = true,
     /** The mini player's glass takes the cover's colour; off keeps it plain. */
     val miniPlayerTint: Boolean = true,
+    /** An artist's page is washed with a deep shade of their photo's colour; off keeps the theme's own. */
+    val artistPageTint: Boolean = true,
     val statsForNerds: Boolean = false,
     val recentsAsGrid: Boolean = false,
     /** Refracting Liquid Glass on Android 13+; frosted blur otherwise. */

@@ -145,8 +145,9 @@ private fun ColorScheme.toPureBlack(): ColorScheme = copy(
     outlineVariant = Color(0xFF2E2E32),
 )
 
+/** The scheme with every colour easing to its new value, so a change of seed fades rather than snaps. */
 @Composable
-private fun ColorScheme.animated(): ColorScheme {
+internal fun ColorScheme.animated(): ColorScheme {
     val spec = tween<Color>(durationMillis = 600)
     @Composable
     fun Color.a() = animateColorAsState(this, spec, label = "scheme").value

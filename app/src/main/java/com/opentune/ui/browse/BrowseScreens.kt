@@ -9,8 +9,6 @@ import dev.chrisbanes.haze.HazeProgressive
 import dev.chrisbanes.haze.HazeTint
 import dev.chrisbanes.haze.hazeEffect
 
-import androidx.compose.material.icons.filled.NotificationAdd
-import androidx.compose.material.icons.filled.NotificationsActive
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
 import android.os.Build
@@ -23,7 +21,6 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
-import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -39,7 +36,6 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Album
-import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Shuffle
 import androidx.compose.material3.Button
@@ -56,7 +52,6 @@ import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.draw.blur
@@ -70,7 +65,6 @@ import androidx.compose.ui.unit.dp
 import com.opentune.data.MusicRepository
 import com.opentune.data.model.BrowseType
 import com.opentune.data.model.HEADER_ART_PX
-import com.opentune.data.model.ShelfItem
 import com.opentune.data.model.Song
 import com.opentune.data.model.UiState
 import com.opentune.data.model.artworkAt
@@ -78,14 +72,10 @@ import com.opentune.ui.components.Artwork
 import com.opentune.ui.components.GlassBackButton
 import com.opentune.ui.components.glass
 import com.opentune.ui.components.ErrorState
-import com.opentune.ui.components.ItemCard
 import com.opentune.ui.components.Placeholder
-import com.opentune.ui.components.SectionHeader
-import com.opentune.ui.components.Shelf
 import com.opentune.ui.components.SongListItem
 import com.opentune.ui.components.SongRowPlaceholder
 import com.opentune.ui.rememberLoader
-import com.opentune.ui.type
 
 /** Callbacks every track list needs. */
 @androidx.compose.runtime.Immutable
@@ -102,7 +92,12 @@ class SongActions(
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-internal fun CollapsingBar(title: String, listState: LazyListState, onBack: () -> Unit) {
+internal fun CollapsingBar(
+    title: String,
+    listState: LazyListState,
+    onBack: () -> Unit,
+    actions: @Composable androidx.compose.foundation.layout.RowScope.() -> Unit = {},
+) {
     val collapsed by remember { derivedStateOf { listState.firstVisibleItemIndex > 0 } }
     // Once the header scrolls away the bar frosts in: the list under it is
     // blurred and washed with the page colour, and the frost thins out over
@@ -157,6 +152,10 @@ internal fun CollapsingBar(title: String, listState: LazyListState, onBack: () -
                 ) { Text(title, maxLines = 1, overflow = TextOverflow.Ellipsis) }
             },
             navigationIcon = { GlassBackButton(onBack, Modifier.padding(start = 8.dp).size(48.dp)) },
+            actions = {
+                actions()
+                Spacer(Modifier.width(8.dp))
+            },
             colors = TopAppBarDefaults.topAppBarColors(containerColor = Color.Transparent),
         )
     }
@@ -379,151 +378,5 @@ fun CollectionScreen(
                 }
             }
         }
-    }
-}
-
-@Composable
-fun ArtistScreen(
-    browseId: String,
-    contentPadding: PaddingValues,
-    actions: SongActions,
-    onBack: () -> Unit,
-    onItemClick: (ShelfItem) -> Unit,
-) {
-    val loader = rememberLoader("artist:$browseId") { MusicRepository.artist(browseId) }
-    val state by loader.state.collectAsState()
-    val listState = rememberLazyListState()
-    val page = (state as? UiState.Success)?.data
-
-    GlassPage(Modifier.fillMaxSize(), overlay = { CollapsingBar(page?.name.orEmpty(), listState, onBack) }) {
-        when (val s = state) {
-            is UiState.Error -> Box(Modifier.fillMaxSize(), Alignment.Center) { ErrorState(s.message, { loader.reload() }) }
-            else -> LazyColumn(state = listState, contentPadding = contentPadding, modifier = Modifier.fillMaxSize()) {
-                item(key = "hero") {
-                    val background = MaterialTheme.colorScheme.background
-                    Box(Modifier.fillMaxWidth().aspectRatio(1.05f)) {
-                        if (page == null) {
-                            Placeholder(Modifier.fillMaxSize(), androidx.compose.ui.graphics.RectangleShape)
-                        } else {
-                            // The photo sharp at the top, melting into a blurred copy of itself below.
-                            HeaderBackdrop(page.thumbnailUrl.artworkAt(HEADER_ART_PX), Modifier.matchParentSize())
-                            Artwork(
-                                page.thumbnailUrl.artworkAt(HEADER_ART_PX),
-                                Modifier
-                                    .fillMaxSize()
-                                    .graphicsLayer { compositingStrategy = androidx.compose.ui.graphics.CompositingStrategy.Offscreen }
-                                    .drawWithContent {
-                                        drawContent()
-                                        drawRect(
-                                            Brush.verticalGradient(0f to Color.Black, 0.5f to Color.Black, 0.92f to Color.Transparent),
-                                            blendMode = androidx.compose.ui.graphics.BlendMode.DstIn,
-                                        )
-                                    },
-                                shape = androidx.compose.ui.graphics.RectangleShape,
-                                placeholder = Icons.Filled.Person,
-                            )
-                        }
-                        Box(
-                            Modifier.fillMaxSize().background(
-                                Brush.verticalGradient(0.35f to Color.Transparent, 1f to background),
-                            ),
-                        )
-                        Column(Modifier.align(Alignment.BottomStart).padding(horizontal = 20.dp)) {
-                            Text(
-                                page?.name.orEmpty(),
-                                style = MaterialTheme.typography.displaySmall,
-                                maxLines = 2,
-                                overflow = TextOverflow.Ellipsis,
-                            )
-                            listOfNotNull(page?.monthlyListenerCount, page?.subscriberCountText).firstOrNull()?.let {
-                                Text(it, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                            }
-                            if (page != null) FollowButton(browseId, page, Modifier.padding(top = 10.dp))
-                        }
-                    }
-                }
-                item(key = "buttons") {
-                    PlayShuffleButtons(
-                        enabled = !page?.songs.isNullOrEmpty(),
-                        onPlay = { page?.let { actions.playAll(it.songs, 0, false, it.name) } },
-                        onShuffle = { page?.let { actions.playAll(it.songs, 0, true, it.name) } },
-                        onSmartShuffle = { page?.let { actions.smartShuffle(it.songs, it.name) } },
-                        modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 16.dp),
-                    )
-                }
-                if (page == null) {
-                    items(5) { SongRowPlaceholder() }
-                } else {
-                    if (page.songs.isNotEmpty()) {
-                        item(key = "top-header") { SectionHeader("Top songs") }
-                        itemsIndexed(page.songs, key = { i, song -> "top:$i:${song.videoId}" }) { i, song ->
-                            SongListItem(
-                                song = song,
-                                onClick = { actions.playAll(page.songs, i, false, page.name) },
-                                isCurrent = song.videoId == actions.currentVideoId,
-                                isPlaying = actions.isPlaying,
-                                onPlayNext = { actions.playNext(song) },
-                                onAddToQueue = { actions.addToQueue(song) },
-                            )
-                        }
-                    }
-                    page.sections.forEachIndexed { i, shelf ->
-                        item(key = "shelf:$i:${shelf.title}") {
-                            Shelf(shelf.title, shelf.items) { item ->
-                                ItemCard(item.title, item.subtitle, item.thumbnailUrl, item.type(), onClick = { onItemClick(item) }, explicit = item.explicit)
-                            }
-                        }
-                    }
-                    page.description?.takeIf { it.isNotBlank() }?.let { about ->
-                        item(key = "about") {
-                            Column {
-                                SectionHeader("About")
-                                Text(
-                                    about,
-                                    style = MaterialTheme.typography.bodyMedium,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    maxLines = 8,
-                                    overflow = TextOverflow.Ellipsis,
-                                    modifier = Modifier.padding(horizontal = 16.dp),
-                                )
-                            }
-                        }
-                    }
-                }
-            }
-        }
-    }
-}
-
-/**
- * "Follow" for new-release alerts: kept on the phone, no account needed.
- * Asks for notification permission on Android 13+ the first time.
- */
-@Composable
-private fun FollowButton(browseId: String, page: com.opentune.data.model.ArtistPage, modifier: Modifier = Modifier) {
-    val context = androidx.compose.ui.platform.LocalContext.current
-    val followed by com.opentune.data.releases.NewReleases.followed.collectAsState()
-    val following = followed.any { it.browseId == browseId }
-    val ask = androidx.activity.compose.rememberLauncherForActivityResult(
-        androidx.activity.result.contract.ActivityResultContracts.RequestPermission(),
-    ) { }
-    androidx.compose.material3.FilledTonalButton(
-        onClick = {
-            if (following) {
-                com.opentune.data.releases.NewReleases.unfollow(context, browseId)
-            } else {
-                com.opentune.data.releases.NewReleases.follow(context, browseId, page)
-                if (!com.opentune.data.releases.NewReleases.canNotify(context)) ask.launch(android.Manifest.permission.POST_NOTIFICATIONS)
-            }
-        },
-        modifier = modifier,
-    ) {
-        Icon(
-            if (following) Icons.Filled.NotificationsActive else Icons.Filled.NotificationAdd,
-            null,
-            Modifier.size(18.dp),
-        )
-        androidx.compose.foundation.layout.Spacer(Modifier.width(8.dp))
-        Text(if (following) "Following" else "Follow for new releases")
     }
 }

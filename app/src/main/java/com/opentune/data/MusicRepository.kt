@@ -391,6 +391,25 @@ object MusicRepository {
         ContentFilter.artist(InnertubeParser.parseArtistPage(Innertube.browse(browseId)))
     }
 
+    /**
+     * Everything behind an artist row's "Show all" ([HomeShelf.moreBrowseId]
+     * and its params). A long discography comes in pages; a few are followed,
+     * which covers all but the very largest.
+     */
+    suspend fun artistItems(browseId: String, params: String?): List<ShelfItem> = io {
+        val first = InnertubeParser.parseShelfItemsPage(Innertube.browse(browseId, params))
+        val items = first.items.toMutableList()
+        var token = first.continuation
+        val seen = HashSet<String>()
+        while (token != null && seen.add(token) && seen.size <= 10) {
+            val next = InnertubeParser.parseShelfItemsPage(Innertube.browseContinuation(token))
+            items += next.items
+            token = next.continuation
+        }
+        val hide = ContentFilter.hideExplicit
+        items.distinctBy { it.browseId }.filterNot { hide && it.explicit }
+    }
+
     /** The signed-in account's playlists on YouTube Music, without the "New playlist" tile. */
     suspend fun libraryPlaylists(): List<ShelfItem> = io {
         val owner = com.opentune.data.library.LibraryCache.owner()

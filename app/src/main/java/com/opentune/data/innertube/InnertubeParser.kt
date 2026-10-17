@@ -331,8 +331,11 @@ object InnertubeParser {
                         ?.let(songs::add)
                 }
                 if (moreSongs == null) {
+                    // The heading used to be the link; the current layout puts
+                    // a "Show all" under the rows instead.
                     moreSongs = shelf.o("title").a("runs")?.firstOrNull()
                         .o("navigationEndpoint").o("browseEndpoint").s("browseId")
+                        ?: shelf.o("bottomEndpoint").o("browseEndpoint").s("browseId")
                 }
             }
             section.o("musicCarouselShelfRenderer")?.let { carousel ->
@@ -375,6 +378,34 @@ object InnertubeParser {
             monthlyListenerCount = monthlyListeners(header),
             subscription = subscription(header),
         )
+    }
+
+    /** One page of the cards behind an artist row's "Show all", and the token for the next. */
+    data class ShelfItemsPage(val items: List<ShelfItem>, val continuation: String?)
+
+    /**
+     * The cards behind an artist row's "Show all": every album or single, the
+     * playlists the artist turns up on, the artists their fans also play.
+     *
+     * The first page is a grid (`gridRenderer`) and later ones come back as a
+     * bare continuation (`gridContinuation`, or an
+     * `appendContinuationItemsAction`), so the cards are collected wherever
+     * they sit rather than off one path, the way [collectSongsDeep] does for
+     * rows. Only the body is read: the header is left out. Related artists can
+     * come back as list rows rather than cards, which [parseArtistRow] reads.
+     */
+    fun parseShelfItemsPage(response: JsonObject): ShelfItemsPage {
+        val body = listOfNotNull(
+            response["contents"],
+            response["continuationContents"],
+            response["onResponseReceivedActions"],
+        )
+        val seen = HashSet<String>()
+        val items = body.flatMap { part ->
+            collectRenderers(part, "musicTwoRowItemRenderer").mapNotNull(::parseTwoRowItem) +
+                collectRenderers(part, "musicResponsiveListItemRenderer").mapNotNull(::parseArtistRow)
+        }.filter { item -> item.browseId?.let(seen::add) == true }
+        return ShelfItemsPage(items, continuationToken(JsonArray(body)))
     }
 
     /**
@@ -421,10 +452,23 @@ object InnertubeParser {
         val immersive = header.o("musicImmersiveHeaderRenderer") ?: return null
         val button2 = immersive.o("subscriptionButton2").o("subscribeButtonRenderer")
         val button1 = immersive.o("subscriptionButton").o("subscribeButtonRenderer")
-        return button2.o("subscriberCountWithSubscribeText").firstRunText()
-            ?: button1.o("longSubscriberCountText").firstRunText()
-            ?: button1.o("shortSubscriberCountText").firstRunText()
+        return (
+            button2.o("subscriberCountWithSubscribeText").firstRunText()
+                ?: button1.o("longSubscriberCountText").firstRunText()
+                ?: button1.o("subscriberCountWithSubscribeText").firstRunText()
+                ?: button1.o("subscriberCountText").firstRunText()
+                ?: button1.o("shortSubscriberCountText").firstRunText()
+            )?.trim()?.takeIf { it.isNotEmpty() }?.let(::subscriberLabel)
     }
+
+    /**
+     * The count with its noun. The current header's button prints the number
+     * alone ("109K") because the word "Subscribe" sits beside it, so read on
+     * its own it says nothing; the older long form already reads "1.2M
+     * subscribers" and is left as it is.
+     */
+    internal fun subscriberLabel(count: String): String =
+        if (count.matches(BARE_COUNT)) "$count subscribers" else count
 
     /** "3.4M monthly listeners", off the same header as [subscriberCount]. */
     private fun monthlyListeners(header: JsonElement?): String? =
@@ -1348,6 +1392,8 @@ object InnertubeParser {
 
     private val DURATION = Regex("""\d+:\d{2}""")
     private val YEAR = Regex("""\d{4}""")
+    /** A number and nothing else: "109K", "1.2M", "8,412". */
+    private val BARE_COUNT = Regex("""[\d.,]+\s*[KMB]?""", RegexOption.IGNORE_CASE)
     /**
      * A counted quantity rather than a name — "12.4M plays", "13 songs",
      * "1 hour, 4 minutes". Deliberately narrow: it has to leave "21 Savage"

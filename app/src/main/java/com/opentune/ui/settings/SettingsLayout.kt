@@ -54,7 +54,7 @@ internal val SETTINGS_CATEGORIES = listOf(
         "look", "Look and feel", "Theme, colour, glass and haptics", Icons.Rounded.Palette,
         listOf(
             "Theme" to listOf("Theme", "Pure black"),
-            "Colour" to listOf("Color from artwork", "Mini player takes the cover's colour", "Material You", "Accent color", "Palette style"),
+            "Colour" to listOf("Color from artwork", "Mini player takes the cover's colour", "Artist pages take the photo's colour", "Material You", "Accent color", "Palette style"),
             "Glass" to listOf("Liquid Glass", "Glass style", "Frosted top edge", "Reduce dynamic blur"),
             "Feel" to listOf("Haptic feedback", "High refresh rate", "Wide-screen layout"),
         ),
