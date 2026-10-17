@@ -189,4 +189,13 @@ class PlaylistSyncTest {
     @Test fun aSongFromAnotherPlaylistDoesNotBringItsEntryId() {
         assertNull(SongRef.of(song("a", "elsewhere")).setVideoId)
     }
+
+    @Test fun aLinkMadeInAnotherAccountIsNotThisOnes() {
+        val mine = LocalPlaylist("p1", "Runs", remoteId = "PLa", privacy = PlaylistPrivacy.PRIVATE, account = "me@example.com")
+        assertFalse(PlaylistMerge.forOtherAccount(mine, "me@example.com"))
+        assertFalse("email case aside", PlaylistMerge.forOtherAccount(mine, "Me@Example.com"))
+        assertTrue(PlaylistMerge.forOtherAccount(mine, "someone@example.com"))
+        assertFalse("no account recorded", PlaylistMerge.forOtherAccount(mine.copy(account = null), "someone@example.com"))
+        assertFalse("not linked at all", PlaylistMerge.forOtherAccount(LocalPlaylist("p2", "Phone only"), "someone@example.com"))
+    }
 }

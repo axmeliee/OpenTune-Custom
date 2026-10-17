@@ -59,8 +59,16 @@ object PlaylistSync {
         file = f
         _pending.value = runCatching { json.decodeFromString(ListSerializer(PlaylistEdit.serializer()), f.readText()) }
             .getOrDefault(emptyList())
-        // At start when signed in, and again on each sign-in.
-        scope.launch { AccountStore.signedIn.collect { if (it) flush() } }
+        // At start when signed in, and again on each sign-in. A different
+        // account than the one a playlist was linked in takes the link away.
+        scope.launch {
+            AccountStore.signedIn.collect { signedIn ->
+                if (!signedIn) return@collect
+                forgetOtherAccounts()
+                flush()
+            }
+        }
+        scope.launch { AccountStore.account.collect { forgetOtherAccounts() } }
     }
 
     /** Whether changes to playlist [id] are still waiting to be made on YouTube Music. */
@@ -115,6 +123,18 @@ object PlaylistSync {
                 false
             }
             withContext(Dispatchers.Main) { done(ok) }
+        }
+    }
+
+    private fun currentAccount(): String? = AccountStore.account.value?.email?.takeIf { it.isNotBlank() }
+
+    /** Unlinks playlists made in another account than the one signed in, and drops their waiting changes. */
+    private fun forgetOtherAccounts() {
+        if (!AccountStore.signedIn.value) return
+        val account = currentAccount() ?: return
+        change { edits ->
+            val dropped = LibraryStore.keepLinksFor(account)
+            if (dropped.isEmpty()) edits else edits.filterNot { it.playlist in dropped }
         }
     }
 
@@ -212,7 +232,7 @@ object PlaylistSync {
         val remote = Innertube.createPlaylist(p.name, privacy, videoIds = sent)
         val linked = synchronized(LibraryStore) {
             val now = LibraryStore.playlist(edit.playlist) ?: return@synchronized false
-            LibraryStore.link(now.id, remote)
+            LibraryStore.link(now.id, remote, currentAccount())
             change { SyncQueue.done(it, edit.seq) }
             val have = now.songs.map { it.videoId }.filter(::isYouTubeId)
             val follow = buildList {

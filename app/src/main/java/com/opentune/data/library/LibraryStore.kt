@@ -64,6 +64,8 @@ data class LocalPlaylist(
     val remoteId: String? = null,
     /** Who can see the copy on YouTube Music; null when there isn't meant to be one. */
     val privacy: PlaylistPrivacy? = null,
+    /** The account (its email) the copy on YouTube Music was made in; null when not known. */
+    val account: String? = null,
 ) {
     /** Kept in step with YouTube Music, or waiting for its copy to be made there. */
     val synced: Boolean get() = remoteId != null || privacy != null
@@ -314,9 +316,34 @@ object LibraryStore {
 
     // ---- Written back by [PlaylistSync] --------------------------------------
 
-    /** Records that playlist [id]'s copy on YouTube Music is [remoteId]. */
+    /** Records that playlist [id]'s copy on YouTube Music is [remoteId], made in [account]. */
     @Synchronized
-    internal fun link(id: String, remoteId: String) = editPlaylist(id) { it.copy(remoteId = remoteId) }
+    internal fun link(id: String, remoteId: String, account: String?) = editPlaylist(id) { it.copy(remoteId = remoteId, account = account) }
+
+    /**
+     * Signed in as [account]: playlists linked in another account go back to
+     * living only on this phone (see [PlaylistMerge.forOtherAccount]), and
+     * links made before accounts were recorded are taken to be this one's.
+     * Returns the ids of the playlists that lost their link.
+     */
+    @Synchronized
+    internal fun keepLinksFor(account: String): Set<String> {
+        val dropped = HashSet<String>()
+        update { d ->
+            d.copy(playlists = d.playlists.map { p ->
+                when {
+                    !p.synced -> p
+                    PlaylistMerge.forOtherAccount(p, account) -> {
+                        dropped += p.id
+                        p.copy(remoteId = null, privacy = null, account = null, songs = p.songs.map { it.copy(setVideoId = null) })
+                    }
+                    p.account == null -> p.copy(account = account)
+                    else -> p
+                }
+            })
+        }
+        return dropped
+    }
 
     /** Takes back a copy that couldn't be made, so "Save to YouTube Music" is offered again. */
     @Synchronized

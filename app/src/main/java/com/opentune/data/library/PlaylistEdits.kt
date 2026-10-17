@@ -128,6 +128,14 @@ object SyncQueue {
 /** Folding what YouTube Music has into a linked playlist. */
 object PlaylistMerge {
     /**
+     * Whether [p]'s link to YouTube Music belongs to another account than
+     * [account], the one signed in now. Accounts are told apart by email,
+     * case aside; a link with no account recorded is never taken for another's.
+     */
+    fun forOtherAccount(p: LocalPlaylist, account: String): Boolean =
+        p.synced && p.account != null && !p.account.equals(account, ignoreCase = true)
+
+    /**
      * [local] brought up to date with [remote], for changes made on YouTube
      * Music itself (another app, the website):
      *
