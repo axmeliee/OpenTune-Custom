@@ -500,7 +500,7 @@ fun ReplayShareSheet(summary: ReplaySummary, period: String, onDismiss: () -> Un
         onDismiss = onDismiss,
         title = "Share my Replay",
         icon = Icons.Rounded.Share,
-        subtitle = "Songs, artists, albums and genres, in one picture.",
+        subtitle = "Your minutes, songs, artists and albums, in one picture.",
         actions = {
             SheetButton(
                 "Save",
