@@ -299,8 +299,6 @@ data class PlaybackSettings(
     val resumeOnConnect: Boolean = false,
     /** Pause when the media volume is turned all the way down, and resume when it comes back up. */
     val pauseAtZeroVolume: Boolean = false,
-    /** The playing song as a Live Update in the status bar (Android 16 and newer). */
-    val liveUpdate: Boolean = true,
     /** Skip the non-music parts of music videos, from SponsorBlock. */
     val sponsorBlock: Boolean = true,
     /** SponsorBlock categories to skip, by API name. */
@@ -335,6 +333,20 @@ data class InterfaceSettings(
     val wavySeekbar: Boolean = false,
     /** The seek bar drawn as the song's waveform, loud and quiet parts. */
     val waveformSeekbar: Boolean = false,
+    /** How thick the seek bar's track is. */
+    val seekbarThickness: SeekbarThickness = SeekbarThickness.REGULAR,
+    /** What marks the place on the seek bar. */
+    val seekbarThumb: SeekbarThumb = SeekbarThumb.DOT,
+    /** The played part's colour. */
+    val seekbarColor: SeekbarColor = SeekbarColor.PLAIN,
+    /** What the time on the right of the seek bar shows. */
+    val seekbarTime: SeekbarTime = SeekbarTime.LEFT,
+    /** Small dots on the seek bar where the song's parts (verse, chorus) begin. */
+    val seekbarMarks: Boolean = true,
+    /** A "Skip to chorus" button beside the source pill, when the lyrics mark the chorus. */
+    val skipToChorus: Boolean = false,
+    /** The pill under the title naming where the audio comes from and its quality. */
+    val sourcePill: Boolean = true,
     /** A tapped song's cover flies down into the now-playing card. */
     val coverFlight: Boolean = true,
     /** A soft light in the cover's colour under the player's cover. */
@@ -516,6 +528,31 @@ enum class DockMotion(val label: String, val summary: String) {
 
 /** How synced lyrics move as the song plays. */
 @Serializable
+enum class SeekbarThickness(val label: String, val dp: Float) {
+    THIN("Thin", 3f),
+    REGULAR("Regular", 5f),
+    THICK("Thick", 9f),
+}
+
+enum class SeekbarThumb(val label: String) {
+    DOT("Dot"),
+    LINE("Line"),
+    TOUCH("While dragging"),
+    NONE("None"),
+}
+
+enum class SeekbarColor(val label: String) {
+    PLAIN("Plain"),
+    ACCENT("Accent"),
+    GRADIENT("Gradient"),
+}
+
+enum class SeekbarTime(val label: String) {
+    LEFT("Time left"),
+    TOTAL("Length"),
+    HIDDEN("Hidden"),
+}
+
 enum class LyricsAnimation(val label: String, val summary: String) {
     FLUID("Fluid", "The current line grows and the rest soften"),
     KARAOKE("Karaoke", "Words fill with a glow; lines stay still"),

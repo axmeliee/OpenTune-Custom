@@ -1,5 +1,6 @@
 package com.opentune.ui.player
 
+import com.opentune.data.settings.AppSettings
 import com.opentune.ui.components.livingArt
 
 import androidx.compose.runtime.withFrameNanos
@@ -332,8 +333,10 @@ fun ArtworkPane(
         CoverSwap(CoverShown(song.thumbnailUrl, index), change) { url, motion ->
             Artwork(
                 url.artworkAt(com.opentune.data.model.PLAYER_ART_PX),
+                // As wide as the pane, unless that's taller than the room it has: then as
+                // tall as the room. Forcing the full width made a square that spilled over
+                // "Playing from" and the title on screens where the controls take more height.
                 Modifier
-                    .fillMaxWidth()
                     .aspectRatio(1f)
                     .then(with(com.opentune.ui.components.FlyingCover) { Modifier.playerLanding() })
                     .then(motion)
@@ -486,9 +489,24 @@ fun SeekBar(
     // Only animated while it can be seen, so an idle bar costs no frames.
     val phaseState = if (wavy && playing) rememberWavePhase() else null
     val amplitude by animateFloatAsState(if (wavy && playing && dragFraction == null) 1f else 0f, tween(400), label = "amp")
-    val trackHeight by animateDpAsState(if (dragFraction != null) 10.dp else 5.dp, label = "track")
-    val thumbRadius by animateDpAsState(if (dragFraction != null) 0.dp else 7.dp, label = "thumb")
-    val active = MaterialTheme.colorScheme.onSurface
+    val look = AppSettings.ui.collectAsState().value
+    val base = look.seekbarThickness.dp.dp
+    val trackHeight by animateDpAsState(if (dragFraction != null) base * 2 else base, label = "track")
+    // The dot rides the track; the line stands across it; "While dragging" only shows while held.
+    val thumbShown = when (look.seekbarThumb) {
+        com.opentune.data.settings.SeekbarThumb.DOT, com.opentune.data.settings.SeekbarThumb.LINE -> dragFraction == null
+        com.opentune.data.settings.SeekbarThumb.TOUCH -> dragFraction != null
+        com.opentune.data.settings.SeekbarThumb.NONE -> false
+    }
+    val thumbRadius by animateDpAsState(if (thumbShown) maxOf(7.dp, base * 0.9f + 3.dp) else 0.dp, label = "thumb")
+    val lineThumb = look.seekbarThumb == com.opentune.data.settings.SeekbarThumb.LINE
+    val active = when (look.seekbarColor) {
+        com.opentune.data.settings.SeekbarColor.PLAIN -> MaterialTheme.colorScheme.onSurface
+        else -> MaterialTheme.colorScheme.primary
+    }
+    val gradientEnd = MaterialTheme.colorScheme.tertiary
+    val gradient = look.seekbarColor == com.opentune.data.settings.SeekbarColor.GRADIENT
+    val shownMarks = if (look.seekbarMarks) marks else emptyList()
     val inactive = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.18f)
     val bufferedColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.3f)
     val markDot = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
@@ -601,7 +619,10 @@ fun SeekBar(
                         x += 2f
                     }
                 }
-                drawPath(wavePath, active, style = Stroke(width = h, cap = StrokeCap.Round))
+                if (gradient) drawPath(wavePath, Brush.horizontalGradient(listOf(active, gradientEnd), endX = maxOf(size.width * f, 1f)), style = Stroke(width = h, cap = StrokeCap.Round))
+                else drawPath(wavePath, active, style = Stroke(width = h, cap = StrokeCap.Round))
+            } else if (gradient) {
+                drawRoundRect(Brush.horizontalGradient(listOf(active, gradientEnd), endX = maxOf(size.width * f, 1f)), Offset(0f, y), Size(size.width * f, h), r)
             } else {
                 drawRoundRect(active, Offset(0f, y), Size(size.width * f, h), r)
             }
@@ -610,23 +631,38 @@ fun SeekBar(
             if (durationMs > 0) {
                 val played = size.width * f
                 val clear = maxOf(thumbRadius.toPx(), h) + 2.dp.toPx()
-                marks.forEach { ms ->
+                shownMarks.forEach { ms ->
                     val x = size.width * (ms.toFloat() / durationMs)
                     if (x > played + clear && x < size.width - h) drawCircle(markDot, h * 0.32f, Offset(x, size.height / 2))
                 }
             }
-            if (thumbRadius > 0.dp) drawCircle(active, thumbRadius.toPx(), Offset(size.width * f, size.height / 2))
+            if (thumbRadius > 0.dp) {
+                val at = Offset(size.width * f, size.height / 2)
+                val thumbColor = if (gradient) gradientEnd else active
+                if (lineThumb) {
+                    // A short upright bar across the track, rounded at the ends.
+                    val w = 3.dp.toPx()
+                    val tall = thumbRadius.toPx() * 2.6f
+                    drawRoundRect(thumbColor, Offset(at.x - w / 2f, at.y - tall / 2f), Size(w, tall), CornerRadius(w / 2f))
+                } else {
+                    drawCircle(thumbColor, thumbRadius.toPx(), at)
+                }
+            }
         }
         }
         if (fineScrubbing) Text("Fine scrubbing · ⅕ speed", style = MaterialTheme.typography.labelSmall)
         val elapsedSeconds by remember(durationMs) {
             derivedStateOf { ((dragFraction?.times(durationMs)?.toLong() ?: position()) / 1000) }
         }
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+        if (look.seekbarTime != com.opentune.data.settings.SeekbarTime.HIDDEN) Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
             Text(if (loading) "--:--" else formatTime(elapsedSeconds * 1000), style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            // Time left, as Apple Music shows it.
+            // Time left, as Apple Music shows it, or the song's length.
             Text(
-                if (durationMs > 0) "-" + formatTime((durationMs - elapsedSeconds * 1000).coerceAtLeast(0)) else "--:--",
+                when {
+                    durationMs <= 0 -> "--:--"
+                    look.seekbarTime == com.opentune.data.settings.SeekbarTime.TOTAL -> formatTime(durationMs)
+                    else -> "-" + formatTime((durationMs - elapsedSeconds * 1000).coerceAtLeast(0))
+                },
                 style = MaterialTheme.typography.labelMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )

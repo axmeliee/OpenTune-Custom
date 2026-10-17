@@ -122,8 +122,6 @@ class PlaybackService : MediaLibraryService() {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
 
     private var castMirror: CastMirror? = null
-    /** The song as a Live Update in the status bar, on Android 16 and newer. */
-    private var liveUpdate: LiveUpdate? = null
     private var radioJob: Job? = null
     private var radioSeed: String? = null
 
@@ -314,8 +312,13 @@ class PlaybackService : MediaLibraryService() {
         mediaSession = MediaLibrarySession.Builder(this, player, sessionCallback)
             .setSessionActivity(sessionActivity)
             .build()
-        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.BAKLAVA) {
-            liveUpdate = LiveUpdate(context, player, scope).also { it.start() }
+        // Earlier versions posted the song as a Live Update on its own channel. That's
+        // gone; clear the channel so it doesn't linger in the phone's settings.
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
+            getSystemService(android.app.NotificationManager::class.java)?.run {
+                cancel(7_160)
+                deleteNotificationChannel("live_update")
+            }
         }
         // Likes changed anywhere (the app, the widget) show on the heart at once.
         scope.launch { LibraryStore.liked.collect { refreshButtons() } }
@@ -430,8 +433,6 @@ class PlaybackService : MediaLibraryService() {
             QueueStore.save(QueueStore.Saved((0 until p.mediaItemCount).map { SongRef.of(p.getMediaItemAt(it).toSong()) }, p.currentMediaItemIndex, p.currentPosition))
         }
         NowPlayingWidget.stopped(this)
-        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.BAKLAVA) liveUpdate?.release()
-        liveUpdate = null
         crossfade?.release()
         crossfade = null
         castMirror?.detach(resume = false)

@@ -41,17 +41,6 @@ fun rememberArtworkSeed(url: String?): Color? {
     return seed
 }
 
-/**
- * [rememberArtworkSeed] outside a composition, from the same cache, so the
- * playback service's Live Update takes the colour the player shows.
- */
-suspend fun artworkSeed(context: Context, url: String): Int? {
-    seedCache[url]?.let { return it.takeIf { argb -> argb != NO_COLOR } }
-    val argb = extractSeed(context, url)
-    seedCache[url] = argb ?: NO_COLOR
-    return argb
-}
-
 private suspend fun extractSeed(context: Context, url: String): Int? {
     val request = ImageRequest.Builder(context)
         .data(url)

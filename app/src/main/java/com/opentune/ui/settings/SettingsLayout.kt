@@ -46,7 +46,6 @@ internal val SETTINGS_CATEGORIES = listOf(
             "Between songs" to listOf("Crossfade", "Skip silence", "Preload upcoming songs"),
             "Autoplay" to listOf("Autoplay", "Recommendations", "Don't repeat songs in current session", "Smart shuffle", "Hidden songs and artists"),
             "Headphones and devices" to listOf("Resume when headphones connect", "Pause at zero volume", "Background playback", "Stop music on close from recents"),
-            "Notification" to listOf("Show in the status bar"),
             "Music videos" to listOf("SponsorBlock", "SponsorBlock categories"),
         ),
     ),
@@ -64,7 +63,8 @@ internal val SETTINGS_CATEGORIES = listOf(
         listOf(
             "Layout" to listOf("Player layout", "Player buttons", "Player background", "Player beside the page"),
             "Cover art" to listOf("Moving cover art", "Moving covers on Home", "Glow under the cover", "Song change", "Full-screen cover art", "Album covers"),
-            "Controls" to listOf("Wavy seek bar", "Waveform seek bar", "Lyric preview while seeking", "Hide volume bar", "Hide song status", "Show stats for nerds"),
+            "Seek bar" to listOf("Seek bar thickness", "Seek bar handle", "Seek bar colour", "Seek bar time", "Wavy seek bar", "Waveform seek bar", "Song part marks", "Lyric preview while seeking"),
+            "Controls" to listOf("Source pill", "Skip to chorus", "Hide volume bar", "Hide song status", "Show stats for nerds"),
         ),
     ),
     SettingsCategory(

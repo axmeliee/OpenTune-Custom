@@ -73,6 +73,10 @@ import androidx.compose.material.icons.rounded.MusicOff
 import androidx.compose.material.icons.rounded.NetworkCell
 import androidx.compose.material.icons.rounded.NotificationsActive
 import androidx.compose.material.icons.rounded.Palette
+import androidx.compose.material.icons.rounded.LineWeight
+import androidx.compose.material.icons.rounded.RadioButtonChecked
+import androidx.compose.material.icons.rounded.Schedule
+import androidx.compose.material.icons.rounded.MoreHoriz
 import androidx.compose.material.icons.rounded.Person
 import androidx.compose.material.icons.rounded.PlayCircle
 import androidx.compose.material.icons.rounded.Search
@@ -160,8 +164,6 @@ import com.opentune.data.sponsorblock.SponsorBlock
 import com.opentune.data.subsonic.Subsonic
 import com.opentune.playback.AudioCache
 import com.opentune.playback.BitPerfectUsb
-import com.opentune.playback.LiveUpdateAccess
-import com.opentune.playback.LiveUpdateRules
 import com.opentune.ui.components.AppSwitch
 import com.opentune.ui.components.Artwork
 import com.opentune.ui.components.ChoiceSheet
@@ -806,10 +808,6 @@ private fun settingsSections(
                 Entry("Stop music on close from recents", "swipe away") {
                     ToggleRow("Stop music on close from recents", pb.stopOnTaskRemoved, { v -> AppSettings.updatePlayback { it.copy(stopOnTaskRemoved = v) } }, summary = "Stops playback when swiped away from recent apps", icon = Icons.Rounded.MusicOff)
                 },
-                // Live Updates only exist on Android 16 and newer.
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.BAKLAVA) Entry("Show in the status bar", "live update now bar status bar chip lock screen notification time left") {
-                    LiveUpdateRow(pb.liveUpdate)
-                } else null,
             ),
         ),
         Section(
@@ -940,6 +938,35 @@ private fun settingsSections(
                 },
                 Entry("Lyric preview while seeking", "scrub seek bar lyric line preview bubble drag") {
                     ToggleRow("Lyric preview while seeking", ui.lyricScrubPreview, { v -> AppSettings.updateUi { it.copy(lyricScrubPreview = v) } }, summary = "Dragging the seek bar shows the line sung at that point above your finger", icon = Icons.Rounded.Lyrics)
+                },
+                Entry("Seek bar thickness", "progress bar seek slider thin thick height") {
+                    SettingRow("Seek bar thickness", icon = Icons.Rounded.LineWeight, below = {
+                        PillSegmented(com.opentune.data.settings.SeekbarThickness.entries, ui.seekbarThickness, { it.label }, { v -> AppSettings.updateUi { it.copy(seekbarThickness = v) } })
+                    })
+                },
+                Entry("Seek bar handle", "progress bar thumb knob dot line handle") {
+                    SettingRow("Seek bar handle", icon = Icons.Rounded.RadioButtonChecked, below = {
+                        PillSegmented(com.opentune.data.settings.SeekbarThumb.entries, ui.seekbarThumb, { it.label }, { v -> AppSettings.updateUi { it.copy(seekbarThumb = v) } })
+                    })
+                },
+                Entry("Seek bar colour", "progress bar color accent gradient") {
+                    SettingRow("Seek bar colour", summary = "Accent and Gradient follow the cover when the player takes its colours", icon = Icons.Rounded.Palette, below = {
+                        PillSegmented(com.opentune.data.settings.SeekbarColor.entries, ui.seekbarColor, { it.label }, { v -> AppSettings.updateUi { it.copy(seekbarColor = v) } })
+                    })
+                },
+                Entry("Seek bar time", "progress bar remaining total length duration time left") {
+                    SettingRow("Time on the right", icon = Icons.Rounded.Schedule, below = {
+                        PillSegmented(com.opentune.data.settings.SeekbarTime.entries, ui.seekbarTime, { it.label }, { v -> AppSettings.updateUi { it.copy(seekbarTime = v) } })
+                    })
+                },
+                Entry("Song part marks", "seek bar chorus verse dots marks parts") {
+                    ToggleRow("Song part marks", ui.seekbarMarks, { v -> AppSettings.updateUi { it.copy(seekbarMarks = v) } }, summary = "Small dots on the seek bar where the verse and chorus begin, when the lyrics mark them", icon = Icons.Rounded.MoreHoriz)
+                },
+                Entry("Skip to chorus", "chorus jump skip button song parts") {
+                    ToggleRow("Skip to chorus button", ui.skipToChorus, { v -> AppSettings.updateUi { it.copy(skipToChorus = v) } }, summary = "A button under the title that jumps to the next chorus, when the lyrics mark one", icon = Icons.Rounded.FastForward)
+                },
+                Entry("Source pill", "audio source quality pill badge codec bitrate jiosaavn youtube") {
+                    ToggleRow("Show the source pill", ui.sourcePill, { v -> AppSettings.updateUi { it.copy(sourcePill = v) } }, summary = "The pill under the title that says where the audio comes from and its quality", icon = Icons.Rounded.HighQuality)
                 },
                 Entry("Waveform seek bar", "waveform seek bar loud quiet bars scrub audio shape") {
                     ToggleRow("Waveform seek bar", ui.waveformSeekbar, { v -> AppSettings.updateUi { it.copy(waveformSeekbar = v) } }, summary = "The bar shows the song's loud and quiet parts. Downloaded songs show it at once; streamed songs fill it in as they play, then keep it", icon = Icons.Rounded.GraphicEq)
@@ -1341,30 +1368,3 @@ private fun outputSummary(context: Context, float: Boolean): String {
 
 private fun formatMb(mb: Int): String = if (mb >= 1024) "%.1f GB".format(mb / 1024f) else "$mb MB"
 
-/**
- * "Show in the status bar". When Android won't show the Live Update (its
- * notifications, its channel or Live Updates turned off for the app), the
- * summary says so and tapping the row opens the system page that fixes it;
- * the switch itself still turns the feature off. Read again on return, as
- * the fix is made in Android's settings.
- */
-@Composable
-private fun LiveUpdateRow(on: Boolean) {
-    val context = LocalContext.current
-    val declined by LiveUpdateAccess.declined.collectAsState()
-    var access by remember { mutableStateOf(LiveUpdateAccess.state(context)) }
-    LifecycleResumeEffect(declined) {
-        access = LiveUpdateAccess.state(context)
-        onPauseOrDispose { }
-    }
-    val shown = if (on) access else LiveUpdateRules.Access.READY
-    val fix = LiveUpdateAccess.fixIntent(context, shown)
-    val set = { v: Boolean -> AppSettings.updatePlayback { it.copy(liveUpdate = v) } }
-    SettingRow(
-        "Show in the status bar",
-        summary = LiveUpdateRules.summary(shown),
-        icon = Icons.Rounded.Timer,
-        onClick = { if (fix != null) runCatching { context.startActivity(fix) } else set(!on) },
-        trailing = { AppSwitch(on, set) },
-    )
-}
