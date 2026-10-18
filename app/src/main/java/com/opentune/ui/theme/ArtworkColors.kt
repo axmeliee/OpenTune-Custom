@@ -15,10 +15,13 @@ import coil3.request.ImageRequest
 import coil3.request.SuccessResult
 import coil3.request.allowHardware
 import coil3.toBitmap
+import com.materialkolor.hct.Hct
 import com.materialkolor.ktx.themeColorOrNull
+import com.materialkolor.quantize.QuantizerCelebi
 import java.util.concurrent.ConcurrentHashMap
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import kotlin.math.abs
 
 private val seedCache = ConcurrentHashMap<String, Int>()
 private const val NO_COLOR = 0
@@ -41,16 +44,22 @@ fun rememberArtworkSeed(url: String?): Color? {
     return seed
 }
 
-private suspend fun extractSeed(context: Context, url: String): Int? {
+/** The cover, small, as a bitmap that can be read. */
+private suspend fun smallArtwork(context: Context, url: String): android.graphics.Bitmap? {
     val request = ImageRequest.Builder(context)
         .data(url)
         .size(128)
         .allowHardware(false)
         .build()
     val result = context.imageLoader.execute(request) as? SuccessResult ?: return null
+    return runCatching { result.image.toBitmap() }.getOrNull()
+}
+
+private suspend fun extractSeed(context: Context, url: String): Int? {
+    val bitmap = smallArtwork(context, url) ?: return null
     return withContext(Dispatchers.Default) {
         runCatching {
-            result.image.toBitmap().asImageBitmap().themeColorOrNull()?.let { color ->
+            bitmap.asImageBitmap().themeColorOrNull()?.let { color ->
                 val c = color
                 android.graphics.Color.argb(
                     255,
@@ -61,4 +70,54 @@ private suspend fun extractSeed(context: Context, url: String): Int? {
             }
         }.getOrNull()
     }
+}
+
+private val paletteCache = ConcurrentHashMap<String, IntArray>()
+
+/**
+ * A few of an artwork URL's own colours, each clearly apart from the
+ * others, the ones that fill most of the cover first. Empty until read, or
+ * when the cover can't be loaded; cached per URL like [rememberArtworkSeed].
+ */
+@Composable
+fun rememberArtworkPalette(url: String?): List<Color> {
+    val context = LocalContext.current
+    var palette by remember(url) { mutableStateOf(url?.let(paletteCache::get)?.map { Color(it) }.orEmpty()) }
+    LaunchedEffect(url) {
+        if (url == null || paletteCache.containsKey(url)) return@LaunchedEffect
+        val argb = extractPalette(context, url) ?: return@LaunchedEffect
+        paletteCache[url] = argb
+        palette = argb.map { Color(it) }
+    }
+    return palette
+}
+
+private suspend fun extractPalette(context: Context, url: String): IntArray? {
+    val bitmap = smallArtwork(context, url) ?: return null
+    return withContext(Dispatchers.Default) {
+        runCatching {
+            val pixels = IntArray(bitmap.width * bitmap.height)
+            bitmap.getPixels(pixels, 0, bitmap.width, 0, 0, bitmap.width, bitmap.height)
+            val counts = QuantizerCelebi.quantize(pixels, 12)
+            val total = counts.values.sum().toFloat().coerceAtLeast(1f)
+            val picked = mutableListOf<Hct>()
+            counts.entries
+                .filter { it.value / total >= 0.01f }
+                .map { Hct.fromInt(it.key) to it.value / total }
+                // Colour counts as well as area: a small bright patch beats a big grey one.
+                .sortedByDescending { (hct, share) -> share * (1f + hct.chroma.toFloat() / 24f) }
+                .forEach { (hct, _) -> if (picked.size < PALETTE_SIZE && picked.none { it.near(hct) }) picked += hct }
+            picked.map { it.toInt() }.toIntArray()
+        }.getOrNull()
+    }
+}
+
+private const val PALETTE_SIZE = 4
+
+/** Too alike to both be worth showing: greys of about the same lightness, or about the same hue and lightness. */
+private fun Hct.near(other: Hct): Boolean {
+    val toneGap = abs(tone - other.tone)
+    if (chroma < 12 || other.chroma < 12) return toneGap < 18 && abs(chroma - other.chroma) < 16
+    val hueGap = abs(hue - other.hue).let { minOf(it, 360 - it) }
+    return hueGap < 24 && toneGap < 24
 }

@@ -337,7 +337,7 @@ fun PlayerLayout(
     // under the controls make way so the cover keeps some size.
     val windowHeight = with(LocalDensity.current) { androidx.compose.ui.platform.LocalWindowInfo.current.containerSize.height.toDp() }
     val roomy = !docked || windowHeight >= DOCKED_ROOMY_HEIGHT
-    // On its side the player has its own layout, over a blurred cover.
+    // On its side the player has its own layout.
     val landscape = !docked && LocalConfiguration.current.orientation == Configuration.ORIENTATION_LANDSCAPE
     // Full-screen cover only fits the layouts built around a plain square cover.
     val fullCover = !landscape && state.ui.fullScreenCover && pane == Pane.COVER && (style == PlayerStyle.CLASSIC || style == PlayerStyle.MINIMAL)
@@ -390,7 +390,7 @@ fun PlayerLayout(
             // The backdrop is the layer the player's Liquid Glass bends.
             Box(Modifier.fillMaxSize().layerBackdrop(backdrop)) {
                 PlayerBackdrop(
-                    if (landscape && theme.playerBackground != com.opentune.data.settings.PlayerBackground.ECHO_GLOW) com.opentune.data.settings.PlayerBackground.BLUR else theme.playerBackground,
+                    theme.playerBackground,
                     current.thumbnailUrl,
                     Modifier.fillMaxSize(),
                     animate = !state.ui.reduceAnimation,

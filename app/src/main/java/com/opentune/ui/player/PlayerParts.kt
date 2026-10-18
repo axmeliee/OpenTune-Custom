@@ -8,7 +8,6 @@ import androidx.compose.runtime.produceState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
 import android.media.AudioManager
-import android.os.Build
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.core.VisibilityThreshold
 import androidx.compose.animation.core.FastOutSlowInEasing
@@ -89,7 +88,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.layout.layout
 import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.ui.graphics.drawscope.clipRect
-import androidx.compose.ui.draw.blur
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.draw.scale
@@ -102,6 +100,9 @@ import androidx.compose.ui.graphics.CompositingStrategy
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.RectangleShape
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.lerp
+import androidx.compose.ui.graphics.toArgb
+import com.materialkolor.hct.Hct
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
@@ -117,6 +118,7 @@ import com.opentune.data.settings.PlayerBackground
 import com.opentune.ui.components.Artwork
 import com.opentune.ui.formatTime
 import kotlin.math.PI
+import kotlin.math.abs
 import kotlin.math.roundToInt
 import kotlin.math.cos
 import kotlin.math.sin
@@ -146,49 +148,34 @@ fun PlayerBackdrop(
 ) {
     val scheme = MaterialTheme.colorScheme
     Box(modifier.background(scheme.surface)) {
-        val blur = style == PlayerBackground.BLUR && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S
-        when {
-            style == PlayerBackground.BLUR && !blur -> {
-                // No blur effect before Android 12: a tiny copy of the cover,
-                // stretched to fill, smears into the same soft colour field.
-                AnimatedContent(artworkUrl, transitionSpec = { fadeIn(tween(800)) togetherWith fadeOut(tween(800)) }, label = "backdrop") { url ->
-                    Artwork(url.artworkAt(24), Modifier.fillMaxSize().graphicsLayer { scaleX = 1.3f; scaleY = 1.3f }, shape = RectangleShape)
-                }
-                Box(Modifier.matchParentSize().background(Color.Black.copy(alpha = 0.5f)))
-            }
-            blur -> {
-                AnimatedContent(artworkUrl, transitionSpec = { fadeIn(tween(800)) togetherWith fadeOut(tween(800)) }, label = "backdrop") { url ->
-                    Artwork(
-                        url,
-                        Modifier.fillMaxSize().graphicsLayer { scaleX = 1.4f; scaleY = 1.4f }.blur(90.dp),
-                        shape = RectangleShape,
-                    )
-                }
-                Box(Modifier.matchParentSize().background(Color.Black.copy(alpha = 0.45f)))
-            }
-            style == PlayerBackground.PLAIN -> Unit
-            style == PlayerBackground.ECHO_GLOW -> EchoGlowBackground(animate && playing, Modifier.matchParentSize())
-            style == PlayerBackground.MESH -> MeshGradient(animate, Modifier.matchParentSize())
-            else -> {
+        when (style) {
+            PlayerBackground.ECHO_GLOW -> EchoGlowBackground(animate && playing, Modifier.matchParentSize())
+            PlayerBackground.MESH -> MeshGradient(artworkUrl, animate, Modifier.matchParentSize())
+            PlayerBackground.GRADIENT -> {
+                // Two tones: the cover's own colour at the top, deepening to
+                // the dark surface by the middle, where the controls sit.
+                val top = scheme.primaryContainer
                 Box(
                     Modifier.matchParentSize().background(
                         Brush.verticalGradient(
-                            0f to scheme.primaryContainer,
-                            0.55f to scheme.surfaceContainer,
+                            0f to top,
+                            0.3f to lerp(top, scheme.surface, 0.35f),
+                            0.62f to lerp(top, scheme.surface, 0.85f),
                             1f to scheme.surface,
                         ),
                     ),
                 )
-                // Under the controls, the song's colours glow and drift into each other.
+                // Under the controls, a faint glow in the same colour.
                 androidx.compose.foundation.layout.BoxWithConstraints(Modifier.matchParentSize()) {
                     AmbientLights(
-                        listOf(scheme.primary, scheme.tertiary, scheme.secondary, scheme.inversePrimary, scheme.primaryContainer),
+                        listOf(scheme.primary, scheme.primaryContainer, scheme.inversePrimary),
                         playing = playing,
                         animate = animate,
                         modifier = Modifier
                             .fillMaxWidth()
-                            .height(maxHeight * 0.6f)
-                            .align(Alignment.BottomCenter),
+                            .height(maxHeight * 0.5f)
+                            .align(Alignment.BottomCenter)
+                            .graphicsLayer { alpha = 0.35f },
                     )
                 }
             }
@@ -235,14 +222,36 @@ private val FULL_COVER_OVERLAP = 44.dp
 private val FULL_COVER_FADE = 210.dp
 
 /**
- * Soft blobs of the artwork's colors drifting slowly over a dark base, like
- * Apple Music's animated backgrounds. Still when [animate] is false.
+ * Wide, soft patches of the cover's own colours, several of them, laid over
+ * the whole player and drifting slowly into each other, like Apple Music's
+ * animated backgrounds. Darker toward the bottom so the controls read.
+ * Still when [animate] is false.
  */
 @Composable
-private fun MeshGradient(animate: Boolean, modifier: Modifier = Modifier) {
+private fun MeshGradient(artworkUrl: String?, animate: Boolean, modifier: Modifier = Modifier) {
     val scheme = MaterialTheme.colorScheme
-    val colors = listOf(scheme.primary, scheme.tertiary, scheme.secondary, scheme.primaryContainer)
-    // One drift takes 24 s, so a dozen steps a second can't be told from
+    val palette = com.opentune.ui.theme.rememberArtworkPalette(artworkUrl)
+    // The cover's colours, or the song's scheme until they've been read. Each
+    // is kept between dark and mid so none of them glares behind white text.
+    val wanted = remember(palette, scheme.primary, scheme.tertiary) {
+        val cover = palette.ifEmpty { listOf(scheme.primary, scheme.tertiary, scheme.secondary, scheme.primaryContainer) }
+            .map { Hct.fromInt(it.toArgb()) }
+        // A cover of one hue (or greys and one hue) gets the scheme's second
+        // accent too, so the patches don't all melt into one colour.
+        val hues = cover.filter { it.chroma >= 12 }.map { it.hue }
+        val oneHue = hues.all { h -> hues.all { abs(h - it).let { d -> minOf(d, 360 - d) } < 40 } }
+        val extra = listOfNotNull(scheme.tertiary.takeIf { oneHue }, scheme.primaryContainer.takeIf { cover.size < 3 })
+        // Dark greys stay dark, as shadow between the colours rather than haze.
+        val all = (cover + extra.map { Hct.fromInt(it.toArgb()) }).map {
+            val grey = it.chroma < 12
+            Color(Hct.from(it.hue, if (grey) it.chroma else it.chroma * 1.15, it.tone.coerceIn(if (grey) 14.0 else 30.0, if (grey) 50.0 else 60.0)).toInt())
+        }
+        // The patches, then the deepest shade of the cover's main colour to lay them on.
+        List(MESH_BLOBS) { all[it % all.size] } + Color(cover.first().withTone(12.0).toInt())
+    }
+    // Each colour eases into the next song's rather than jumping.
+    val colors = wanted.mapIndexed { i, c -> animateColorAsState(c, tween(1_200), label = "mesh$i").value }
+    // One drift takes 40 s, so a dozen steps a second can't be told from
     // every frame. It matters: the mesh is what the player's Liquid Glass
     // samples, and each step makes every glass control blur and bend again.
     val t by produceState(0.15f, animate) {
@@ -254,27 +263,53 @@ private fun MeshGradient(animate: Boolean, modifier: Modifier = Modifier) {
         }
     }
     Canvas(modifier) {
-        drawRect(scheme.surface)
+        drawRect(colors[MESH_BLOBS])
         val w = size.width
         val h = size.height
-        colors.forEachIndexed { i, color ->
-            val phase = (t + i * 0.25f) * 2 * PI.toFloat()
-            val cx = w * (0.5f + 0.38f * cos(phase + i))
-            val cy = h * (0.32f + 0.3f * sin(phase * (if (i % 2 == 0) 1f else -1f) + i * 1.3f))
-            val radius = maxOf(w, h) * (0.55f + 0.1f * sin(phase * 2))
+        val phase = t * 2 * PI.toFloat()
+        for (i in 0 until MESH_BLOBS) {
+            val p = MESH_PATHS[i]
+            // Whole turns per drift, so the loop closes without a jump.
+            val cx = w * (p[0] + 0.22f * cos(phase * p[2] + p[4]))
+            val cy = h * (p[1] + 0.12f * sin(phase * p[3] + p[4]))
+            val radius = maxOf(w, h) * (0.36f + 0.04f * sin(phase + i))
+            val c = colors[i]
             drawCircle(
-                Brush.radialGradient(listOf(color.copy(alpha = 0.55f), Color.Transparent), center = Offset(cx, cy), radius = radius),
+                Brush.radialGradient(
+                    0f to c,
+                    0.4f to c.copy(alpha = 0.85f),
+                    0.7f to c.copy(alpha = 0.4f),
+                    1f to Color.Transparent,
+                    center = Offset(cx, cy),
+                    radius = radius,
+                ),
                 radius = radius,
                 center = Offset(cx, cy),
             )
         }
-        // Keep the lower half calm so the controls stay readable.
-        drawRect(Brush.verticalGradient(0.35f to Color.Transparent, 1f to scheme.surface.copy(alpha = 0.85f)))
+        // Darker toward the bottom so the title and controls stay readable.
+        drawRect(
+            Brush.verticalGradient(
+                0f to Color.Black.copy(alpha = 0.06f),
+                0.5f to Color.Black.copy(alpha = 0.2f),
+                1f to Color.Black.copy(alpha = 0.5f),
+            ),
+        )
     }
 }
 
-private const val MESH_CYCLE_NS = 24_000_000_000L
+private const val MESH_BLOBS = 5
+private const val MESH_CYCLE_NS = 40_000_000_000L
 private const val MESH_STEP_MS = 80L
+
+/** Each patch's resting place (x, y as fractions), its turns per drift across and down, and where it starts. */
+private val MESH_PATHS = arrayOf(
+    floatArrayOf(0.15f, 0.1f, 1f, 1f, 0f),
+    floatArrayOf(0.9f, 0.36f, -1f, 2f, 1.7f),
+    floatArrayOf(0.1f, 0.62f, 2f, -1f, 3.4f),
+    floatArrayOf(0.78f, 0.74f, 1f, -2f, 4.6f),
+    floatArrayOf(0.4f, 0.98f, -2f, 1f, 2.2f),
+)
 
 /**
  * Large cover art. It eases smaller while paused, crossfades on a track

@@ -29,6 +29,14 @@ class SettingsDefaultsTest {
         assertEquals(com.opentune.data.settings.DockMotion.MINIMIZE, ui.dockMotion)
     }
 
+    @Test fun aPlayerBackgroundThatWasDroppedReadsBackAsMesh() {
+        for (gone in listOf("BLUR", "PLAIN")) {
+            val settings = json.decodeFromString<SettingsState>("""{"theme":{"playerBackground":"$gone","pureBlack":false}}""")
+            assertEquals(com.opentune.data.settings.PlayerBackground.MESH, settings.theme.playerBackground)
+            assertFalse(settings.theme.pureBlack)
+        }
+    }
+
     @Test fun anUpdateAndBackupKeepExplicitSavedChoices() {
         val body = """{
             "playback":{"stopOnTaskRemoved":false,"losslessUnmeteredOnly":true},

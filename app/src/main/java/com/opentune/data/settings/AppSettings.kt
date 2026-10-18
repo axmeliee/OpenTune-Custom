@@ -44,11 +44,10 @@ enum class PaletteStyleOption(val label: String) {
 
 @Serializable
 enum class PlayerBackground(val label: String) {
+    /** Soft patches of several of the cover's colours, drifting into each other. */
     MESH("Mesh"),
-    /** A gradient from the cover's colour, with soft lights drifting under the controls. */
+    /** The cover's main colour at the top, deepening to dark, with a faint glow under the controls. */
     GRADIENT("Gradient"),
-    BLUR("Blur"),
-    PLAIN("Plain"),
     ECHO_GLOW("Echo glow"),
 }
 
