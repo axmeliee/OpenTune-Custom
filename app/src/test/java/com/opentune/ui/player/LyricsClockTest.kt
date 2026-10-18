@@ -43,4 +43,11 @@ class LyricsClockTest {
         val next = LyricsClock.step(4_000.0, 4_016, 1_000.0, playing = true)
         assertTrue(next <= 4_000.0 + 100 + 2)
     }
+
+    @Test fun followsAFasterPlaybackSpeedWithoutFallingBehind() {
+        // At 1.5x the player moves 24 ms a frame; the clock keeps pace instead of trailing it.
+        var shown = 1_000.0
+        repeat(60) { i -> shown = LyricsClock.step(shown, 1_000L + (i + 1) * 24, 16.0, playing = true, rate = 1.5) }
+        assertEquals(1_000.0 + 60 * 24, shown, 2.0)
+    }
 }
