@@ -937,8 +937,21 @@ private fun CodeCard(r: Together.Room, onInvite: () -> Unit, onCopy: () -> Unit)
             }
         }
         Spacer(Modifier.height(8.dp))
+        // Right beside Invite now, so ending everyone's room asks first; leaving or closing doesn't.
+        var confirmEnd by remember { mutableStateOf(false) }
+        if (confirmEnd) {
+            com.opentune.ui.components.FloatingDialog(
+                onDismissRequest = { confirmEnd = false },
+                title = { Text("End the room?") },
+                text = { Text("Everyone in it stops listening together.") },
+                confirmButton = {
+                    com.opentune.ui.components.SheetButton("End room", tone = com.opentune.ui.components.SheetTone.Danger, onClick = { confirmEnd = false; Together.leave() })
+                },
+                dismissButton = { com.opentune.ui.components.SheetButton("Keep it", onClick = { confirmEnd = false }, closes = true) },
+            )
+        }
         TextButton(
-            onClick = { Together.leave() },
+            onClick = { if (r.hosting && r.phase != Together.Phase.Ended) confirmEnd = true else Together.leave() },
             colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error),
         ) {
             Icon(Icons.AutoMirrored.Rounded.Logout, null, Modifier.size(18.dp)); Spacer(Modifier.width(8.dp))
