@@ -47,6 +47,6 @@ internal object BetterLyrics {
         if (durationMs > 0 && length != null && length > 0 && abs(length - durationMs) > TOLERANCE_MS) return null
         val lines = Ttml.parse(ttml)
         if (lines.isEmpty()) return null
-        return Lyrics.Synced(lines, "Better Lyrics")
+        return Lyrics.Synced(lines, "Better Lyrics", recordingMs = length?.takeIf { it > 0 } ?: 0)
     }
 }

@@ -95,14 +95,16 @@ object LyricsPlus {
                 if (!it.isSuccessful) null else it.body?.string()
             }
         } ?: return null
-        return parse(body, durationMs)?.also { lastGood.set(server) }
+        return parse(body, durationMs, cleaned.title)?.also { lastGood.set(server) }
     }
 
-    internal fun parse(body: String, durationMs: Long): Lyrics? {
+    internal fun parse(body: String, durationMs: Long, title: String? = null): Lyrics? {
         val root = runCatching { json.parseToJsonElement(body) as? JsonObject }.getOrNull() ?: return null
         val meta = root["metadata"] as? JsonObject
         val total = (meta?.get("totalDuration") as? JsonPrimitive)?.contentOrNull?.let(Ttml::time)
         if (durationMs > 0 && total != null && total > 0 && abs(total - durationMs) > TOLERANCE_MS) return null
+        // The servers fall back to a fuzzy search; a hit under another title is another song.
+        if (title != null && !LyricsQuality.sameTitle(title, (meta?.get("title") as? JsonPrimitive)?.contentOrNull)) return null
         val items = (root["lyrics"] as? JsonArray).orEmpty().filterIsInstance<JsonObject>()
         val wordType = (root["type"] as? JsonPrimitive)?.contentOrNull.equals("Word", ignoreCase = true)
         val voices = voicesOf(meta?.get("agents") as? JsonObject)
@@ -133,7 +135,7 @@ object LyricsPlus {
             val at = p.long("time") ?: return@mapNotNull null
             SongPart((p["name"] as? JsonPrimitive)?.contentOrNull.orEmpty(), at, at + (p.long("duration") ?: 0))
         }
-        return Lyrics.Synced(lines, "LyricsPlus", parts)
+        return Lyrics.Synced(lines, "LyricsPlus", parts, recordingMs = total?.takeIf { it > 0 } ?: 0)
     }
 
     /**

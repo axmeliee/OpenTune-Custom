@@ -700,10 +700,9 @@ object AppSettings {
     fun updateLibrary(t: (LibrarySettings) -> LibrarySettings) = update { it.copy(library = t(it.library)) }
     fun updateLyrics(t: (LyricsSettings) -> LyricsSettings) = update { it.copy(lyrics = t(it.lyrics)) }
 
-    fun lyricsOffsetFor(videoId: String): Long = _lyrics.value.offsets[videoId] ?: 0L
-
-    fun setLyricsOffset(videoId: String, ms: Long) = updateLyrics { l ->
-        l.copy(offsets = if (ms == 0L) l.offsets - videoId else (l.offsets + (videoId to ms)).entries.toList().takeLast(500).associate { it.toPair() })
+    /** Sets [videoId]'s lyrics offset; 0 clears it, unless [keepZero] (a 0 that overrides the automatic shift). */
+    fun setLyricsOffset(videoId: String, ms: Long, keepZero: Boolean = false) = updateLyrics { l ->
+        l.copy(offsets = if (ms == 0L && !keepZero) l.offsets - videoId else (l.offsets + (videoId to ms)).entries.toList().takeLast(500).associate { it.toPair() })
     }
 
     /** Pins [videoId]'s lyrics to [source]; null goes back to the usual order. */

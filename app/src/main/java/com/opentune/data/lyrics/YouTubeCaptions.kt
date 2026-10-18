@@ -19,7 +19,7 @@ import okhttp3.Request
 object YouTubeCaptions {
     private val NOTES = setOf('♪', '♫', '♬', '♩')
 
-    suspend fun lookup(videoId: String): Lyrics? {
+    suspend fun lookup(videoId: String, durationMs: Long = 0): Lyrics? {
         val player = Innertube.player(videoId, PlayerClient.ANDROID_VR)
         val tracks = ((((player["captions"] as? JsonObject)?.get("playerCaptionsTracklistRenderer") as? JsonObject)
             ?.get("captionTracks")) as? JsonArray).orEmpty().mapNotNull { it as? JsonObject }
@@ -30,8 +30,24 @@ object YouTubeCaptions {
             it.body?.string().orEmpty()
         }
         val lines = parse(body)
-        return if (lines.size >= 4) Lyrics.Synced(lines, "YouTube captions") else null
+        // Timed to this very video, so as long as the track by definition.
+        return if (looksLikeLyrics(lines, durationMs)) Lyrics.Synced(lines, "YouTube captions", recordingMs = durationMs.coerceAtLeast(0)) else null
     }
+
+    /**
+     * Subtitles that read like a song's words rather than a skit, a
+     * narration or a few credits: enough short lines, spread over a good
+     * part of the song.
+     */
+    internal fun looksLikeLyrics(lines: List<LyricLine>, durationMs: Long): Boolean {
+        if (lines.size < 6) return false
+        if (lines.sumOf { it.text.length } / lines.size > 80) return false
+        if (durationMs > 0 && lines.last().startMs - lines.first().startMs < durationMs * 0.3) return false
+        return true
+    }
+
+    /** Lines that credit or point somewhere instead of being sung: "Subtitles by …", "Translated by …", a web address. */
+    private val CREDIT = Regex("""\b(?:subtitle[sd]?|captions?|captioned|transcri\w*|translat\w*|lyrics)\s*(?:by|:)|amara\.org|https?://|www\.|©""", RegexOption.IGNORE_CASE)
 
     /** A hand-made track in the song's language: the one that matches the automatic track, or the only one there is. */
     internal fun pick(tracks: List<JsonObject>): JsonObject? {
@@ -64,6 +80,7 @@ object YouTubeCaptions {
             // "♪ We're no strangers ♪" and bracketed cues like "[♪♪♪]" or "[Music]".
             t = t.trim { it.isWhitespace() || it in NOTES }
             if (t.startsWith("[") && t.endsWith("]") || t.startsWith("(") && t.endsWith(")")) return@mapNotNull null
+            if (CREDIT.containsMatchIn(t)) return@mapNotNull null
             t = t.replace(Regex("\\s+"), " ")
             if (t.isEmpty()) null else Triple(start, dur, t)
         }

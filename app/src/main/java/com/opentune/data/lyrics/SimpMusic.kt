@@ -79,9 +79,11 @@ object SimpMusic {
         for (entry in candidates) {
             val rich = entry.str("richSyncLyrics")?.let { richLines(it, durationMs) }.orEmpty()
             val lineSynced = entry.str("syncedLyrics")?.let { LrcParser.parse(it, durationMs) }.orEmpty()
+            val seconds = entry.num("durationSeconds") ?: entry.num("duration")
+            val recordingMs = seconds?.takeIf { it > 0 }?.ms() ?: 0
             for (lines in listOf(rich, lineSynced)) {
                 if (lines.isEmpty()) continue
-                val found = Lyrics.Synced(lines, SOURCE)
+                val found = Lyrics.Synced(lines, SOURCE, recordingMs = recordingMs)
                 if (rank(found) > rank(best)) best = found
             }
             val plain = (entry.str("plainLyric") ?: entry.str("plainLyrics"))?.trim()?.takeIf { it.isNotEmpty() }

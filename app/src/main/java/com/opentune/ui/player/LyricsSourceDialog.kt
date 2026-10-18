@@ -62,7 +62,7 @@ internal fun LyricsSourceDialog(song: Song, durationMs: Long, onDismiss: () -> U
                 LyricsSource.entries.forEach { source ->
                     val answer = answers[source]
                     val found = answer?.getOrNull()
-                    SourceRow(source.label, describe(answer), picked = chosen == source, enabled = found != null, waiting = answer == null) {
+                    SourceRow(source.label, describe(answer, durationMs), picked = chosen == source, enabled = found != null, waiting = answer == null) {
                         AppSettings.setLyricsSource(song.videoId, source)
                         onDismiss()
                     }
@@ -73,17 +73,20 @@ internal fun LyricsSourceDialog(song: Song, durationMs: Long, onDismiss: () -> U
     )
 }
 
-private fun describe(answer: Result<Lyrics?>?): String {
+private fun describe(answer: Result<Lyrics?>?, durationMs: Long): String {
     if (answer == null) return "Looking…"
     if (answer.isFailure) return "Couldn't reach it just now"
-    return when (val l = answer.getOrNull()) {
-        null -> "Nothing for this song"
+    val l = answer.getOrNull() ?: return "Nothing for this song"
+    val kind = when (l) {
         is Lyrics.Plain -> "Plain text, not synced"
         is Lyrics.Synced -> {
             val n = l.lines.size
             if (l.lines.any { it.wordSynced }) "Word by word · $n lines" else "Line by line · $n lines"
         }
     }
+    // Why the automatic choice passes it over, so picking it is an informed choice.
+    val problem = LyricsRepository.problemWith(l, durationMs) ?: return kind
+    return "$kind · Not used: ${problem.replaceFirstChar { it.lowercase() }}"
 }
 
 @Composable

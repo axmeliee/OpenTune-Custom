@@ -290,9 +290,11 @@ fun PlayerLayout(
     var showSignal by remember { mutableStateOf(false) }
     val context = LocalContext.current
     val clipboard = remember { context.getSystemService(ClipboardManager::class.java) }
-    // Lyrics run on their own clock, shifted by this song's offset.
+    // Lyrics run on their own clock, shifted by this song's offset, or the
+    // one found by comparing lyrics sources when none is set.
     val lyricsSettings by AppSettings.lyrics.collectAsState()
-    val offsetMs = lyricsSettings.offsets[current.videoId] ?: 0L
+    val autoOffsetMs = ((state.lyrics as? LyricsState.Found)?.lyrics as? com.opentune.data.lyrics.Lyrics.Synced)?.autoOffsetMs ?: 0L
+    val offsetMs = com.opentune.data.lyrics.lyricsOffset(lyricsSettings.offsets[current.videoId], (state.lyrics as? LyricsState.Found)?.lyrics)
     val lyricsPosition: () -> Long = { position() + offsetMs }
     // Long-press on the line being sung: shift this song's lyrics so that line starts now.
     val syncLine: (Long) -> Unit = { lineStart ->
@@ -768,7 +770,7 @@ fun PlayerLayout(
                 },
             )
         }
-        if (showOffset) LyricsOffsetDialog(current.videoId, onDismiss = { showOffset = false })
+        if (showOffset) LyricsOffsetDialog(current.videoId, autoOffsetMs, onDismiss = { showOffset = false })
         if (showLyricsSource) LyricsSourceDialog(current, state.durationMs, onDismiss = { showLyricsSource = false })
         if (showDetails) TrackDetailsDialog(current, state.durationMs, onDismiss = { showDetails = false })
         if (showSignal) SignalPathDialog(state.audioFormat, onDismiss = { showSignal = false })
@@ -777,13 +779,16 @@ fun PlayerLayout(
 
 /**
  * Shifts this song's lyrics earlier or later when they run out of step with
- * the audio. Kept per song.
+ * the audio. Kept per song. Starts from [autoMs], the shift found by
+ * comparing lyrics sources, until one is set here; Reset goes back to it.
  */
 @Composable
-private fun LyricsOffsetDialog(videoId: String, onDismiss: () -> Unit) {
+private fun LyricsOffsetDialog(videoId: String, autoMs: Long, onDismiss: () -> Unit) {
     val lyrics by AppSettings.lyrics.collectAsState()
-    val ms = lyrics.offsets[videoId] ?: 0L
-    fun set(v: Long) = AppSettings.setLyricsOffset(videoId, v.coerceIn(-10_000, 10_000))
+    val manual = lyrics.offsets[videoId]
+    val ms = manual ?: autoMs
+    // A chosen 0 is kept when there's an automatic shift it overrides.
+    fun set(v: Long) = AppSettings.setLyricsOffset(videoId, v.coerceIn(-10_000, 10_000), keepZero = autoMs != 0L)
     FloatingDialog(
         onDismissRequest = onDismiss,
         title = { Text("Lyrics offset") },
@@ -797,6 +802,14 @@ private fun LyricsOffsetDialog(videoId: String, onDismiss: () -> Unit) {
                     },
                     style = MaterialTheme.typography.headlineSmall,
                 )
+                if (manual == null && autoMs != 0L) {
+                    Text(
+                        "Set to match the other lyrics sources",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(top = 4.dp),
+                    )
+                }
                 Text(
                     "Earlier if the words come after the singing, later if they come before.",
                     style = MaterialTheme.typography.bodyMedium,
@@ -812,7 +825,7 @@ private fun LyricsOffsetDialog(videoId: String, onDismiss: () -> Unit) {
             }
         },
         confirmButton = { SheetButton("Done", onClick = onDismiss, closes = true) },
-        dismissButton = { SheetButton("Reset", onClick = { set(0) }) },
+        dismissButton = { SheetButton("Reset", onClick = { AppSettings.setLyricsOffset(videoId, 0) }) },
     )
 }
 

@@ -13,7 +13,6 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
 import android.os.Build
 import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateDpAsState
@@ -30,7 +29,7 @@ import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
-import androidx.compose.foundation.gestures.animateScrollBy
+import androidx.compose.foundation.interaction.DragInteraction
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -66,7 +65,7 @@ import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.snapshotFlow
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.Modifier
@@ -240,13 +239,13 @@ private fun SyncedLyrics(
     // A line lights a moment before its timestamp, so it's there as the singer starts it.
     val active by remember(lines) { derivedStateOf { lines.activeIndex(pos() + LINE_LEAD_MS) } }
     var following by remember { mutableStateOf(true) }
-    var autoScrolling by remember { mutableStateOf(false) }
+    val glide = remember { GlideSpeed() }
 
-    // A drag we didn't start means the listener wants to look around.
+    // A drag means the listener wants to look around. Watching drags rather
+    // than any scrolling tells theirs from the glide below, even when a drag
+    // cuts into a glide that's under way.
     LaunchedEffect(listState) {
-        snapshotFlow { listState.isScrollInProgress }.collect { scrolling ->
-            if (scrolling && !autoScrolling) following = false
-        }
+        listState.interactionSource.interactions.collect { if (it is DragInteraction.Start) following = false }
     }
     LaunchedEffect(following, listState.isScrollInProgress) {
         if (!following && !listState.isScrollInProgress) {
@@ -258,14 +257,12 @@ private fun SyncedLyrics(
     BoxWithConstraints(Modifier.fillMaxSize()) {
         val anchor = maxHeight * 0.3f
         LaunchedEffect(active, following, reduced) {
-            if (!following) return@LaunchedEffect
-            autoScrolling = true
-            // +1 for the intro item ahead of the first line.
-            try {
-                glideTo(listState, (active + 1).coerceAtLeast(0), reduced)
-            } finally {
-                autoScrolling = false
+            if (!following) {
+                glide.pxPerS = 0f
+                return@LaunchedEffect
             }
+            // +1 for the intro item ahead of the first line.
+            glideTo(listState, (active + 1).coerceAtLeast(0), reduced, glide)
         }
 
         LazyColumn(
@@ -314,15 +311,46 @@ private fun SyncedLyrics(
     }
 }
 
-/** Scroll [index] to the top of the content area (the anchor), smoothly when it's near. */
-private suspend fun glideTo(state: LazyListState, index: Int, reduced: Boolean) {
-    val item = state.layoutInfo.visibleItemsInfo.firstOrNull { it.index == index }
-    if (item != null && !reduced) {
-        state.animateScrollBy(item.offset.toFloat(), tween(durationMillis = 650, easing = FastOutSlowInEasing))
-    } else {
+/** How fast the list was gliding, kept from one line to the next. */
+private class GlideSpeed { var pxPerS = 0f }
+
+/**
+ * Scroll [index] to the top of the content area (the anchor), smoothly when
+ * it's near. The glide is a spring that doesn't overshoot, aimed afresh each
+ * frame (so the intro dots folding away mid-glide don't throw it off) and
+ * starting from the speed the last one had: lines that come quickly no
+ * longer stop and restart the list at each change.
+ */
+private suspend fun glideTo(state: LazyListState, index: Int, reduced: Boolean, speed: GlideSpeed) {
+    if (reduced || state.layoutInfo.visibleItemsInfo.none { it.index == index }) {
+        speed.pxPerS = 0f
         state.scrollToItem(index)
+        return
     }
+    state.scroll {
+        var last = withFrameNanos { it }
+        while (true) {
+            val item = state.layoutInfo.visibleItemsInfo.firstOrNull { it.index == index } ?: break
+            val left = item.offset.toFloat()
+            if (abs(left) < 0.5f && abs(speed.pxPerS) < 20f) {
+                scrollBy(left)
+                break
+            }
+            val now = withFrameNanos { it }
+            val dt = ((now - last) / 1e9f).coerceIn(0f, 0.05f)
+            last = now
+            speed.pxPerS += (GLIDE_STIFFNESS * left - GLIDE_DAMPING * speed.pxPerS) * dt
+            val step = speed.pxPerS * dt
+            // Short of the step: the list is at its end.
+            if (abs(scrollBy(step)) + 0.5f < abs(step)) break
+        }
+    }
+    speed.pxPerS = 0f
 }
+
+/** About 0.6 s to settle, as the old 650 ms glide did; critically damped. */
+private const val GLIDE_STIFFNESS = 64f
+private const val GLIDE_DAMPING = 16f
 
 /** How one [LyricsAnimation] treats lines: sizes, blur per line away, and glow. */
 private class LineMotion(

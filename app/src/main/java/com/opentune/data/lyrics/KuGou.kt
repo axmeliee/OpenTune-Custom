@@ -49,9 +49,11 @@ object KuGou {
         // The artist is often filed in its own script (米津玄師 for Kenshi
         // Yonezu), so a miss on "artist - title" tries the title alone,
         // with a tighter length match.
-        val (id, key) = pick(search("${cleaned.artist} - ${cleaned.title}"), durationMs, cleaned.title)
-            ?: durationMs.takeIf { it > 0 }?.let { pick(search(cleaned.title), it, cleaned.title, TITLE_ONLY_TOLERANCE_MS) }
+        val hit = best(search("${cleaned.artist} - ${cleaned.title}"), durationMs, cleaned.title)
+            ?: durationMs.takeIf { it > 0 }?.let { best(search(cleaned.title), it, cleaned.title, TITLE_ONLY_TOLERANCE_MS) }
             ?: return null
+        val id = hit.str("id") ?: return null
+        val key = hit.str("accesskey") ?: return null
         val download = "$BASE/download".toHttpUrl().newBuilder()
             .addQueryParameter("ver", "1")
             .addQueryParameter("client", "pc")
@@ -62,7 +64,7 @@ object KuGou {
             .build()
         val lrc = lrcOf(get(download)) ?: return null
         val lines = clean(LrcParser.parse(lrc, durationMs), cleaned.title, cleaned.artist)
-        return if (lines.isEmpty()) null else Lyrics.Synced(lines, "KuGou")
+        return if (lines.isEmpty()) null else Lyrics.Synced(lines, "KuGou", recordingMs = hit.num("duration")?.toLong() ?: 0)
     }
 
     private val VERSION = Regex("""\b(remix|live|instrumental|karaoke|acoustic|cover|sped up|slowed|dj)\b|伴奏|翻唱|现场""", RegexOption.IGNORE_CASE)
@@ -74,16 +76,22 @@ object KuGou {
      * length would win over the song itself.
      */
     internal fun pick(search: JsonElement?, durationMs: Long, title: String = "", tolerance: Double = TOLERANCE_MS): Pair<String, String>? {
-        val candidates = ((search as? JsonObject)?.get("candidates") as? JsonArray)?.mapNotNull { it as? JsonObject } ?: return null
-        fun gap(o: JsonObject) = if (durationMs <= 0) 0.0 else abs((o.num("duration") ?: Double.MAX_VALUE) - durationMs)
-        val wantsVersion = VERSION.containsMatchIn(title)
-        val best = candidates
-            .filter { gap(it) <= tolerance }
-            .filter { wantsVersion || !VERSION.containsMatchIn(it.str("song").orEmpty()) }
-            .minByOrNull(::gap) ?: return null
+        val best = best(search, durationMs, title, tolerance) ?: return null
         val id = best.str("id") ?: return null
         val key = best.str("accesskey") ?: return null
         return id to key
+    }
+
+    /** As [pick], the whole candidate. One filed under another title is another song, however close its length. */
+    private fun best(search: JsonElement?, durationMs: Long, title: String, tolerance: Double = TOLERANCE_MS): JsonObject? {
+        val candidates = ((search as? JsonObject)?.get("candidates") as? JsonArray)?.mapNotNull { it as? JsonObject } ?: return null
+        fun gap(o: JsonObject) = if (durationMs <= 0) 0.0 else abs((o.num("duration") ?: Double.MAX_VALUE) - durationMs)
+        val wantsVersion = VERSION.containsMatchIn(title)
+        return candidates
+            .filter { gap(it) <= tolerance }
+            .filter { wantsVersion || !VERSION.containsMatchIn(it.str("song").orEmpty()) }
+            .filter { title.isBlank() || LyricsQuality.sameTitle(title, it.str("song")) }
+            .minByOrNull(::gap)
     }
 
     /** The LRC text inside a download answer (base64 in "content"). */

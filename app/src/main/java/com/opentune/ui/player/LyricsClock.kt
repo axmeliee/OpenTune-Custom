@@ -27,16 +27,17 @@ internal object LyricsClock {
 
     /**
      * The next time to show, [dtMs] after [shown], given the player's position
-     * [raw] and whether it's moving ([playing]).
+     * [raw] and whether it's moving ([playing]), at [rate] times real time
+     * (the playback speed), so a faster song isn't drawn a little behind.
      */
-    fun step(shown: Double, raw: Long, dtMs: Double, playing: Boolean): Double {
+    fun step(shown: Double, raw: Long, dtMs: Double, playing: Boolean, rate: Double = 1.0): Double {
         val gap = raw - shown
         if (abs(gap) > SEEK_MS) return raw.toDouble()
         if (!playing) return shown + gap * 0.35
         // Run with the frames, then close part of what's left between that and the
         // player. Never step back while playing: a player that's a little behind
         // slows the clock down rather than reversing it.
-        val predicted = shown + dtMs.coerceIn(0.0, 100.0)
+        val predicted = shown + dtMs.coerceIn(0.0, 100.0) * rate.coerceIn(0.25, 4.0)
         val next = predicted + (raw - predicted) * PULL
         return maxOf(next, shown)
     }
@@ -56,12 +57,24 @@ internal fun rememberLyricsClock(raw: () -> Long): () -> Long {
         var last = withFrameNanos { it }
         var seen = read()
         var movedAt = last
+        // The playback speed, as the position's own progress over a couple of seconds shows it.
+        var rate = 1.0
+        var sinceRaw = seen
+        var sinceAt = last
         while (true) {
             val now = withFrameNanos { it }
             val r = read()
             if (r != seen) { seen = r; movedAt = now }
             val playing = (now - movedAt) / 1_000_000 < STILL_MS
-            value = LyricsClock.step(value, r, (now - last) / 1_000_000.0, playing)
+            val span = (now - sinceAt) / 1_000_000.0
+            if (!playing || abs(r - value) > LyricsClock.SEEK_MS) {
+                sinceRaw = r; sinceAt = now
+            } else if (span >= RATE_WINDOW_MS) {
+                val measured = (r - sinceRaw) / span
+                if (measured in 0.2..4.5) rate = (rate + measured) / 2
+                sinceRaw = r; sinceAt = now
+            }
+            value = LyricsClock.step(value, r, (now - last) / 1_000_000.0, playing, rate)
             last = now
             shown.longValue = value.toLong()
             // Paused and caught up: no need to wake every frame.
@@ -71,4 +84,10 @@ internal fun rememberLyricsClock(raw: () -> Long): () -> Long {
     return { shown.longValue }
 }
 
-private const val STILL_MS = 300L
+/**
+ * Short, so a pause is seen before the clock has run on far past the
+ * player (it then settles back, unlighting the end of a word). The position
+ * changes every frame while playing, so a few frames still is a pause.
+ */
+private const val STILL_MS = 100L
+private const val RATE_WINDOW_MS = 2_000.0

@@ -43,11 +43,22 @@ sealed interface Lyrics {
         override val source: String,
         /** The song's verse, chorus and so on, when the source marks them; see [SongParts]. */
         val parts: List<SongPart> = emptyList(),
+        /** How long the recording the source timed these to is, in ms; 0 when it doesn't say. */
+        val recordingMs: Long = 0,
+        /**
+         * A shift found by comparing the sources' timing, added to the
+         * position as the per-song offset is; that offset, once set, is used
+         * instead. See [lyricsOffset].
+         */
+        val autoOffsetMs: Long = 0,
     ) : Lyrics
 
     @Serializable
     data class Plain(val text: String, override val source: String) : Lyrics
 }
+
+/** What to add to the playback position for [lyrics]: the listener's own offset for the song ([manual]), else the one found automatically. */
+fun lyricsOffset(manual: Long?, lyrics: Lyrics?): Long = manual ?: (lyrics as? Lyrics.Synced)?.autoOffsetMs ?: 0L
 
 /** Parses LRC, including the enhanced `<mm:ss.xx>` word tags some sources carry. */
 object LrcParser {
