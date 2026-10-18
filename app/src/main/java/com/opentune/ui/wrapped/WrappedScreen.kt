@@ -90,8 +90,6 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.opentune.data.history.History
 import com.opentune.data.history.Wrapped
-import com.opentune.data.podcasts.Podcasts
-import com.opentune.data.radio.Radio
 import com.opentune.data.settings.AppSettings
 import com.opentune.playback.PlayerConnection
 import com.opentune.ui.browse.SongActions
@@ -147,7 +145,7 @@ internal enum class Slide(val art: Art) {
  * numbers set large. Each slide moves on by itself; a tap on the right goes
  * on, on the left goes back, and holding pauses.
  *
- * With the app's [player] at hand, your top songs play behind it (see
+ * With the app's [player] at hand, calm music plays behind it (see
  * [WrappedMusic]); without one (previews, tests) the story runs silent.
  */
 @Composable
@@ -222,7 +220,6 @@ fun WrappedScreen(actions: SongActions, onBack: () -> Unit, nowMs: Long = System
 
     // ---- Music behind the story ----
     val music = remember(player) { player?.let { WrappedMusic(context.applicationContext) } }
-    val playlist = remember(summary) { WrappedTune.playlist(topSongs, summary.onRepeat?.song) { !Radio.isRadio(it) && !Podcasts.isEpisode(it) } }
     val mainBusy by remember(player) {
         player?.let { p -> combine(p.isPlaying, p.playWhenReady, p.isBuffering) { playing, wants, buffering -> playing || (wants && buffering) } } ?: flowOf(false)
     }.collectAsState(player?.let { it.isPlaying.value || (it.playWhenReady.value && it.isBuffering.value) } ?: false)
@@ -245,12 +242,9 @@ fun WrappedScreen(actions: SongActions, onBack: () -> Unit, nowMs: Long = System
     val lifecycleState by lifecycle.currentStateFlow.collectAsState()
     val inFront = lifecycleState.isAtLeast(Lifecycle.State.STARTED)
     // Never two things at once: nothing while the app's player is going.
-    val audible = music != null && ui.wrappedMusic && !offer && !mainBusy && inFront && playlist.isNotEmpty()
-    val cue = cueFor(slides.getOrNull(index), summary)
+    val audible = music != null && ui.wrappedMusic && !offer && !mainBusy && inFront
     if (music != null) {
-        LaunchedEffect(playlist) { music.setSongs(playlist) }
         LaunchedEffect(audible) { music.setAudible(audible) }
-        LaunchedEffect(cue) { music.cue(cue) }
         DisposableEffect(music) {
             onDispose { music.close { if (pausedMain) player?.play() } }
         }
@@ -336,7 +330,7 @@ fun WrappedScreen(actions: SongActions, onBack: () -> Unit, nowMs: Long = System
             Modifier.align(Alignment.TopEnd).statusBarsPadding().padding(top = 24.dp, end = 12.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            if (music != null && playlist.isNotEmpty()) {
+            if (music != null) {
                 MusicButton(
                     offer = offer,
                     on = ui.wrappedMusic,
@@ -364,13 +358,6 @@ fun WrappedScreen(actions: SongActions, onBack: () -> Unit, nowMs: Long = System
     }
 }
 
-/** The song a page is about, for the music to move to; null leaves whatever is playing. */
-internal fun cueFor(slide: Slide?, s: Wrapped.Summary): String? = when (slide) {
-    Slide.TOP_SONG -> s.topSongs.firstOrNull()?.song?.videoId
-    Slide.REPEAT -> s.onRepeat?.song?.videoId
-    else -> null
-}
-
 // ---- Story chrome ------------------------------------------------------------
 
 /**
@@ -392,7 +379,7 @@ private fun MusicButton(offer: Boolean, on: Boolean, ink: Color, onToggle: () ->
         ) {
             Icon(Icons.Rounded.PlayArrow, null, tint = ink, modifier = Modifier.size(18.dp))
             Spacer(Modifier.width(4.dp))
-            Text("Play your top song", style = TextStyle(color = ink, fontSize = 13.sp, fontWeight = FontWeight.Medium))
+            Text("Play calm music", style = TextStyle(color = ink, fontSize = 13.sp, fontWeight = FontWeight.Medium))
         }
     } else {
         Box(
