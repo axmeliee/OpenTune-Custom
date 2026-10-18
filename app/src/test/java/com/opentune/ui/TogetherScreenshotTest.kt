@@ -13,6 +13,7 @@ import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performTextInput
+import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.foundation.layout.PaddingValues
 import org.junit.Assert.assertNull
@@ -23,7 +24,11 @@ import com.opentune.data.together.Together
 import com.opentune.data.together.Track
 import com.opentune.ui.together.RoomView
 import com.opentune.ui.together.StartRoom
+import androidx.test.core.app.ApplicationProvider
+import com.opentune.data.settings.AppSettings
+import com.opentune.data.settings.GlassStyle
 import java.io.File
+import org.junit.Before
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -37,6 +42,12 @@ import org.robolectric.annotation.GraphicsMode
 @Config(sdk = [35], qualifiers = "w411dp-h891dp-xxhdpi", application = android.app.Application::class)
 class TogetherScreenshotTest {
     @get:Rule val compose = createAndroidComposeRule<androidx.activity.ComponentActivity>()
+
+    /** The room's island is glass; Robolectric can't draw the Liquid Glass shaders, so it's drawn frosted. */
+    @Before fun plainGlass() {
+        AppSettings.init(ApplicationProvider.getApplicationContext())
+        AppSettings.updateUi { it.copy(liquidGlass = false, reduceBlur = true, glassStyle = GlassStyle.FROSTED) }
+    }
 
     private fun shoot(name: String, content: @androidx.compose.runtime.Composable () -> Unit) {
         compose.setContent {
@@ -102,6 +113,23 @@ class TogetherScreenshotTest {
             ),
         )
         shoot("together-room") { RoomView(room, onBack = {}) }
+    }
+
+    /** A new room's first messages arrive once it's open; it stays at its top, on the code and the invite. */
+    @Test fun roomOpensAtItsTop() {
+        val line = Together.ChatLine("", "Ravi joined", system = true)
+        val room = androidx.compose.runtime.mutableStateOf(
+            Together.Room(
+                code = RoomCode.parse("K7QX-M2PA-9DTE")!!, hosting = true, myName = "Asha", phase = Together.Phase.Live,
+                members = listOf(Member("a", "Asha", host = true)), hostName = "Asha",
+            ),
+        )
+        shoot("together-room-start") { RoomView(room.value, onBack = {}) }
+        room.value = room.value.copy(chat = List(30) { line })
+        compose.mainClock.advanceTimeBy(2_000)
+        compose.waitForIdle()
+        compose.onNodeWithText("ROOM CODE").assertIsDisplayed()
+        compose.onNodeWithText("End room").assertIsDisplayed()
     }
 
     /** The whole room on one tall screen: someone knocking, talk, and voice notes in the chat. */

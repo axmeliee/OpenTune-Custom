@@ -3,6 +3,8 @@ package com.opentune.ui.together
 import android.widget.Toast
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.EnterTransition
+import androidx.compose.animation.ExitTransition
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.LinearEasing
@@ -14,8 +16,10 @@ import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.snap
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
+import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkVertically
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -29,9 +33,12 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.ime
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -44,25 +51,31 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.rounded.Logout
 import androidx.compose.material.icons.automirrored.rounded.PlaylistPlay
 import androidx.compose.material.icons.automirrored.rounded.Send
+import androidx.compose.material.icons.automirrored.rounded.VolumeOff
+import androidx.compose.material.icons.automirrored.rounded.VolumeUp
 import androidx.compose.material.icons.rounded.Call
 import androidx.compose.material.icons.rounded.CallEnd
 import androidx.compose.material.icons.rounded.ContentCopy
+import androidx.compose.material.icons.rounded.GraphicEq
 import androidx.compose.material.icons.rounded.Groups
 import androidx.compose.material.icons.rounded.HowToReg
+import androidx.compose.material.icons.rounded.KeyboardArrowUp
 import androidx.compose.material.icons.rounded.Lock
 import androidx.compose.material.icons.rounded.Mic
 import androidx.compose.material.icons.rounded.MicOff
 import androidx.compose.material.icons.rounded.Person
 import androidx.compose.material.icons.rounded.PersonAdd
 import androidx.compose.material.icons.rounded.PlayArrow
-import androidx.compose.material.icons.rounded.QrCode2
 import androidx.compose.material.icons.rounded.SportsEsports
 import androidx.compose.material.icons.rounded.Stop
 import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.FilledIconButton
 import androidx.compose.material3.FilledTonalButton
@@ -73,11 +86,13 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -88,17 +103,20 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
-import androidx.compose.ui.graphics.compositeOver
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
@@ -112,15 +130,19 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.zIndex
 import com.opentune.data.settings.AppSettings
 import com.opentune.data.together.Member
 import com.opentune.data.together.RoomCode
 import com.opentune.data.together.Together
+import com.opentune.ui.KeepChromeOut
 import com.opentune.ui.components.Artwork
+import com.opentune.ui.components.GlassPage
 import com.opentune.ui.components.PageHeader
 import com.opentune.ui.components.RowDivider
 import com.opentune.ui.components.SectionHeader
 import com.opentune.ui.components.ToggleRow
+import com.opentune.ui.components.glass
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.withTimeoutOrNull
@@ -168,18 +190,18 @@ fun TogetherScreen(contentPadding: PaddingValues, code: String?, onBack: () -> U
         // Long enough to see what happened, when the relays answer at once.
         if (!still) delay((OPENING_MIN_MS - (System.currentTimeMillis() - since)).coerceAtLeast(0))
         val now = Together.room.value
-        if (now != null && now.hosting && Together.inviteOnStart.value) inviteFor = now.code.raw
+        if (now != null && now.hosting) inviteFor = now.code.raw
         opening = false
     }
-    // The start page scrolls behind the dock and stops short of it; the room
-    // view keeps its talk bar above it.
+    // Both pages scroll behind the dock and stop short of it; the room's
+    // island sits on top of the dock.
     if (r == null || (opening && r.hosting)) {
         StartRoom(code, onBack, contentPadding, opening = opening && r != null, onStart = { name ->
             Together.create(name)
             opening = true
         })
     } else {
-        Box(Modifier.fillMaxSize().padding(contentPadding)) { RoomView(r, onBack, openInvite = inviteFor == r.code.raw) }
+        RoomView(r, onBack, contentPadding, openInvite = inviteFor == r.code.raw)
     }
 }
 
@@ -460,22 +482,79 @@ private fun Modifier.roomCard(inset: Dp = 16.dp): Modifier {
 private val GAP = 6.dp
 
 @Composable
-internal fun RoomView(r: Together.Room, onBack: () -> Unit, openInvite: Boolean = false) {
+internal fun RoomView(r: Together.Room, onBack: () -> Unit, contentPadding: PaddingValues = PaddingValues(), openInvite: Boolean = false) {
     val context = LocalContext.current
     val still = AppSettings.ui.collectAsState().value.reduceAnimation
+    val density = LocalDensity.current
+    val focus = LocalFocusManager.current
     var message by rememberSaveable { mutableStateOf("") }
     var inviting by rememberSaveable(r.code.raw) { mutableStateOf(openInvite) }
+    var open by rememberSaveable(r.code.raw) { mutableStateOf(false) }
+    val typing = remember { FocusRequester() }
     val list = rememberLazyListState()
-    LaunchedEffect(r.chat.size) { if (r.chat.isNotEmpty()) list.animateScrollToItem(list.layoutInfo.totalItemsCount.coerceAtLeast(1) - 1) }
+    // The island sits on the dock, and on the keyboard while it's up.
+    KeepChromeOut()
+    KeyboardResizes()
+    val island = r.phase != Together.Phase.Ended
+    val keyboard = WindowInsets.ime.asPaddingValues().calculateBottomPadding()
+    val above = maxOf(contentPadding.calculateBottomPadding() - ISLAND_DROP, keyboard + 8.dp, 8.dp)
+    var islandHeight by remember { mutableStateOf(ISLAND_HEIGHT) }
+    val listBottom = if (island) above + islandHeight + 16.dp else contentPadding.calculateBottomPadding()
+    val last = { (list.layoutInfo.totalItemsCount - 1).coerceAtLeast(0) }
+    // New messages are followed only by someone already reading the end of
+    // the chat, or writing in it, so a room always opens at its top: the
+    // code, the invite and who's in.
+    val atEnd by remember {
+        derivedStateOf {
+            val seen = list.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: -1
+            (list.firstVisibleItemIndex > 0 || list.firstVisibleItemScrollOffset > 0) && seen >= list.layoutInfo.totalItemsCount - 2
+        }
+    }
+    var heard by remember(r.code) { mutableIntStateOf(r.chat.size) }
+    LaunchedEffect(r.chat.size) {
+        val added = r.chat.size > heard
+        heard = r.chat.size
+        if (added && (open || atEnd)) list.animateScrollToItem(last())
+    }
+    // Open, the newest messages stay in sight as the island and the keyboard rise.
+    LaunchedEffect(open, listBottom) { if (open) list.scrollToItem(last()) }
+    val close = { open = false; focus.clearFocus() }
+    androidx.activity.compose.BackHandler(enabled = open, onBack = close)
     // The room rises into place when it opens.
     val shown = remember(r.code) { Animatable(if (still) 1f else 0f) }
     LaunchedEffect(r.code) { if (!still) shown.animateTo(1f, spring(dampingRatio = 0.9f, stiffness = 240f)) }
     if (inviting) InviteSheet(r.code, r.hosting, onDismiss = { inviting = false })
-    Column(Modifier.fillMaxSize().graphicsLayer {
-        alpha = shown.value.coerceIn(0f, 1f)
-        translationY = (1f - shown.value) * 28.dp.toPx()
-    }) {
-        LazyColumn(Modifier.weight(1f), state = list) {
+    val meSpeaking by Together.speaking.collectAsState()
+    val speaking = r.talking.toSet() + listOfNotNull(r.myId.takeIf { meSpeaking })
+    GlassPage(
+        Modifier.fillMaxSize().graphicsLayer {
+            alpha = shown.value.coerceIn(0f, 1f)
+            translationY = (1f - shown.value) * 28.dp.toPx()
+        },
+        overlay = {
+            if (island) {
+                RoomIsland(
+                    r, speaking, open,
+                    onOpen = { if (it) open = true else close() },
+                    message = message,
+                    onMessage = { message = it.take(300) },
+                    onSend = { Together.say(message); message = "" },
+                    typing = typing,
+                    still = still,
+                    modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = above)
+                        .onSizeChanged { islandHeight = with(density) { it.height.toDp() } },
+                )
+            }
+        },
+    ) {
+        LazyColumn(
+            Modifier.fillMaxSize().pointerInput(open) {
+                // A tap on the page, off any button, folds the island away.
+                if (open) detectTapGestures { close() }
+            },
+            state = list,
+            contentPadding = PaddingValues(bottom = listBottom),
+        ) {
             item { PageHeader(if (r.hosting) "Your room" else "${r.hostName ?: "Friend"}'s room", onBack = onBack) }
             item { CodeCard(r, onInvite = { inviting = true }, onCopy = { copyCode(context, r.code) }) }
             item { NowInRoom(r) }
@@ -491,90 +570,354 @@ internal fun RoomView(r: Together.Room, onBack: () -> Unit, openInvite: Boolean 
                     }
                 }
             }
-            item { SectionHeader("Settings") }
-            item { RoomSettings(r) }
             if (r.hosting && r.requests.isNotEmpty()) {
                 item { SectionHeader("Asking to join", subtitle = "${r.requests.size} waiting") }
                 items(r.requests.size, key = { "req:" + r.requests[it].id }) { i -> RequestRow(r.requests[i]) }
             }
             item { SectionHeader("Listening", subtitle = "${r.members.size} in the room") }
-            item {
-                val meSpeaking by Together.speaking.collectAsState()
-                val speaking = r.talking.toSet() + listOfNotNull(r.myId.takeIf { meSpeaking })
-                Members(r.members, r.myId, canRemove = r.hosting, speaking = speaking)
-            }
-            if (r.phase == Together.Phase.Live) item { TalkPanel() }
+            item { Members(r.members, r.myId, canRemove = r.hosting, speaking = speaking) }
+            item { SectionHeader("Settings") }
+            item { RoomSettings(r) }
+            // The chat comes last, just above the island where you write.
             item { SectionHeader("Chat") }
             if (r.chat.isEmpty()) {
                 item { Text("Say hi.", Modifier.padding(horizontal = 16.dp), color = MaterialTheme.colorScheme.onSurfaceVariant) }
             }
             items(r.chat.size) { i -> ChatBubble(r.chat[i]) }
-            item {
-                Row(Modifier.fillMaxWidth().padding(16.dp), horizontalArrangement = Arrangement.Center) {
-                    OutlinedButton(onClick = { Together.leave() }) { Text(if (r.hosting) "End room" else "Leave room") }
-                }
-            }
         }
-        // Talk, the call and the message box sit here, outside the list, so
-        // holding Talk can't scroll the page and nothing above moves while
-        // someone speaks. One tray, one grid: every control is the same
-        // height and the round buttons share the right-hand column.
-        if (r.phase != Together.Phase.Ended) {
-            val scheme = MaterialTheme.colorScheme
-            Column(
-                Modifier.fillMaxWidth().padding(horizontal = 10.dp, vertical = 6.dp)
-                    .background(scheme.surfaceContainer, RoundedCornerShape(30.dp))
-                    .padding(8.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp),
+        // The page fades out above the island and is still under it and the
+        // dock, so they rest on something rather than hang over the chat.
+        if (island) {
+            val base = MaterialTheme.colorScheme.background
+            val fade = 36.dp
+            val solid = (fade + islandHeight / 2) / (fade + islandHeight + above)
+            Box(
+                Modifier.align(Alignment.BottomCenter).fillMaxWidth().height(fade + islandHeight + above)
+                    .background(Brush.verticalGradient(0f to base.copy(alpha = 0f), solid * 0.5f to base.copy(alpha = 0.7f), solid to base, 1f to base)),
+            )
+        }
+    }
+}
+
+/**
+ * The page's padding stops a little short of the dock; the island sits
+ * closer, at the dock's own spacing, so it reads as the top of that stack.
+ */
+private val ISLAND_DROP = 4.dp
+
+/** The island's height at rest: its top row and the edge round it, as tall as the dock. */
+private val ISLAND_ROW = 52.dp
+private val ISLAND_EDGE = 6.dp
+private val ISLAND_HEIGHT = ISLAND_ROW + ISLAND_EDGE * 2
+private val ISLAND_SHAPE = RoundedCornerShape(32.dp)
+
+/**
+ * While the room is shown, the keyboard doesn't push the whole window up:
+ * the island rides up on it instead (see [RoomView]).
+ */
+@Composable
+private fun KeyboardResizes() {
+    val window = androidx.activity.compose.LocalActivity.current?.window ?: return
+    DisposableEffect(window) {
+        val was = window.attributes.softInputMode
+        @Suppress("DEPRECATION")
+        val resize = android.view.WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE
+        window.setSoftInputMode((was and android.view.WindowManager.LayoutParams.SOFT_INPUT_MASK_ADJUST.inv()) or resize)
+        onDispose { window.setSoftInputMode(was) }
+    }
+}
+
+/**
+ * The room's island: one glass capsule on the dock that shows the room at
+ * a glance (who's in, who's talking, the call) with Talk and the call to
+ * hand. Tapped, it opens out on a spring into the message box and whether
+ * you hear talk; tapping its top again, Back, or a tap on the page folds it.
+ */
+@Composable
+private fun RoomIsland(
+    r: Together.Room,
+    speaking: Set<String>,
+    open: Boolean,
+    onOpen: (Boolean) -> Unit,
+    message: String,
+    onMessage: (String) -> Unit,
+    onSend: () -> Unit,
+    typing: FocusRequester,
+    still: Boolean,
+    modifier: Modifier = Modifier,
+) {
+    val scheme = MaterialTheme.colorScheme
+    val live = r.phase == Together.Phase.Live
+    val inCall by Together.inCall.collectAsState()
+    val recording by Together.recording.collectAsState()
+    // Its edge takes the colour of what's going on: red while you record, green while anyone talks.
+    val edge by animateColorAsState(
+        when {
+            recording != null -> scheme.error
+            speaking.isNotEmpty() -> SPEAKING
+            else -> Color.Transparent
+        },
+        if (still) snap() else tween(240),
+        label = "edge",
+    )
+    // Opened by a tap, it's to write: the box takes the keyboard once it's there.
+    var wantsKeyboard by remember { mutableStateOf(false) }
+    LaunchedEffect(open, wantsKeyboard) {
+        if (open && wantsKeyboard) {
+            androidx.compose.runtime.withFrameNanos { }
+            runCatching { typing.requestFocus() }
+            wantsKeyboard = false
+        }
+    }
+    val turn by animateFloatAsState(if (open) 1f else 0f, if (still) snap() else spring(dampingRatio = 0.8f, stiffness = 420f), label = "turn")
+    Column(
+        modifier.fillMaxWidth().padding(horizontal = 12.dp)
+            .glass(ISLAND_SHAPE)
+            .border(1.5.dp, edge, ISLAND_SHAPE)
+            .padding(ISLAND_EDGE),
+    ) {
+        Row(Modifier.fillMaxWidth().height(ISLAND_ROW), verticalAlignment = Alignment.CenterVertically) {
+            val (title, line) = islandText(r, speaking, open, message)
+            Row(
+                Modifier.weight(1f).height(ISLAND_ROW).clip(CircleShape)
+                    .clickable(onClickLabel = if (open) "Close" else "Open the chat") {
+                        if (!open) wantsKeyboard = true
+                        onOpen(!open)
+                    }
+                    .padding(start = 4.dp, end = 8.dp),
+                verticalAlignment = Alignment.CenterVertically,
             ) {
-                if (r.phase == Together.Phase.Live) TalkBar()
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
-                    val send = { Together.say(message); message = "" }
-                    androidx.compose.foundation.text.BasicTextField(
-                        message, { message = it.take(300) },
-                        singleLine = true,
-                        textStyle = MaterialTheme.typography.bodyLarge.copy(color = scheme.onSurface),
-                        cursorBrush = androidx.compose.ui.graphics.SolidColor(scheme.primary),
-                        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Send),
-                        keyboardActions = KeyboardActions(onSend = { if (message.isNotBlank()) send() }),
-                        modifier = Modifier.weight(1f).height(TRAY_HEIGHT)
-                            .background(scheme.surfaceContainerHighest, RoundedCornerShape(TRAY_HEIGHT / 2)),
-                        decorationBox = { field ->
-                            Box(Modifier.padding(horizontal = 18.dp), contentAlignment = Alignment.CenterStart) {
-                                if (message.isEmpty()) Text("Message the room", style = MaterialTheme.typography.bodyLarge, color = scheme.onSurfaceVariant)
-                                field()
-                            }
-                        },
-                    )
-                    if (message.isNotBlank()) {
-                        FilledIconButton(onClick = send, Modifier.size(TRAY_HEIGHT)) {
-                            Icon(Icons.AutoMirrored.Rounded.Send, "Send")
-                        }
-                    } else if (r.phase == Together.Phase.Live) {
-                        val recording by Together.recording.collectAsState()
-                        val note = recording == false
-                        HoldToRecord(
-                            live = false,
-                            Modifier.size(TRAY_HEIGHT).background(if (note) scheme.error else scheme.surfaceContainerHighest, CircleShape),
-                        ) { held ->
-                            Icon(
-                                Icons.Rounded.Mic, "Hold to record a voice note",
-                                Modifier.size(24.dp),
-                                tint = if (held) scheme.onError else scheme.onSurfaceVariant,
-                            )
-                        }
+                Faces(r.members, speaking)
+                Spacer(Modifier.width(12.dp))
+                Column(Modifier.weight(1f)) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(
+                            title, Modifier.weight(1f, fill = false),
+                            style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold,
+                            maxLines = 1, overflow = TextOverflow.Ellipsis,
+                        )
+                        Icon(
+                            Icons.Rounded.KeyboardArrowUp, null,
+                            Modifier.size(18.dp).graphicsLayer { rotationZ = 180f * turn },
+                            tint = scheme.onSurfaceVariant,
+                        )
+                    }
+                    AnimatedContent(
+                        line,
+                        transitionSpec = { if (still) fadeIn(snap()) togetherWith fadeOut(snap()) else fadeIn(tween(200, 60)) togetherWith fadeOut(tween(120)) },
+                        label = "line",
+                    ) {
+                        Text(it, style = MaterialTheme.typography.bodySmall, color = scheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
                     }
                 }
+            }
+            if (live) TalkButtons(inCall)
+        }
+        AnimatedVisibility(
+            open,
+            enter = if (still) EnterTransition.None else expandVertically(spring(dampingRatio = 0.82f, stiffness = 380f)) + fadeIn(tween(220, 60)),
+            exit = if (still) ExitTransition.None else shrinkVertically(spring(dampingRatio = 1f, stiffness = 500f)) + fadeOut(tween(120)),
+        ) {
+            Column {
+                if (live) HearTalk(inCall)
+                Spacer(Modifier.height(if (live) 2.dp else ISLAND_EDGE))
+                MessageBox(message, onMessage, onSend, typing, voiceNotes = live)
             }
         }
     }
 }
 
-/** The code, how the room is doing, and the ways to bring people in. */
+/** What the island says in its top row: the headline and a line under it. */
+@Composable
+private fun islandText(r: Together.Room, speaking: Set<String>, open: Boolean, message: String): Pair<String, String> {
+    val inCall by Together.inCall.collectAsState()
+    val callMuted by Together.callMuted.collectAsState()
+    val meSpeaking by Together.speaking.collectAsState()
+    val recording by Together.recording.collectAsState()
+    val talkMuted by Together.talkMuted.collectAsState()
+    val talkers = r.members.filter { it.id in speaking && it.id != r.myId }.map { it.name }
+    val talking = when (talkers.size) {
+        0 -> null
+        1 -> "${talkers[0]} is talking"
+        2 -> "${talkers[0]} and ${talkers[1]} are talking"
+        else -> "${talkers[0]} and ${talkers.size - 1} more are talking"
+    }
+    val others = r.members.size - 1
+    val rest = when {
+        message.isNotBlank() && !open -> "Draft: $message"
+        open -> if (r.phase == Together.Phase.Live) "Hold the mic to talk, or call" else "Write to the room"
+        others <= 0 && r.hosting && r.phase == Together.Phase.Live -> "Share the code to bring friends in"
+        else -> "Tap to chat"
+    }
+    return when {
+        r.phase == Together.Phase.Connecting -> "Connecting…" to rest
+        r.phase == Together.Phase.FindingHost -> "Looking for the host…" to rest
+        r.phase == Together.Phase.Waiting -> "Waiting to be let in…" to "${r.hostName ?: "The host"} has to say yes"
+        r.phase == Together.Phase.LostHost -> "Lost touch with the host" to "Still trying…"
+        recording == true -> "You're talking" to "Let go to stop"
+        recording == false -> "Recording a voice note" to "Let go to send it"
+        inCall -> (talking ?: "In the call") to when {
+            callMuted -> "You're muted"
+            meSpeaking -> "You're on"
+            else -> "Just talk"
+        }
+        talking != null -> talking to if (talkMuted) "Talk is off for you" else rest
+        others <= 0 -> "Just you here" to rest
+        else -> "${r.members.size} listening" to rest
+    }
+}
+
+/** Up to three faces, the people talking first, then how many more. */
+@Composable
+private fun Faces(members: List<Member>, speaking: Set<String>) {
+    val scheme = MaterialTheme.colorScheme
+    val shown = members.sortedByDescending { it.id in speaking }.take(FACES)
+    val more = members.size - shown.size
+    // Overlapping, each cut out of the one under it by a ring of the island's colour.
+    Row(horizontalArrangement = Arrangement.spacedBy((-10).dp), verticalAlignment = Alignment.CenterVertically) {
+        shown.forEachIndexed { i, m ->
+            Box(
+                Modifier.zIndex((FACES - i).toFloat()).size(34.dp).background(scheme.surfaceContainerHigh, CircleShape),
+                contentAlignment = Alignment.Center,
+            ) { Avatar(m.name, 30.dp, speaking = m.id in speaking) }
+        }
+        if (more > 0) {
+            Box(
+                Modifier.size(34.dp).background(scheme.surfaceContainerHigh, CircleShape).padding(2.dp)
+                    .background(scheme.surfaceContainerHighest, CircleShape),
+                contentAlignment = Alignment.Center,
+            ) { Text("+$more", style = MaterialTheme.typography.labelMedium, color = scheme.onSurfaceVariant, maxLines = 1) }
+        }
+    }
+}
+
+private const val FACES = 3
+
+/**
+ * Talk and the call, round and as tall as the island's row: call and hold
+ * the mic to talk, or, in the call, mute and hang up.
+ */
+@Composable
+private fun TalkButtons(inCall: Boolean) {
+    val context = LocalContext.current
+    val callMuted by Together.callMuted.collectAsState()
+    val recording by Together.recording.collectAsState()
+    val haptics = com.opentune.ui.components.rememberHaptics()
+    val ask = androidx.activity.compose.rememberLauncherForActivityResult(androidx.activity.result.contract.ActivityResultContracts.RequestPermission()) { granted ->
+        if (granted && Together.startCall()) haptics.press()
+    }
+    val scheme = MaterialTheme.colorScheme
+    Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
+        if (inCall) {
+            FilledTonalIconButton(
+                onClick = { haptics.tick(); Together.setCallMuted(!callMuted) },
+                modifier = Modifier.size(ISLAND_ROW),
+                colors = if (callMuted) IconButtonDefaults.filledTonalIconButtonColors(containerColor = scheme.errorContainer, contentColor = scheme.onErrorContainer)
+                    else IconButtonDefaults.filledTonalIconButtonColors(containerColor = scheme.surfaceContainerHighest),
+            ) {
+                Icon(if (callMuted) Icons.Rounded.MicOff else Icons.Rounded.Mic, if (callMuted) "Unmute" else "Mute")
+            }
+            FilledIconButton(
+                onClick = { haptics.tick(); Together.endCall() },
+                modifier = Modifier.size(ISLAND_ROW),
+                colors = IconButtonDefaults.filledIconButtonColors(containerColor = scheme.error, contentColor = scheme.onError),
+            ) { Icon(Icons.Rounded.CallEnd, "Leave the call") }
+        } else {
+            FilledTonalIconButton(
+                onClick = {
+                    val granted = androidx.core.content.ContextCompat.checkSelfPermission(context, android.Manifest.permission.RECORD_AUDIO) ==
+                        android.content.pm.PackageManager.PERMISSION_GRANTED
+                    if (!granted) ask.launch(android.Manifest.permission.RECORD_AUDIO)
+                    else if (Together.startCall()) haptics.press()
+                },
+                modifier = Modifier.size(ISLAND_ROW),
+                colors = IconButtonDefaults.filledTonalIconButtonColors(containerColor = scheme.surfaceContainerHighest),
+            ) { Icon(Icons.Rounded.Call, "Join the call") }
+            val talking = recording == true
+            val fill by animateColorAsState(if (talking) scheme.error else scheme.primary, label = "talk")
+            HoldToRecord(
+                live = true,
+                Modifier.size(ISLAND_ROW).background(fill, CircleShape).semantics { contentDescription = "Hold to talk" },
+            ) { held ->
+                Icon(Icons.Rounded.Mic, null, Modifier.size(24.dp), tint = if (held) scheme.onError else scheme.onPrimary)
+            }
+        }
+    }
+}
+
+/** Whether you hear talk, as a chip, with the one thing worth knowing about it. */
+@Composable
+private fun HearTalk(inCall: Boolean) {
+    val scheme = MaterialTheme.colorScheme
+    val muted by Together.talkMuted.collectAsState()
+    val haptics = com.opentune.ui.components.rememberHaptics()
+    Row(Modifier.fillMaxWidth().padding(horizontal = 4.dp, vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+        Row(
+            Modifier.clip(CircleShape)
+                .background(if (muted) scheme.surfaceContainerHighest else scheme.secondaryContainer)
+                .toggleable(!muted, role = Role.Switch) { haptics.tick(); Together.setTalkMuted(!it) }
+                .padding(start = 10.dp, end = 14.dp, top = 7.dp, bottom = 7.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            val ink = if (muted) scheme.onSurfaceVariant else scheme.onSecondaryContainer
+            Icon(if (muted) Icons.AutoMirrored.Rounded.VolumeOff else Icons.AutoMirrored.Rounded.VolumeUp, null, Modifier.size(18.dp), tint = ink)
+            Spacer(Modifier.width(6.dp))
+            Text("Hear talk", style = MaterialTheme.typography.labelLarge, color = ink)
+        }
+        Spacer(Modifier.width(12.dp))
+        Text(
+            if (inCall) "Headphones keep the room from echoing" else "Nothing is saved",
+            Modifier.weight(1f),
+            style = MaterialTheme.typography.bodySmall,
+            color = scheme.onSurfaceVariant,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
+    }
+}
+
+/** The message box, with send once there's something to send, or the voice note mic. */
+@Composable
+private fun MessageBox(message: String, onChange: (String) -> Unit, onSend: () -> Unit, typing: FocusRequester, voiceNotes: Boolean) {
+    val scheme = MaterialTheme.colorScheme
+    val recording by Together.recording.collectAsState()
+    Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
+        BasicTextField(
+            message, onChange,
+            singleLine = true,
+            textStyle = MaterialTheme.typography.bodyLarge.copy(color = scheme.onSurface),
+            cursorBrush = SolidColor(scheme.primary),
+            keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Sentences, imeAction = ImeAction.Send),
+            keyboardActions = KeyboardActions(onSend = { if (message.isNotBlank()) onSend() }),
+            modifier = Modifier.weight(1f).height(ISLAND_ROW).focusRequester(typing)
+                .background(scheme.surfaceContainerHighest, CircleShape)
+                .semantics { contentDescription = "Message the room" },
+            decorationBox = { field ->
+                Box(Modifier.padding(horizontal = 18.dp), contentAlignment = Alignment.CenterStart) {
+                    if (message.isEmpty()) Text("Message the room", style = MaterialTheme.typography.bodyLarge, color = scheme.onSurfaceVariant)
+                    field()
+                }
+            },
+        )
+        if (message.isNotBlank()) {
+            FilledIconButton(onClick = onSend, Modifier.size(ISLAND_ROW)) { Icon(Icons.AutoMirrored.Rounded.Send, "Send") }
+        } else if (voiceNotes) {
+            val note = recording == false
+            HoldToRecord(
+                live = false,
+                Modifier.size(ISLAND_ROW).background(if (note) scheme.error else scheme.surfaceContainerHighest, CircleShape),
+            ) { held ->
+                Icon(Icons.Rounded.GraphicEq,"Hold to record a voice note", Modifier.size(24.dp), tint = if (held) scheme.onError else scheme.onSurfaceVariant)
+            }
+        }
+    }
+}
+
+/** The code, how the room is doing, the ways to bring people in, and the way out. */
 @Composable
 private fun CodeCard(r: Together.Room, onInvite: () -> Unit, onCopy: () -> Unit) {
     Column(
-        Modifier.padding(vertical = GAP).roomCard().padding(horizontal = 20.dp, vertical = 22.dp),
+        Modifier.padding(vertical = GAP).roomCard().padding(start = 20.dp, end = 20.dp, top = 22.dp, bottom = 10.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
         Text("ROOM CODE", style = MaterialTheme.typography.labelMedium, letterSpacing = 2.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -592,6 +935,20 @@ private fun CodeCard(r: Together.Room, onInvite: () -> Unit, onCopy: () -> Unit)
                     Icon(Icons.Rounded.ContentCopy, null, Modifier.size(18.dp)); Spacer(Modifier.width(8.dp)); Text("Copy code")
                 }
             }
+        }
+        Spacer(Modifier.height(8.dp))
+        TextButton(
+            onClick = { Together.leave() },
+            colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error),
+        ) {
+            Icon(Icons.AutoMirrored.Rounded.Logout, null, Modifier.size(18.dp)); Spacer(Modifier.width(8.dp))
+            Text(
+                when {
+                    r.phase == Together.Phase.Ended -> "Close"
+                    r.hosting -> "End room"
+                    else -> "Leave room"
+                },
+            )
         }
     }
 }
@@ -693,7 +1050,6 @@ private fun NowInRoom(r: Together.Room) {
 private fun RoomSettings(r: Together.Room) {
     Column(Modifier.padding(vertical = GAP).roomCard()) {
         if (r.hosting) {
-            val inviteOnStart by Together.inviteOnStart.collectAsState()
             ToggleRow(
                 "Everyone can control playback", r.open, { Together.setOpen(it) },
                 summary = if (r.open) "Guests can play, pause, seek and skip" else "Guests can add songs; only you play, pause and skip",
@@ -704,12 +1060,6 @@ private fun RoomSettings(r: Together.Room) {
                 "Ask before letting people in", r.askToJoin, { Together.setAskToJoin(it) },
                 summary = if (r.askToJoin) "People with the code wait until you let them in" else "Anyone with the code comes straight in",
                 icon = Icons.Rounded.HowToReg,
-            )
-            RowDivider()
-            ToggleRow(
-                "Show the invite first", inviteOnStart, { Together.setInviteOnStart(it) },
-                summary = "The link and QR code open when you start a room",
-                icon = Icons.Rounded.QrCode2,
             )
         } else {
             val playNow by Together.picksPlayNow.collectAsState()
@@ -810,122 +1160,6 @@ private fun RequestRow(m: Member) {
         Button(onClick = { Together.approve(m.id) }) { Text("Let in") }
     }
 }
-
-/** What talk and the call are, and whether you hear them; the buttons are in [TalkBar]. */
-@Composable
-private fun TalkPanel() {
-    val muted by Together.talkMuted.collectAsState()
-    Row(
-        Modifier.padding(vertical = GAP).roomCard().padding(16.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Column(Modifier.weight(1f)) {
-            Text("Talk and call", style = MaterialTheme.typography.titleMedium)
-            Text(
-                "Hold Talk to say something, or join the call to talk freely. Nothing is saved. In a call, headphones keep the room from hearing itself.",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-        }
-        Spacer(Modifier.width(10.dp))
-        Column(horizontalAlignment = Alignment.CenterHorizontally) {
-            com.opentune.ui.components.AppSwitch(!muted, { Together.setTalkMuted(!it) })
-            Text("Hear talk", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        }
-    }
-}
-
-/**
- * Hold to talk, or the call: join it and your speech goes out as you say
- * it, with mute and hang up. Fixed height, so it never moves the page.
- */
-@Composable
-private fun TalkBar() {
-    val context = LocalContext.current
-    val inCall by Together.inCall.collectAsState()
-    val callMuted by Together.callMuted.collectAsState()
-    val speaking by Together.speaking.collectAsState()
-    val recording by Together.recording.collectAsState()
-    val haptics = com.opentune.ui.components.rememberHaptics()
-    val ask = androidx.activity.compose.rememberLauncherForActivityResult(androidx.activity.result.contract.ActivityResultContracts.RequestPermission()) { granted ->
-        if (granted && Together.startCall()) haptics.press()
-    }
-    val scheme = MaterialTheme.colorScheme
-    Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
-        if (inCall) {
-            val live = speaking && !callMuted
-            val glow by animateFloatAsState(if (live) 1f else 0f, label = "speaking")
-            Row(
-                Modifier.weight(1f).height(TRAY_HEIGHT)
-                    .background(lerp(scheme.surfaceContainerHighest, SPEAKING.copy(alpha = 0.22f).compositeOver(scheme.surfaceContainerHighest), glow), RoundedCornerShape(TRAY_HEIGHT / 2))
-                    .padding(horizontal = 18.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Box(Modifier.size(10.dp).background(if (live) SPEAKING else if (callMuted) scheme.error else scheme.outline, CircleShape))
-                Spacer(Modifier.width(12.dp))
-                Column(Modifier.weight(1f)) {
-                    Text("In the call", style = MaterialTheme.typography.titleSmall, maxLines = 1)
-                    Text(
-                        when {
-                            callMuted -> "You're muted"
-                            speaking -> "You're on"
-                            else -> "Just talk"
-                        },
-                        style = MaterialTheme.typography.bodySmall,
-                        color = scheme.onSurfaceVariant,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                    )
-                }
-            }
-            FilledTonalIconButton(
-                onClick = { haptics.tick(); Together.setCallMuted(!callMuted) },
-                modifier = Modifier.size(TRAY_HEIGHT),
-                colors = if (callMuted) IconButtonDefaults.filledTonalIconButtonColors(containerColor = scheme.errorContainer, contentColor = scheme.onErrorContainer)
-                    else IconButtonDefaults.filledTonalIconButtonColors(),
-            ) {
-                Icon(if (callMuted) Icons.Rounded.MicOff else Icons.Rounded.Mic, if (callMuted) "Unmute" else "Mute")
-            }
-            FilledIconButton(
-                onClick = { haptics.tick(); Together.endCall() },
-                modifier = Modifier.size(TRAY_HEIGHT),
-                colors = IconButtonDefaults.filledIconButtonColors(containerColor = scheme.error, contentColor = scheme.onError),
-            ) { Icon(Icons.Rounded.CallEnd, "Leave the call") }
-        } else {
-            val talking = recording == true
-            val fill by animateColorAsState(if (talking) scheme.error else scheme.primary, label = "talk")
-            val ink = if (talking) scheme.onError else scheme.onPrimary
-            HoldToRecord(
-                live = true,
-                Modifier.weight(1f).height(TRAY_HEIGHT).background(fill, RoundedCornerShape(TRAY_HEIGHT / 2)),
-            ) { held ->
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(Icons.Rounded.Mic, null, Modifier.size(22.dp), tint = ink)
-                    Spacer(Modifier.width(10.dp))
-                    Text(
-                        if (held) "Talking · let go to stop" else "Hold to talk",
-                        style = MaterialTheme.typography.titleMedium,
-                        color = ink,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                    )
-                }
-            }
-            FilledTonalIconButton(
-                onClick = {
-                    val granted = androidx.core.content.ContextCompat.checkSelfPermission(context, android.Manifest.permission.RECORD_AUDIO) ==
-                        android.content.pm.PackageManager.PERMISSION_GRANTED
-                    if (!granted) ask.launch(android.Manifest.permission.RECORD_AUDIO)
-                    else if (Together.startCall()) haptics.press()
-                },
-                modifier = Modifier.size(TRAY_HEIGHT),
-            ) { Icon(Icons.Rounded.Call, "Join the call") }
-        }
-    }
-}
-
-/** The height of everything in the talk tray. */
-private val TRAY_HEIGHT = 52.dp
 
 /**
  * Records while held: [live] talk, or a voice note sent when let go. Asks

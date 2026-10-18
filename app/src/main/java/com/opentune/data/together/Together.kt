@@ -114,16 +114,6 @@ object Together {
         prefs = context.getSharedPreferences("together", Context.MODE_PRIVATE)
         _picksPlayNow.value = prefs?.getBoolean("picks_play_now", false) ?: false
         _talkMuted.value = prefs?.getBoolean("talk_muted", false) ?: false
-        _inviteOnStart.value = prefs?.getBoolean("invite_on_start", true) ?: true
-    }
-
-    private val _inviteOnStart = MutableStateFlow(true)
-    /** The invite sheet, with the link and a QR code, opens by itself when this phone starts a room. */
-    val inviteOnStart: StateFlow<Boolean> = _inviteOnStart.asStateFlow()
-
-    fun setInviteOnStart(on: Boolean) {
-        _inviteOnStart.value = on
-        prefs?.edit { putBoolean("invite_on_start", on) }
     }
 
     /** Whether people who knock wait for approval in rooms this phone hosts. */

@@ -153,12 +153,16 @@ class ChromeScrollConnection(private val thresholdPx: Float) : NestedScrollConne
         private set
     private var accumulated = 0f
 
+    /** Pages holding the dock out while they're shown; see [KeepChromeOut]. */
+    internal var holds = 0
+
     fun expand() {
         inline = false
         accumulated = 0f
     }
 
     override fun onPreScroll(available: Offset, source: NestedScrollSource): Offset {
+        if (holds > 0) return Offset.Zero
         val dy = available.y
         if ((accumulated > 0 && dy < 0) || (accumulated < 0 && dy > 0)) accumulated = 0f
         accumulated += dy
@@ -170,6 +174,24 @@ class ChromeScrollConnection(private val thresholdPx: Float) : NestedScrollConne
             accumulated = 0f
         }
         return Offset.Zero
+    }
+}
+
+/** The app's [ChromeScrollConnection], for pages that need the dock to stay put. */
+val LocalChromeScroll = androidx.compose.runtime.staticCompositionLocalOf<ChromeScrollConnection?> { null }
+
+/**
+ * Keeps the dock and the mini player out while the caller is shown, for a
+ * page with its own controls stacked on them: scrolling it doesn't tuck
+ * them away and leave those controls hanging over empty space.
+ */
+@Composable
+fun KeepChromeOut() {
+    val chrome = LocalChromeScroll.current ?: return
+    androidx.compose.runtime.DisposableEffect(chrome) {
+        chrome.expand()
+        chrome.holds++
+        onDispose { chrome.holds-- }
     }
 }
 

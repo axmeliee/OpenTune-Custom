@@ -451,6 +451,7 @@ fun AppRoot(vm: PlayerViewModel) {
     CompositionLocalProvider(
         LocalHazeState provides haze,
         LocalSongMenu provides songMenu,
+        LocalChromeScroll provides chromeScroll,
         // iOS-style rubber band at the ends of every list.
         LocalOverscrollFactory provides RubberBandOverscrollFactory,
     ) {
