@@ -467,6 +467,8 @@ enum class LyricsAlign(val label: String) {
 
 @Serializable
 data class LibrarySettings(
+    /** Prepend newly added songs to local playlists, keeping a batch's order. */
+    val addNewSongsFirst: Boolean = false,
     /** A MediaStore relative path ("Music/"), or null for every folder. */
     val localFolder: String? = null,
     val filterNonMusic: Boolean = true,

@@ -94,7 +94,7 @@ internal val SETTINGS_CATEGORIES = listOf(
             "Downloads" to listOf("Downloaded songs", "Download quality", "Download on Wi-Fi only"),
             "Local music" to listOf("Local music folder", "Filter non-music audio"),
             "New releases" to listOf("New-release alerts", "Followed artists"),
-            "Songs and lists" to listOf("Swipe songs to queue them", "Hide explicit content", "Import a playlist"),
+            "Songs and lists" to listOf("Add new songs to start", "Swipe songs to queue them", "Hide explicit content", "Import a playlist"),
         ),
     ),
     SettingsCategory(

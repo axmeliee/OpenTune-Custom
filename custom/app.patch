@@ -1,0 +1,430 @@
+diff --git a/app/src/main/java/com/opentune/data/UpdateCheck.kt b/app/src/main/java/com/opentune/data/UpdateCheck.kt
+index 5b3cdfa..829c207 100644
+--- a/app/src/main/java/com/opentune/data/UpdateCheck.kt
++++ b/app/src/main/java/com/opentune/data/UpdateCheck.kt
+@@ -43,10 +43,11 @@ import okhttp3.Request
+  * such limit, and the APK's address is built from the release's file names.
+  */
+ object UpdateCheck {
+-    private const val LATEST = "https://api.github.com/repos/justshivv/Opentune/releases/latest"
+-    private const val LATEST_PAGE = "https://github.com/justshivv/Opentune/releases/latest"
+-    private const val DOWNLOADS = "https://github.com/justshivv/Opentune/releases/download"
+-    const val RELEASES_PAGE = "https://github.com/justshivv/Opentune/releases"
++    // Custom builds retain OpenTune's updater, but install only our signed releases.
++    private const val LATEST = "https://api.github.com/repos/axmeliee/OpenTune-Custom/releases/latest"
++    private const val LATEST_PAGE = "https://github.com/axmeliee/OpenTune-Custom/releases/latest"
++    private const val DOWNLOADS = "https://github.com/axmeliee/OpenTune-Custom/releases/download"
++    const val RELEASES_PAGE = "https://github.com/axmeliee/OpenTune-Custom/releases"
+     /** How often the automatic check goes online, at most. */
+     private const val AUTO_EVERY_MS = 6L * 60 * 60 * 1000
+     /**
+@@ -55,8 +56,6 @@ object UpdateCheck {
+      * first one this phone happened to see.
+      */
+     private const val RECHECK_FOUND_MS = 20L * 60 * 1000
+-    /** The processors releases carry their own APK for; anything else gets the universal one. */
+-    private val BUILT_FOR = listOf("arm64-v8a", "armeabi-v7a", "x86_64")
+     private val TAG_IN_URL = Regex("""/releases/tag/v?([0-9][0-9A-Za-z.\-]*)$""")
+ 
+     /** One file attached to a release. */
+@@ -154,8 +153,8 @@ object UpdateCheck {
+      */
+     internal fun fromPage(finalUrl: String, abis: List<String>): Release? {
+         val version = TAG_IN_URL.find(finalUrl.substringBefore('?'))?.groupValues?.get(1) ?: return null
+-        val abi = abis.firstOrNull { it in BUILT_FOR } ?: "universal"
+-        val name = "OpenTune-v$version-$abi.apk"
++        // The page does not list assets: universal is present even when ABI splits are disabled.
++        val name = "OpenTune-v$version-universal.apk"
+         return Release(
+             version = version,
+             page = "$RELEASES_PAGE/tag/v$version",
+diff --git a/app/src/main/java/com/opentune/data/Updater.kt b/app/src/main/java/com/opentune/data/Updater.kt
+index 70f2c54..f7d3826 100644
+--- a/app/src/main/java/com/opentune/data/Updater.kt
++++ b/app/src/main/java/com/opentune/data/Updater.kt
+@@ -36,7 +36,7 @@ object Updater {
+         Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES, "package:${context.packageName}".toUri())
+ 
+     private fun dir(context: Context) = File(context.cacheDir, "updates")
+-    private val VERSION_IN_NAME = Regex("""^OpenTune-v([0-9][0-9.]*)-[A-Za-z0-9_\-]+\.apk$""")
++    private val VERSION_IN_NAME = Regex("""^OpenTune-v([0-9][0-9.]*(?:-custom\.[1-9][0-9]*)?)-[A-Za-z0-9_\-]+\.apk$""")
+ 
+     /** The version an update APK's file name carries, like 0.5.0 in OpenTune-v0.5.0-arm64-v8a.apk. */
+     internal fun versionOf(fileName: String): String? = VERSION_IN_NAME.find(fileName)?.groupValues?.get(1)
+diff --git a/app/src/main/java/com/opentune/data/library/LibraryStore.kt b/app/src/main/java/com/opentune/data/library/LibraryStore.kt
+index da2d535..7362757 100644
+--- a/app/src/main/java/com/opentune/data/library/LibraryStore.kt
++++ b/app/src/main/java/com/opentune/data/library/LibraryStore.kt
+@@ -8,6 +8,7 @@ import com.opentune.data.isYouTubeId
+ import com.opentune.data.model.LikeStatus
+ import com.opentune.data.model.PlaylistPrivacy
+ import com.opentune.data.model.Song
++import com.opentune.data.settings.AppSettings
+ import java.io.File
+ import java.util.UUID
+ import kotlinx.coroutines.CoroutineScope
+@@ -243,7 +244,7 @@ object LibraryStore {
+         editPlaylist(id) { p ->
+             val have = p.songs.mapTo(HashSet()) { it.videoId }
+             added = songs.filter { have.add(it.videoId) }.map(SongRef::of)
+-            p.copy(songs = p.songs + added)
++            p.copy(songs = if (!p.synced && AppSettings.library.value.addNewSongsFirst) added + p.songs else p.songs + added)
+         }
+         mirror(id) { remote -> PlaylistEdit(PlaylistEdit.Kind.ADD, id, remote, videoIds = added.map { it.videoId }.filter(::isYouTubeId)) }
+     }
+diff --git a/app/src/main/java/com/opentune/data/settings/AppSettings.kt b/app/src/main/java/com/opentune/data/settings/AppSettings.kt
+index 9a72f6b..913b40b 100644
+--- a/app/src/main/java/com/opentune/data/settings/AppSettings.kt
++++ b/app/src/main/java/com/opentune/data/settings/AppSettings.kt
+@@ -467,6 +467,8 @@ enum class LyricsAlign(val label: String) {
+ 
+ @Serializable
+ data class LibrarySettings(
++    /** Prepend newly added songs to local playlists, keeping a batch's order. */
++    val addNewSongsFirst: Boolean = false,
+     /** A MediaStore relative path ("Music/"), or null for every folder. */
+     val localFolder: String? = null,
+     val filterNonMusic: Boolean = true,
+diff --git a/app/src/main/java/com/opentune/ui/library/LibraryHome.kt b/app/src/main/java/com/opentune/ui/library/LibraryHome.kt
+index 94fa4b1..620ab07 100644
+--- a/app/src/main/java/com/opentune/ui/library/LibraryHome.kt
++++ b/app/src/main/java/com/opentune/ui/library/LibraryHome.kt
+@@ -693,6 +693,7 @@ fun LocalPlaylistScreen(id: String, contentPadding: PaddingValues, actions: Song
+             modifier = modifier,
+             privacy = playlist.privacy,
+             onPrivacy = if (online) ({ choosingPrivacy = true }) else null,
++            newSongsFirstAvailable = !playlist.synced,
+         )
+     }
+     // Where the playlist stands with YouTube Music, under its cover.
+diff --git a/app/src/main/java/com/opentune/ui/library/PlaylistTools.kt b/app/src/main/java/com/opentune/ui/library/PlaylistTools.kt
+index 3031692..cb8fecb 100644
+--- a/app/src/main/java/com/opentune/ui/library/PlaylistTools.kt
++++ b/app/src/main/java/com/opentune/ui/library/PlaylistTools.kt
+@@ -38,6 +38,7 @@ import androidx.compose.material.icons.rounded.Close
+ import androidx.compose.material.icons.rounded.DeleteOutline
+ import androidx.compose.material.icons.rounded.Search
+ import androidx.compose.material3.CircularProgressIndicator
++import androidx.compose.material3.FilterChip
+ import androidx.compose.material3.Icon
+ import androidx.compose.material3.MaterialTheme
+ import androidx.compose.material3.OutlinedTextField
+@@ -68,6 +69,7 @@ import com.opentune.data.model.SearchResult
+ import com.opentune.data.model.Song
+ import com.opentune.data.model.artworkAt
+ import com.opentune.data.model.ROW_ART_PX
++import com.opentune.data.settings.AppSettings
+ import com.opentune.ui.components.Artwork
+ import com.opentune.ui.components.FloatingCard
+ import com.opentune.ui.components.FloatingDialog
+@@ -349,12 +351,23 @@ fun ListTools(
+     /** For a playlist on the account's YouTube Music: who can see it, and changing that. */
+     privacy: com.opentune.data.model.PlaylistPrivacy? = null,
+     onPrivacy: (() -> Unit)? = null,
++    /** Only playlists stored on this phone can choose their insertion order. */
++    newSongsFirstAvailable: Boolean = privacy == null && onPrivacy == null,
+ ) {
++    val librarySettings by AppSettings.library.collectAsState()
+     androidx.compose.foundation.layout.FlowRow(modifier, horizontalArrangement = Arrangement.spacedBy(10.dp, Alignment.CenterHorizontally), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+         if (saved != null) ListHeart(saved, onSave)
+         if (onPrivacy != null) com.opentune.ui.components.PrivacyButton(privacy, onPrivacy)
+         if (onAddSongs != null) AddSongsButton(onAddSongs)
+         if (songs.isNotEmpty()) DownloadAllButton(songs, list = list)
+         if (onShare != null) RoundToolButton(Icons.Rounded.Share, "Share", onShare)
++        if (onAddSongs != null && newSongsFirstAvailable) FilterChip(
++            selected = librarySettings.addNewSongsFirst,
++            onClick = { AppSettings.updateLibrary { it.copy(addNewSongsFirst = !it.addNewSongsFirst) } },
++            label = { Text("New songs first") },
++            leadingIcon = if (librarySettings.addNewSongsFirst) {
++                { Icon(Icons.Rounded.Check, null, Modifier.size(18.dp)) }
++            } else null,
++        )
+     }
+ }
+diff --git a/app/src/main/java/com/opentune/ui/settings/SettingsLayout.kt b/app/src/main/java/com/opentune/ui/settings/SettingsLayout.kt
+index b31a1ea..0612ff2 100644
+--- a/app/src/main/java/com/opentune/ui/settings/SettingsLayout.kt
++++ b/app/src/main/java/com/opentune/ui/settings/SettingsLayout.kt
+@@ -94,7 +94,7 @@ internal val SETTINGS_CATEGORIES = listOf(
+             "Downloads" to listOf("Downloaded songs", "Download quality", "Download on Wi-Fi only"),
+             "Local music" to listOf("Local music folder", "Filter non-music audio"),
+             "New releases" to listOf("New-release alerts", "Followed artists"),
+-            "Songs and lists" to listOf("Swipe songs to queue them", "Hide explicit content", "Import a playlist"),
++            "Songs and lists" to listOf("Add new songs to start", "Swipe songs to queue them", "Hide explicit content", "Import a playlist"),
+         ),
+     ),
+     SettingsCategory(
+diff --git a/app/src/main/java/com/opentune/ui/settings/SettingsScreen.kt b/app/src/main/java/com/opentune/ui/settings/SettingsScreen.kt
+index 2a97b9d..b7643cd 100644
+--- a/app/src/main/java/com/opentune/ui/settings/SettingsScreen.kt
++++ b/app/src/main/java/com/opentune/ui/settings/SettingsScreen.kt
+@@ -1122,6 +1122,15 @@ private fun settingsSections(
+         Section(
+             "Content",
+             listOf(
++                Entry("Add new songs to start", "playlist order first beginning top prepend новые песни начало плейлиста") {
++                    ToggleRow(
++                        "Add new songs to start",
++                        lib.addNewSongsFirst,
++                        { v -> AppSettings.updateLibrary { it.copy(addNewSongsFirst = v) } },
++                        summary = "New songs go to the beginning of your local playlists. Existing songs keep their order. Playlists synced with YouTube Music are unchanged.",
++                        icon = Icons.AutoMirrored.Rounded.PlaylistPlay,
++                    )
++                },
+                 Entry("Hide explicit content", "explicit clean kids family parental filter") {
+                     ToggleRow(
+                         "Hide explicit content",
+diff --git a/app/src/main/res/values/strings.xml b/app/src/main/res/values/strings.xml
+index f6a4dbb..120d3fc 100644
+--- a/app/src/main/res/values/strings.xml
++++ b/app/src/main/res/values/strings.xml
+@@ -1,5 +1,5 @@
+ <resources>
+-    <string name="app_name">OpenTune</string>
++    <string name="app_name">OpenTune Custom</string>
+     <string name="widget_description">What\'s playing, with play, skip and like</string>
+     <string name="widget_nothing_playing">Nothing playing</string>
+     <string name="widget_open">Tap to open OpenTune</string>
+diff --git a/app/src/test/java/com/opentune/data/UpdateCheckTest.kt b/app/src/test/java/com/opentune/data/UpdateCheckTest.kt
+index efdda6f..fbaa425 100644
+--- a/app/src/test/java/com/opentune/data/UpdateCheckTest.kt
++++ b/app/src/test/java/com/opentune/data/UpdateCheckTest.kt
+@@ -16,6 +16,14 @@ class UpdateCheckTest {
+         assertFalse(UpdateCheck.isNewer("0.9", "1.0"))
+     }
+ 
++    @Test fun comparesCustomRevisionsAfterTheUpstreamVersion() {
++        assertTrue(UpdateCheck.isNewer("0.4.18-custom.1", "0.4.18"))
++        assertTrue(UpdateCheck.isNewer("0.4.18-custom.10", "0.4.18-custom.2"))
++        assertTrue(UpdateCheck.isNewer("0.4.19-custom.1", "0.4.18-custom.10"))
++        assertFalse(UpdateCheck.isNewer("0.4.18-custom.1", "0.4.18-custom.1"))
++        assertFalse(UpdateCheck.isNewer("0.4.18-custom.1", "0.4.19-custom.1"))
++    }
++
+     private val release = Json.parseToJsonElement(
+         """
+         {"tag_name":"v0.3.0","html_url":"https://github.com/justshivv/Opentune/releases/tag/v0.3.0","body":"Notes",
+@@ -45,6 +53,10 @@ class UpdateCheckTest {
+         assertEquals("0.5.0", Updater.versionOf("OpenTune-v0.5.0-arm64-v8a.apk"))
+         assertEquals("0.4.10", Updater.versionOf("OpenTune-v0.4.10-universal.apk"))
+         assertEquals("1.2", Updater.versionOf("OpenTune-v1.2-x86_64.apk"))
++        assertEquals("0.4.18-custom.1", Updater.versionOf("OpenTune-v0.4.18-custom.1-universal.apk"))
++        assertEquals("0.4.18-custom.10", Updater.versionOf("OpenTune-v0.4.18-custom.10-arm64-v8a.apk"))
++        assertNull(Updater.versionOf("OpenTune-v0.4.18-custom.1-universal.apk.part"))
++        assertNull(Updater.versionOf("OpenTune-v0.4.18-custom.foo-universal.apk"))
+         assertNull(Updater.versionOf("OpenTune-v0.5.0-arm64-v8a.apk.part"))
+         assertNull(Updater.versionOf("notes.txt"))
+     }
+@@ -60,14 +72,35 @@ class UpdateCheckTest {
+     }
+ 
+     @Test fun readsTheLatestReleaseFromWhereTheReleasesPageLeads() {
+-        val r = UpdateCheck.fromPage("https://github.com/justshivv/Opentune/releases/tag/v0.3.3", listOf("arm64-v8a", "armeabi-v7a"))!!
+-        assertEquals("0.3.3", r.version)
+-        assertEquals("OpenTune-v0.3.3-arm64-v8a.apk", r.apk?.name)
+-        assertEquals("https://github.com/justshivv/Opentune/releases/download/v0.3.3/OpenTune-v0.3.3-arm64-v8a.apk", r.apk?.url)
+-        assertEquals("https://github.com/justshivv/Opentune/releases/download/v0.3.3/SHA256SUMS.txt", r.sums?.url)
+-        // A processor releases have no APK of their own for gets the universal one.
+-        assertEquals("OpenTune-v0.3.3-universal.apk", UpdateCheck.fromPage("https://github.com/justshivv/Opentune/releases/tag/v0.3.3", listOf("riscv64"))!!.apk?.name)
++        val r = UpdateCheck.fromPage("https://github.com/axmeliee/OpenTune-Custom/releases/tag/v0.4.18-custom.1", listOf("arm64-v8a", "armeabi-v7a"))!!
++        assertEquals("0.4.18-custom.1", r.version)
++        assertEquals("OpenTune-v0.4.18-custom.1-universal.apk", r.apk?.name)
++        assertEquals("https://github.com/axmeliee/OpenTune-Custom/releases/tag/v0.4.18-custom.1", r.page)
++        assertEquals("https://github.com/axmeliee/OpenTune-Custom/releases/download/v0.4.18-custom.1/OpenTune-v0.4.18-custom.1-universal.apk", r.apk?.url)
++        assertEquals("https://github.com/axmeliee/OpenTune-Custom/releases/download/v0.4.18-custom.1/SHA256SUMS.txt", r.sums?.url)
++        assertEquals(r.version, Updater.versionOf(r.apk!!.name))
++        // Cached downloads of this version become obsolete once it is installed.
++        assertFalse(UpdateCheck.isNewer(Updater.versionOf(r.apk!!.name)!!, "0.4.18-custom.1"))
++        assertTrue(UpdateCheck.isNewer(Updater.versionOf(r.apk!!.name)!!, "0.4.17-custom.1"))
++        // The HTML fallback always uses universal, even on a supported processor.
++        assertEquals(r.apk?.name, UpdateCheck.fromPage(r.page, listOf("riscv64"))!!.apk?.name)
+         // No release yet: the page stays on the release list.
+-        assertNull(UpdateCheck.fromPage("https://github.com/justshivv/Opentune/releases", listOf("arm64-v8a")))
++        assertNull(UpdateCheck.fromPage(UpdateCheck.RELEASES_PAGE, listOf("arm64-v8a")))
++    }
++
++    @Test fun parsesCustomReleaseWithUniversalAssetOnly() {
++        val page = "https://github.com/axmeliee/OpenTune-Custom/releases/tag/v0.4.18-custom.1"
++        val url = "https://github.com/axmeliee/OpenTune-Custom/releases/download/v0.4.18-custom.1/OpenTune-v0.4.18-custom.1-universal.apk"
++        val obj = Json.parseToJsonElement("""
++            {"tag_name":"v0.4.18-custom.1","html_url":"$page","assets":[
++              {"name":"OpenTune-v0.4.18-custom.1-universal.apk","browser_download_url":"$url","size":123},
++              {"name":"SHA256SUMS.txt","browser_download_url":"https://x/sums","size":100}
++            ]}
++        """).jsonObject
++        val r = UpdateCheck.parse(obj, listOf("arm64-v8a"))!!
++        assertEquals("0.4.18-custom.1", r.version)
++        assertEquals(page, r.page)
++        assertEquals(url, r.apk?.url)
++        assertEquals("SHA256SUMS.txt", r.sums?.name)
+     }
+ }
+diff --git a/app/src/test/java/com/opentune/data/UpdaterCacheTest.kt b/app/src/test/java/com/opentune/data/UpdaterCacheTest.kt
+new file mode 100644
+index 0000000..b2d0117
+--- /dev/null
++++ b/app/src/test/java/com/opentune/data/UpdaterCacheTest.kt
+@@ -0,0 +1,33 @@
++package com.opentune.data
++
++import android.app.Application
++import android.content.Context
++import androidx.test.core.app.ApplicationProvider
++import java.io.File
++import org.junit.Assert.assertFalse
++import org.junit.Assert.assertTrue
++import org.junit.Test
++import org.junit.runner.RunWith
++import org.robolectric.RobolectricTestRunner
++import org.robolectric.annotation.Config
++
++@RunWith(RobolectricTestRunner::class)
++@Config(sdk = [35], application = Application::class)
++class UpdaterCacheTest {
++    @Test fun cleanupKeepsNewerCustomApksAndRemovesObsoleteOrIncompleteDownloads() {
++        val context = ApplicationProvider.getApplicationContext<Context>()
++        val dir = File(context.cacheDir, "updates").apply { mkdirs() }
++        val newer = File(dir, "OpenTune-v9999.0.0-custom.1-universal.apk")
++        val obsolete = File(dir, "OpenTune-v0.0.0-custom.1-universal.apk")
++        val partial = File(dir, "OpenTune-v9999.0.0-custom.1-universal.apk.part")
++        try {
++            listOf(newer, obsolete, partial).forEach { it.writeText("download") }
++            Updater.clearInstalled(context)
++            assertTrue(newer.exists())
++            assertFalse(obsolete.exists())
++            assertFalse(partial.exists())
++        } finally {
++            listOf(newer, obsolete, partial).forEach { it.delete() }
++        }
++    }
++}
+diff --git a/app/src/test/java/com/opentune/data/library/PlaylistInsertionTest.kt b/app/src/test/java/com/opentune/data/library/PlaylistInsertionTest.kt
+new file mode 100644
+index 0000000..5b38928
+--- /dev/null
++++ b/app/src/test/java/com/opentune/data/library/PlaylistInsertionTest.kt
+@@ -0,0 +1,86 @@
++package com.opentune.data.library
++
++import com.opentune.data.model.Song
++import com.opentune.data.settings.AppSettings
++import com.opentune.data.settings.SettingsState
++import kotlinx.serialization.encodeToString
++import kotlinx.serialization.json.Json
++import org.junit.Assert.assertEquals
++import org.junit.Assert.assertFalse
++import org.junit.Assert.assertTrue
++import org.junit.Before
++import org.junit.After
++import org.junit.Test
++import org.junit.runner.RunWith
++import org.robolectric.RobolectricTestRunner
++import org.robolectric.annotation.Config
++
++@RunWith(RobolectricTestRunner::class)
++@Config(sdk = [35], application = android.app.Application::class)
++class PlaylistInsertionTest {
++    private lateinit var id: String
++    private val a = Song("a", "First", "Artist", null)
++    private val b = Song("b", "Second", "Artist", null)
++    private val c = Song("c", "Third", "Artist", null)
++
++    @Before fun setUp() {
++        AppSettings.updateLibrary { it.copy(addNewSongsFirst = false) }
++        LibraryStore.importJson(Json.parseToJsonElement("{}"))
++        id = LibraryStore.createPlaylist("Test", a)
++    }
++
++    @After fun resetPreference() {
++        AppSettings.updateLibrary { it.copy(addNewSongsFirst = false) }
++    }
++
++    @Test fun defaultAppendsAndSwitchingBackRestoresAppending() {
++        LibraryStore.addToPlaylist(id, b)
++        assertOrder("a", "b")
++        AppSettings.updateLibrary { it.copy(addNewSongsFirst = true) }
++        LibraryStore.addToPlaylist(id, c)
++        assertOrder("c", "a", "b")
++        AppSettings.updateLibrary { it.copy(addNewSongsFirst = false) }
++        LibraryStore.addToPlaylist(id, Song("d", "Fourth", "Artist", null))
++        assertOrder("c", "a", "b", "d")
++    }
++
++    @Test fun batchPrependsInOrderAndSkipsExistingAndRepeatedSongs() {
++        AppSettings.updateLibrary { it.copy(addNewSongsFirst = true) }
++        LibraryStore.addAllToPlaylist(id, listOf(b, a, b, c))
++        assertOrder("b", "c", "a")
++        LibraryStore.addToPlaylist(id, a)
++        assertOrder("b", "c", "a")
++        LibraryStore.addAllToPlaylist(id, emptyList())
++        assertOrder("b", "c", "a")
++    }
++
++    @Test fun enablingThePreferenceDoesNotReorderExistingSongs() {
++        LibraryStore.addAllToPlaylist(id, listOf(b, c))
++        AppSettings.updateLibrary { it.copy(addNewSongsFirst = true) }
++        assertOrder("a", "b", "c")
++    }
++
++    @Test fun syncedPlaylistStillAppendsWithoutChangingItsBatchOrDuplicates() {
++        LibraryStore.link(id, "PLcustom-test", null)
++        AppSettings.updateLibrary { it.copy(addNewSongsFirst = true) }
++        LibraryStore.addAllToPlaylist(id, listOf(b, a, b, c))
++        assertOrder("a", "b", "c")
++    }
++
++    @Test fun playlistAwaitingItsOnlineCopyStillAppends() {
++        id = LibraryStore.createPlaylist("Waiting", a, com.opentune.data.model.PlaylistPrivacy.PRIVATE)
++        AppSettings.updateLibrary { it.copy(addNewSongsFirst = true) }
++        LibraryStore.addToPlaylist(id, b)
++        assertOrder("a", "b")
++    }
++
++    @Test fun savedPreferenceSurvivesSerializationAndOldSettingsKeepDefault() {
++        assertFalse(Json.decodeFromString<SettingsState>("{}").library.addNewSongsFirst)
++        val state = SettingsState(library = com.opentune.data.settings.LibrarySettings(addNewSongsFirst = true))
++        assertTrue(Json.decodeFromString<SettingsState>(Json.encodeToString(state)).library.addNewSongsFirst)
++    }
++
++    private fun assertOrder(vararg ids: String) {
++        assertEquals(ids.toList(), LibraryStore.playlist(id)!!.songs.map { it.videoId })
++    }
++}
+diff --git a/app/src/test/java/com/opentune/ui/library/PlaylistToolsScreenshotTest.kt b/app/src/test/java/com/opentune/ui/library/PlaylistToolsScreenshotTest.kt
+index da6d77c..ca0dadb 100644
+--- a/app/src/test/java/com/opentune/ui/library/PlaylistToolsScreenshotTest.kt
++++ b/app/src/test/java/com/opentune/ui/library/PlaylistToolsScreenshotTest.kt
+@@ -46,6 +46,7 @@ class PlaylistToolsScreenshotTest {
+     @Before fun setUp() {
+         val context = ApplicationProvider.getApplicationContext<android.app.Application>()
+         AppSettings.init(context)
++        AppSettings.updateLibrary { it.copy(addNewSongsFirst = false) }
+         LibraryStore.init(context)
+         id = LibraryStore.createPlaylist("Late nights")
+         LibraryStore.addAllToPlaylist(id, songs.take(2))
+@@ -56,6 +57,24 @@ class PlaylistToolsScreenshotTest {
+ 
+     @Test fun addSheet() = shoot("playlist/add") { AddSongsSheet(id, onDismiss = {}) }
+ 
++    @Test fun newSongsFirstButtonControlsInsertion() {
++        AppSettings.updateLibrary { it.copy(addNewSongsFirst = false) }
++        shoot("playlist/insertion-order") { LocalPlaylistScreen(id, PaddingValues(), SongActions(null, false, { _, _, _, _ -> }, {}, {}), onBack = {}) }
++        compose.onNodeWithText("New songs first").assertIsEnabled().performClick()
++        compose.runOnIdle {
++            LibraryStore.addToPlaylist(id, songs[2])
++            assertEquals(songs[2].videoId, LibraryStore.playlist(id)!!.songs.first().videoId)
++        }
++        compose.onNodeWithText("New songs first").performClick()
++        compose.runOnIdle { assertEquals(false, AppSettings.library.value.addNewSongsFirst) }
++    }
++
++    @Test fun newSongsFirstIsHiddenForSyncedPlaylistEvenWithoutPrivacy() {
++        LibraryStore.link(id, "PLcustom-test", null)
++        shoot("playlist/synced-insertion-order") { LocalPlaylistScreen(id, PaddingValues(), SongActions(null, false, { _, _, _, _ -> }, {}, {}), onBack = {}) }
++        compose.onNodeWithText("New songs first").assertDoesNotExist()
++    }
++
+     @Test fun completedPlaylistCanOpenRemovalAndKeepItsDownloads() {
+         Downloads.init(ApplicationProvider.getApplicationContext())
+         songs.forEach { song -> Downloads.put(song.videoId) { DownloadEntry(SongRef.of(song), DownloadState.DONE) } }
+

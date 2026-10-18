@@ -8,6 +8,7 @@ import com.opentune.data.isYouTubeId
 import com.opentune.data.model.LikeStatus
 import com.opentune.data.model.PlaylistPrivacy
 import com.opentune.data.model.Song
+import com.opentune.data.settings.AppSettings
 import java.io.File
 import java.util.UUID
 import kotlinx.coroutines.CoroutineScope
@@ -243,7 +244,7 @@ object LibraryStore {
         editPlaylist(id) { p ->
             val have = p.songs.mapTo(HashSet()) { it.videoId }
             added = songs.filter { have.add(it.videoId) }.map(SongRef::of)
-            p.copy(songs = p.songs + added)
+            p.copy(songs = if (!p.synced && AppSettings.library.value.addNewSongsFirst) added + p.songs else p.songs + added)
         }
         mirror(id) { remote -> PlaylistEdit(PlaylistEdit.Kind.ADD, id, remote, videoIds = added.map { it.videoId }.filter(::isYouTubeId)) }
     }

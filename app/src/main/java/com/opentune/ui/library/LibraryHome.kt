@@ -693,6 +693,7 @@ fun LocalPlaylistScreen(id: String, contentPadding: PaddingValues, actions: Song
             modifier = modifier,
             privacy = playlist.privacy,
             onPrivacy = if (online) ({ choosingPrivacy = true }) else null,
+            newSongsFirstAvailable = !playlist.synced,
         )
     }
     // Where the playlist stands with YouTube Music, under its cover.

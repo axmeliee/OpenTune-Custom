@@ -38,6 +38,7 @@ import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.DeleteOutline
 import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
@@ -68,6 +69,7 @@ import com.opentune.data.model.SearchResult
 import com.opentune.data.model.Song
 import com.opentune.data.model.artworkAt
 import com.opentune.data.model.ROW_ART_PX
+import com.opentune.data.settings.AppSettings
 import com.opentune.ui.components.Artwork
 import com.opentune.ui.components.FloatingCard
 import com.opentune.ui.components.FloatingDialog
@@ -349,12 +351,23 @@ fun ListTools(
     /** For a playlist on the account's YouTube Music: who can see it, and changing that. */
     privacy: com.opentune.data.model.PlaylistPrivacy? = null,
     onPrivacy: (() -> Unit)? = null,
+    /** Only playlists stored on this phone can choose their insertion order. */
+    newSongsFirstAvailable: Boolean = privacy == null && onPrivacy == null,
 ) {
+    val librarySettings by AppSettings.library.collectAsState()
     androidx.compose.foundation.layout.FlowRow(modifier, horizontalArrangement = Arrangement.spacedBy(10.dp, Alignment.CenterHorizontally), verticalArrangement = Arrangement.spacedBy(8.dp)) {
         if (saved != null) ListHeart(saved, onSave)
         if (onPrivacy != null) com.opentune.ui.components.PrivacyButton(privacy, onPrivacy)
         if (onAddSongs != null) AddSongsButton(onAddSongs)
         if (songs.isNotEmpty()) DownloadAllButton(songs, list = list)
         if (onShare != null) RoundToolButton(Icons.Rounded.Share, "Share", onShare)
+        if (onAddSongs != null && newSongsFirstAvailable) FilterChip(
+            selected = librarySettings.addNewSongsFirst,
+            onClick = { AppSettings.updateLibrary { it.copy(addNewSongsFirst = !it.addNewSongsFirst) } },
+            label = { Text("New songs first") },
+            leadingIcon = if (librarySettings.addNewSongsFirst) {
+                { Icon(Icons.Rounded.Check, null, Modifier.size(18.dp)) }
+            } else null,
+        )
     }
 }
