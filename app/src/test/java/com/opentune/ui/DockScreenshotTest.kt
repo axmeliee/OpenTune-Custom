@@ -106,7 +106,7 @@ class DockScreenshotTest {
      */
     @Test fun motions() {
         var inline by mutableStateOf(false)
-        var motion by mutableStateOf(DockMotion.FOLD)
+        var motion by mutableStateOf(DockMotion.MINIMIZE)
         compose.mainClock.autoAdvance = false
         compose.setContent {
             MaterialTheme(darkColorScheme(primary = Color(0xFFFF8A65))) { androidx.compose.material3.Surface(color = Color(0xFF0B0B0E)) {

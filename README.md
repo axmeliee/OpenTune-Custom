@@ -406,14 +406,14 @@ iOS 16 or newer.
   the accent colour slides to the open one and its icon fills in. Search
   has its own round button beside the pill. The now-playing card above
   takes its tint from the cover and has the play button inside a progress
-  ring. Scroll down and the dock tucks away while the card shrinks into a
-  round cover bubble in the corner, still ringed by progress; scroll up and
-  both come back. Pick how the dock goes: Minimize (like iOS 26, the
-  default: the dock pill contracts to the left into a circle holding the
-  open tab, the other tabs slipping under its edge, with the song in a
-  slim bar beside it), Bubble, Glide (off the bottom and back on
-  a spring), Retract (into the Search button and unrolling from it) or
-  Cascade (tabs drop one by one and return in a wave). The lens can
+  ring. Scroll down and the dock gets out of the way; scroll up and it
+  comes back. Pick how: Minimize (like iOS 26, the default: the dock pill
+  contracts to the left into a circle holding the open tab, the other tabs
+  slipping under its edge, with the song in a slim bar beside it), Capsule
+  (the tabs and the song gather into one small capsule in the middle, the
+  open tab at one end and the cover, ringed by progress, at the other) or
+  Sink (the tabs sink away into a blur and the song settles into their
+  place). The lens can
   Stretch like a drop, wobble like Jelly or Glide in one piece.
 - **Glass styles.** The dock, buttons and bars come in Frosted, Clear,
   Heavy frost, Tinted (washed with the accent) or Smoke, for Liquid Glass

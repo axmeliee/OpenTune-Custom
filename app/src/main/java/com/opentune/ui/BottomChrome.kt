@@ -1,17 +1,8 @@
 package com.opentune.ui
 
-import androidx.compose.animation.core.CubicBezierEasing
-import androidx.compose.animation.core.FastOutLinearInEasing
-import androidx.compose.animation.core.LinearOutSlowInEasing
 import androidx.compose.animation.core.tween
-import androidx.compose.animation.scaleIn
-import androidx.compose.animation.scaleOut
-import androidx.compose.animation.slideInVertically
-import androidx.compose.animation.slideOutVertically
-import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.animation.Crossfade
-import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.runtime.LaunchedEffect
 import kotlinx.coroutines.launch
 import kotlin.math.roundToInt
@@ -41,11 +32,6 @@ import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.animation.AnimatedContent
-import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.AnimatedVisibilityScope
-import androidx.compose.animation.ExperimentalSharedTransitionApi
-import androidx.compose.animation.SharedTransitionLayout
-import androidx.compose.animation.SharedTransitionScope
 import androidx.compose.animation.SizeTransform
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.SpringSpec
@@ -75,10 +61,12 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -88,27 +76,11 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
-import androidx.compose.animation.AnimatedContentTransitionScope
-import androidx.compose.animation.ContentTransform
-import androidx.compose.animation.EnterExitState
-import androidx.compose.animation.EnterTransition
-import androidx.compose.animation.ExitTransition
-import androidx.compose.animation.core.FiniteAnimationSpec
-import androidx.compose.animation.core.VisibilityThreshold
-import androidx.compose.animation.core.animateFloat
-import androidx.compose.runtime.State
-import androidx.compose.ui.geometry.CornerRadius
-import androidx.compose.ui.geometry.Rect
-import androidx.compose.ui.geometry.RoundRect
-import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.BlurEffect
-import androidx.compose.ui.graphics.Outline
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.TileMode
-import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.IntOffset
-import androidx.compose.ui.unit.IntSize
-import androidx.compose.ui.unit.LayoutDirection
+import androidx.compose.ui.unit.Constraints
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.sizeIn
 import com.opentune.data.settings.DockLens
@@ -118,29 +90,22 @@ import com.opentune.ui.components.glass
 /** Room the chrome takes when shown, for content padding. */
 val CHROME_TAB_HEIGHT = 64.dp
 val CHROME_MINI_HEIGHT = 64.dp
-private val BUBBLE = 62.dp
-/** Height of the one-row minimized dock. */
+/** Height of the one-row minimized dock, and of the capsule. */
 private val MINI_ROW = 56.dp
+/** The capsule: the open tab at one end, the song's cover (or Search) at the other. */
+private val CAPSULE_WIDTH = 124.dp
+private val CAPSULE_INSET = 4.dp
+/** Between the now-playing card and the dock, and between the dock and Search. */
+private val CARD_GAP = 8.dp
+private val SEARCH_GAP = 10.dp
+/** Room around the sinking dock for its shadow, which the blur's layer would otherwise cut off. */
+private val SINK_ROOM = 32.dp
+/** How far into a sink the dock has gone from sight. */
+private const val SINK_GONE = 0.7f
 
-/** How long the dock takes to fold away or come back, and its easing (Material's emphasized curve). */
-private const val FOLD_MS = 560
-private const val FOLD_FADE_IN_MS = 380
-private const val FOLD_FADE_DELAY_MS = 120
-private const val FOLD_FADE_OUT_MS = 240
-private val FOLD_EASING = CubicBezierEasing(0.2f, 0f, 0f, 1f)
 internal val DOCK_SHAPE = RoundedCornerShape(32.dp)
 internal val LENS_SHAPE = RoundedCornerShape(26.dp)
 internal val DOCK_INSET = 6.dp
-
-/** Timings for the other ways the dock can fold; see [DockMotion]. */
-private const val RETRACT_MS = 520
-private const val CASCADE_STEP_MS = 40
-private const val CASCADE_DROP_MS = 220
-private const val CASCADE_RISE_MS = 420
-private const val CASCADE_LEAD_MS = 40
-
-/** Ends a touch past the target and eases back, for tabs landing in [DockMotion.CASCADE]. */
-private val BACK_OUT = CubicBezierEasing(0.34f, 1.4f, 0.64f, 1f)
 
 /**
  * Tucks the dock away while content scrolls down and brings it back when it
@@ -209,14 +174,12 @@ class ChromeTab(val label: String, val icon: ImageVector, val selectedIcon: Imag
  * every destination, Search included. The current destination is a filled
  * capsule in the accent colour with its name; the others are icons.
  *
- * While a page scrolls down, the dock tucks away and the now-playing card
- * shrinks into a round bubble of the cover, ringed by the song's progress,
- * in the corner. Scrolling back up brings both back. The card and the bubble
- * are one shared element, so the cover travels between them. [motion] picks
- * how the dock itself goes and comes back; [reduceMotion] swaps all of it
- * for a short crossfade.
+ * While a page scrolls down the chrome gets out of the way, and scrolling
+ * back up brings it back; [motion] picks how. Each motion is one spring from
+ * open (0) to folded (1) that every piece reads its size and place from, so
+ * a scroll that changes its mind mid-way just turns it around. [reduceMotion]
+ * swaps the travel for a short crossfade between the two ends.
  */
-@OptIn(ExperimentalSharedTransitionApi::class)
 @Composable
 fun BottomChrome(
     inline: Boolean,
@@ -228,64 +191,85 @@ fun BottomChrome(
     onSearch: () -> Unit,
     mini: (@Composable (inline: Boolean, modifier: Modifier) -> Unit)?,
     modifier: Modifier = Modifier,
-    motion: DockMotion = DockMotion.FOLD,
+    motion: DockMotion = DockMotion.MINIMIZE,
     lens: DockLens = DockLens.STRETCH,
     reduceMotion: Boolean = false,
 ) {
-    val style = if (reduceMotion) null else motion
-    if (style == DockMotion.MINIMIZE) {
-        MinimizeChrome(inline, tabs, selected, onSelect, onExpand, searchSelected, onSearch, mini, lens, modifier)
-        return
-    }
-    SharedTransitionLayout(modifier) {
-        AnimatedContent(
-            inline,
-            transitionSpec = { foldTransform(style, tabs.size + 1) },
-            contentAlignment = Alignment.BottomEnd,
-            label = "chrome",
-        ) { folded ->
-            val shared = SharedMini(this@SharedTransitionLayout, this, boundsSpec(style))
-            if (folded && motion == DockMotion.MINIMIZE) {
-                // One row: the open tab in its own glass circle, the song in a slim
-                // bar, Search on the end. The dock pill becomes the circle.
-                val current = selected?.let(tabs::getOrNull) ?: tabs.first()
-                Row(
-                    Modifier.fillMaxWidth().padding(horizontal = 12.dp).height(MINI_ROW),
-                    horizontalArrangement = Arrangement.spacedBy(10.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    TabOrb(current, searchSelected, with(shared) { Modifier.sharedPart("dock") }, onExpand)
-                    if (mini != null) {
-                        mini(false, with(shared) { Modifier.sharedMini() }.weight(1f).height(MINI_ROW))
-                    } else {
-                        Spacer(Modifier.weight(1f))
-                    }
-                    SearchOrb(searchSelected, with(shared) { Modifier.sharedPart("search") }.size(MINI_ROW), onSearch)
-                }
-            } else if (folded) {
-                Box(Modifier.fillMaxWidth().padding(horizontal = 16.dp), contentAlignment = Alignment.BottomEnd) {
-                    if (mini != null) {
-                        mini(true, with(shared) { Modifier.sharedMini() }.size(BUBBLE))
-                    } else {
-                        // Nothing playing: a small button brings the dock back.
-                        val current = selected?.let(tabs::getOrNull) ?: tabs.first()
-                        Box(
-                            Modifier.size(52.dp).glass(RoundedCornerShape(18.dp)).clickable(onClick = onExpand),
-                            contentAlignment = Alignment.Center,
-                        ) {
-                            Icon(current.icon, "Show navigation", tint = MaterialTheme.colorScheme.onSurface)
-                        }
-                    }
-                }
-            } else {
-                Column(Modifier.fillMaxWidth().padding(horizontal = 12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    if (mini != null) mini(false, with(shared) { Modifier.sharedMini() }.fillMaxWidth().height(CHROME_MINI_HEIGHT))
-                    Dock(tabs, selected, onSelect, searchSelected, onSearch, style, lens, this@AnimatedContent, shared.takeIf { motion == DockMotion.MINIMIZE })
-                }
-            }
+    val c = ChromeContent(tabs, selected, onSelect, onExpand, searchSelected, onSearch, mini, if (reduceMotion) DockLens.GLIDE else lens)
+    val chrome: @Composable (Boolean, () -> Float, Modifier) -> Unit = { folded, progress, m ->
+        when (motion) {
+            DockMotion.MINIMIZE -> MinimizeChrome(c, folded, progress, m)
+            DockMotion.CAPSULE -> CapsuleChrome(c, folded, progress, m)
+            DockMotion.SINK -> SinkChrome(c, folded, progress, m)
         }
     }
+    if (reduceMotion) {
+        AnimatedContent(
+            inline,
+            modifier,
+            transitionSpec = {
+                (fadeIn(tween(160)) togetherWith fadeOut(tween(120)))
+                    .using(SizeTransform(clip = false) { _, _ -> tween(200, easing = FastOutSlowInEasing) })
+            },
+            contentAlignment = Alignment.BottomCenter,
+            label = "chrome",
+        ) { folded -> chrome(folded, { if (folded) 1f else 0f }, Modifier) }
+        return
+    }
+    val progress = animateFloatAsState(if (inline) 1f else 0f, motionSpring(motion), label = "dock")
+    chrome(inline, { progress.value }, modifier)
 }
+
+/** What every form of the chrome shows and does; see [BottomChrome]. */
+private class ChromeContent(
+    val tabs: List<ChromeTab>,
+    val selected: Int?,
+    val onSelect: (Int) -> Unit,
+    val onExpand: () -> Unit,
+    val searchSelected: Boolean,
+    val onSearch: () -> Unit,
+    val mini: (@Composable (inline: Boolean, modifier: Modifier) -> Unit)?,
+    val lens: DockLens,
+)
+
+/** The spring each [DockMotion] runs on, from open to folded and back. */
+private fun motionSpring(motion: DockMotion): SpringSpec<Float> = when (motion) {
+    // Settles without bouncing past.
+    DockMotion.MINIMIZE -> spring(dampingRatio = 0.9f, stiffness = 300f, visibilityThreshold = 0.001f)
+    // A little give as the capsule closes and opens out again.
+    DockMotion.CAPSULE -> spring(dampingRatio = 0.8f, stiffness = 260f, visibilityThreshold = 0.001f)
+    // Slower and even, with no overshoot: a sink, not a drop.
+    DockMotion.SINK -> spring(dampingRatio = 1f, stiffness = 220f, visibilityThreshold = 0.001f)
+}
+
+private fun lerp(a: Dp, b: Dp, t: Float): Dp = a + (b - a) * t
+private fun lerp(a: Float, b: Float, t: Float): Float = a + (b - a) * t
+
+/** 0 up to [from], 1 from [to], easing in and out between. */
+private fun ramp(from: Float, to: Float, t: Float): Float {
+    val x = ((t - from) / (to - from)).coerceIn(0f, 1f)
+    return x * x * (3f - 2f * x)
+}
+
+/** The chrome's height at a given moment. Everything in it is placed from the bottom edge, which stays put. */
+private fun Modifier.chromeHeight(progress: () -> Float, open: Dp, folded: Dp): Modifier =
+    this.layout { measurable, constraints ->
+        val h = lerp(open, folded, progress()).roundToPx().coerceAtLeast(0)
+        val placeable = measurable.measure(constraints.copy(minHeight = h, maxHeight = h))
+        layout(placeable.width, h) { placeable.place(0, 0) }
+    }
+
+/** A piece of the chrome at its size and place at a given moment, [bottom] up from the bottom edge. */
+private fun Modifier.placed(progress: () -> Float, x: (Float) -> Dp, bottom: (Float) -> Dp, w: (Float) -> Dp, h: (Float) -> Dp): Modifier =
+    this.layout { measurable, constraints ->
+        val t = progress()
+        val pw = w(t).roundToPx().coerceAtLeast(0)
+        val ph = h(t).roundToPx().coerceAtLeast(0)
+        val placeable = measurable.measure(Constraints.fixed(pw, ph))
+        layout(constraints.maxWidth, constraints.maxHeight) {
+            placeable.place(x(t).roundToPx(), constraints.maxHeight - bottom(t).roundToPx() - ph)
+        }
+    }
 
 /**
  * [DockMotion.MINIMIZE], the way iOS 26's tab bar minimizes: nothing swaps.
@@ -296,372 +280,305 @@ fun BottomChrome(
  * runs it the other way.
  */
 @Composable
-private fun MinimizeChrome(
-    inline: Boolean,
-    tabs: List<ChromeTab>,
-    selected: Int?,
-    onSelect: (Int) -> Unit,
-    onExpand: () -> Unit,
-    searchSelected: Boolean,
-    onSearch: () -> Unit,
-    mini: (@Composable (inline: Boolean, modifier: Modifier) -> Unit)?,
-    lens: DockLens,
-    modifier: Modifier,
-) {
+private fun MinimizeChrome(c: ChromeContent, inline: Boolean, progress: () -> Float, modifier: Modifier) {
     val haptics = com.opentune.ui.components.rememberHaptics()
-    val ink = dockInk()
-    // 0 with the dock open, 1 minimized; a spring that settles without bouncing past.
-    val progress = animateFloatAsState(
-        if (inline) 1f else 0f,
-        spring(dampingRatio = 0.9f, stiffness = 300f, visibilityThreshold = 0.001f),
-        label = "minimize",
-    )
-    val shown = selected?.takeIf { it in tabs.indices }
-    var resting by remember { mutableIntStateOf(shown ?: 0) }
-    if (shown != null) resting = shown
-    val pill = RoundedCornerShape(percent = 50)
     BoxWithConstraints(modifier.fillMaxWidth().padding(horizontal = 12.dp)) {
         val width = maxWidth
-        val gap = 10.dp
-        val miniGap = 8.dp
-        val fullDock = width - CHROME_TAB_HEIGHT - gap
-        val slot = (fullDock - DOCK_INSET * 2) / tabs.size
-        val openHeight = if (mini != null) CHROME_MINI_HEIGHT + miniGap + CHROME_TAB_HEIGHT else CHROME_TAB_HEIGHT
-        // Everything is placed from the bottom edge, which stays put.
-        Box(
-            Modifier
-                .fillMaxWidth()
-                .layout { measurable, constraints ->
-                    val h = lerp(openHeight, MINI_ROW, progress.value).roundToPx()
-                    val placeable = measurable.measure(constraints.copy(minHeight = h, maxHeight = h))
-                    layout(placeable.width, h) { placeable.place(0, 0) }
-                },
-        ) {
-            // The pieces' size and place at a given moment.
-            fun Modifier.placed(x: (Float) -> Dp, bottom: (Float) -> Dp, w: (Float) -> Dp, h: (Float) -> Dp): Modifier =
-                this.layout { measurable, constraints ->
-                    val t = progress.value
-                    val pw = w(t).roundToPx().coerceAtLeast(0)
-                    val ph = h(t).roundToPx().coerceAtLeast(0)
-                    val placeable = measurable.measure(androidx.compose.ui.unit.Constraints.fixed(pw, ph))
-                    layout(constraints.maxWidth, constraints.maxHeight) {
-                        placeable.place(x(t).roundToPx(), constraints.maxHeight - bottom(t).roundToPx() - ph)
-                    }
-                }
+        val fullDock = width - CHROME_TAB_HEIGHT - SEARCH_GAP
+        val openHeight = if (c.mini != null) CHROME_MINI_HEIGHT + CARD_GAP + CHROME_TAB_HEIGHT else CHROME_TAB_HEIGHT
+        Box(Modifier.fillMaxWidth().chromeHeight(progress, openHeight, MINI_ROW)) {
             val row = { t: Float -> lerp(CHROME_TAB_HEIGHT, MINI_ROW, t) }
-
-            if (mini != null) {
-                mini(
-                    false,
-                    Modifier.placed(
-                        x = { t -> lerp(0.dp, MINI_ROW + gap, t) },
-                        bottom = { t -> lerp(CHROME_TAB_HEIGHT + miniGap, 0.dp, t) },
-                        w = { t -> lerp(width, width - (MINI_ROW + gap) * 2, t) },
-                        h = { t -> lerp(CHROME_MINI_HEIGHT, MINI_ROW, t) },
-                    ),
-                )
-            }
-
+            c.mini?.invoke(
+                false,
+                Modifier.placed(
+                    progress,
+                    x = { t -> lerp(0.dp, MINI_ROW + SEARCH_GAP, t) },
+                    bottom = { t -> lerp(CHROME_TAB_HEIGHT + CARD_GAP, 0.dp, t) },
+                    w = { t -> lerp(width, width - (MINI_ROW + SEARCH_GAP) * 2, t) },
+                    h = { t -> lerp(CHROME_MINI_HEIGHT, MINI_ROW, t) },
+                ),
+            )
             // The dock, contracting to the left into a circle.
-            Box(
-                Modifier
-                    .placed(
-                        x = { 0.dp },
-                        bottom = { 0.dp },
-                        w = { t -> lerp(fullDock, MINI_ROW, t) },
-                        h = row,
-                    )
-                    .dockShadow(pill)
-                    .glass(pill, tint = ink.film ?: MaterialTheme.colorScheme.surfaceContainerHigh)
-                    .dockHighlight(pill)
-                    .clip(pill),
+            DockPill(
+                c, fullDock, inline, progress, anchor = MINI_ROW / 2,
+                Modifier.placed(progress, x = { 0.dp }, bottom = { 0.dp }, w = { t -> lerp(fullDock, MINI_ROW, t) }, h = row),
+            )
+            SearchOrb(
+                c.searchSelected,
+                Modifier.placed(progress, x = { t -> width - row(t) }, bottom = { 0.dp }, w = row, h = row),
             ) {
-                // The tabs stay laid out at the open dock's width; the pill's edge
-                // passes over them, and the whole row slides so the open tab ends
-                // up in the middle of the circle.
-                val (left, right) = rememberStretchingLens(resting, slot, lens)
-                val lensAlpha by animateFloatAsState(if (shown != null) 1f else 0f, tween(260, easing = FastOutSlowInEasing), label = "lensAlpha")
-                Box(
-                    Modifier
-                        .layout { measurable, constraints ->
-                            val t = progress.value
-                            val inset = DOCK_INSET.roundToPx()
-                            val w = (fullDock - DOCK_INSET * 2).roundToPx()
-                            val h = (row(t) - DOCK_INSET * 2).roundToPx().coerceAtLeast(0)
-                            val placeable = measurable.measure(androidx.compose.ui.unit.Constraints.fixed(w, h))
-                            // From the open tab's own place to the circle's middle.
-                            val slide = (MINI_ROW / 2 - DOCK_INSET - slot * (resting + 0.5f)).toPx() * t
-                            layout(constraints.maxWidth, constraints.maxHeight) { placeable.place(inset + slide.roundToInt(), inset) }
-                        },
-                ) {
+                if (!c.searchSelected) haptics.tick()
+                c.onSearch()
+            }
+        }
+    }
+}
+
+/**
+ * [DockMotion.CAPSULE]: everything gathers into one small capsule in the
+ * middle. The dock's pill closes in from both ends around the open tab, the
+ * now-playing card drops into it as into a pocket, shrinking on the way, and
+ * the song comes out as its cover at the far end; with nothing playing,
+ * Search slides in to take that end instead. The open tab brings the dock
+ * back and the cover opens the player. Scrolling back up, the capsule opens
+ * out and the card rises out of it.
+ */
+@Composable
+private fun CapsuleChrome(c: ChromeContent, inline: Boolean, progress: () -> Float, modifier: Modifier) {
+    val haptics = com.opentune.ui.components.rememberHaptics()
+    // Each is only there while it can be seen, so nothing invisible takes a tap.
+    val cardShown by remember { derivedStateOf { progress() < 0.85f } }
+    val coverShown by remember { derivedStateOf { progress() > 0.6f } }
+    val searchShown by remember { derivedStateOf { progress() < 0.45f } }
+    BoxWithConstraints(modifier.fillMaxWidth().padding(horizontal = 12.dp)) {
+        val width = maxWidth
+        val fullDock = width - CHROME_TAB_HEIGHT - SEARCH_GAP
+        val openHeight = if (c.mini != null) CHROME_MINI_HEIGHT + CARD_GAP + CHROME_TAB_HEIGHT else CHROME_TAB_HEIGHT
+        val left = (width - CAPSULE_WIDTH) / 2
+        // The capsule's far end, where the cover or Search ends up.
+        val end = MINI_ROW - CAPSULE_INSET * 2
+        val endX = left + CAPSULE_WIDTH - CAPSULE_INSET - end
+        val row = { t: Float -> lerp(CHROME_TAB_HEIGHT, MINI_ROW, t) }
+        val mini = c.mini
+        Box(Modifier.fillMaxWidth().chromeHeight(progress, openHeight, MINI_ROW)) {
+            val onSearch = {
+                if (!c.searchSelected) haptics.tick()
+                c.onSearch()
+            }
+            if (mini != null) {
+                // Cut off at the pill's top edge, so the card is hidden as it goes
+                // in rather than showing through the glass.
+                if (cardShown) {
                     Box(
                         Modifier
-                            .offset { IntOffset(left().roundToPx(), 0) }
-                            .layout { measurable, constraints ->
-                                val w = (right() - left()).roundToPx().coerceAtLeast(0)
-                                val placeable = measurable.measure(constraints.copy(minWidth = w, maxWidth = w))
-                                layout(placeable.width, placeable.height) { placeable.place(0, 0) }
-                            }
-                            .fillMaxHeight()
-                            .graphicsLayer { alpha = lensAlpha * (1f - progress.value).coerceIn(0f, 1f) }
-                            .clip(LENS_SHAPE)
-                            .background(Brush.verticalGradient(listOf(ink.lensTop, ink.lensBottom)))
-                            .border(1.dp, Brush.verticalGradient(listOf(ink.rimTop, ink.rimBottom)), LENS_SHAPE),
+                            .placed(progress, x = { 0.dp }, bottom = row, w = { width }, h = { CHROME_MINI_HEIGHT + CARD_GAP })
+                            .clipToBounds(),
+                    ) {
+                        mini(
+                            false,
+                            Modifier
+                                .fillMaxWidth()
+                                .height(CHROME_MINI_HEIGHT)
+                                .graphicsLayer {
+                                    // Straight down toward the capsule's middle, narrowing to about its width.
+                                    val t = progress()
+                                    translationY = (CHROME_MINI_HEIGHT / 2 + CARD_GAP + MINI_ROW / 2).toPx() * t
+                                    val s = lerp(1f, CAPSULE_WIDTH / width, t.coerceIn(0f, 1f))
+                                    scaleX = s
+                                    scaleY = s
+                                    alpha = 1f - ramp(0.35f, 0.85f, t)
+                                },
+                        )
+                    }
+                }
+                // Search keeps to the closing edge, shrinking and fading.
+                if (searchShown) {
+                    val orb = { t: Float -> lerp(CHROME_TAB_HEIGHT, CHROME_TAB_HEIGHT * 0.6f, t) }
+                    SearchOrb(
+                        c.searchSelected,
+                        Modifier
+                            .placed(
+                                progress,
+                                x = { t -> lerp(width - CHROME_TAB_HEIGHT, left + CAPSULE_WIDTH + SEARCH_GAP, t) },
+                                bottom = { t -> (row(t) - orb(t)) / 2 },
+                                w = orb,
+                                h = orb,
+                            )
+                            .graphicsLayer { alpha = 1f - ramp(0f, 0.45f, progress()) },
+                        onSearch,
                     )
-                    Row(Modifier.fillMaxSize()) {
-                        tabs.forEachIndexed { i, tab ->
-                            DockItem(
-                                tab,
-                                i == shown,
-                                Modifier
-                                    .width(slot)
-                                    .fillMaxHeight()
-                                    // The other tabs fade as the edge reaches them.
-                                    .graphicsLayer { if (i != resting) alpha = (1f - progress.value * 1.6f).coerceIn(0f, 1f) },
-                                collapse = { progress.value },
-                            ) {
-                                if (i != shown) haptics.tick()
-                                onSelect(i)
-                            }
+                }
+            }
+            DockPill(
+                c, fullDock, inline, progress, anchor = MINI_ROW / 2,
+                Modifier.placed(
+                    progress,
+                    x = { t -> lerp(0.dp, left, t) },
+                    bottom = { 0.dp },
+                    w = { t -> lerp(fullDock, CAPSULE_WIDTH, t) },
+                    h = { t -> lerp(CHROME_TAB_HEIGHT, MINI_ROW, t) },
+                ),
+            )
+            if (mini == null) {
+                // Nothing playing: Search itself settles into the capsule's end.
+                val orb = { t: Float -> lerp(CHROME_TAB_HEIGHT, end, t) }
+                SearchOrb(
+                    c.searchSelected,
+                    Modifier.placed(progress, x = { t -> lerp(width - CHROME_TAB_HEIGHT, endX, t) }, bottom = { t -> lerp(0.dp, CAPSULE_INSET, t) }, w = orb, h = orb),
+                    onSearch,
+                )
+            } else if (coverShown) {
+                mini(
+                    true,
+                    Modifier
+                        .placed(progress, x = { endX }, bottom = { CAPSULE_INSET }, w = { end }, h = { end })
+                        .graphicsLayer {
+                            val a = ramp(0.6f, 1f, progress())
+                            alpha = a
+                            val s = lerp(0.6f, 1f, a)
+                            scaleX = s
+                            scaleY = s
+                        },
+                )
+            }
+        }
+    }
+}
+
+/**
+ * [DockMotion.SINK]: the dock sinks back into the page, shrinking a little
+ * and blurring as it fades, and the now-playing card settles into the place
+ * it leaves, at full width. Coming back, the dock surfaces out of the blur as
+ * the card lifts back above it. With nothing playing, a small button with
+ * the open tab rises where the dock was, to bring it back.
+ */
+@Composable
+private fun SinkChrome(c: ChromeContent, inline: Boolean, progress: () -> Float, modifier: Modifier) {
+    val haptics = com.opentune.ui.components.rememberHaptics()
+    val blur = !AppSettings.ui.collectAsState().value.reduceBlur
+    // Gone from the layout once it's out of sight, so it can't take a tap.
+    val dockShown by remember { derivedStateOf { progress() < SINK_GONE } }
+    val buttonShown by remember { derivedStateOf { progress() > 0.5f } }
+    BoxWithConstraints(modifier.fillMaxWidth().padding(horizontal = 12.dp)) {
+        val width = maxWidth
+        val openHeight = if (c.mini != null) CHROME_MINI_HEIGHT + CARD_GAP + CHROME_TAB_HEIGHT else CHROME_TAB_HEIGHT
+        val foldedHeight = if (c.mini != null) CHROME_MINI_HEIGHT else MINI_ROW
+        Box(Modifier.fillMaxWidth().chromeHeight(progress, openHeight, foldedHeight)) {
+            if (dockShown) {
+                Box(
+                    Modifier
+                        .align(Alignment.BottomCenter)
+                        .layout { measurable, constraints ->
+                            val room = SINK_ROOM.roundToPx()
+                            val h = CHROME_TAB_HEIGHT.roundToPx()
+                            val placeable = measurable.measure(Constraints.fixed(constraints.maxWidth + room * 2, h + room * 2))
+                            layout(constraints.maxWidth, h) { placeable.place(-room, -room) }
+                        }
+                        .graphicsLayer {
+                            val s = (progress() / SINK_GONE).coerceIn(0f, 1f)
+                            alpha = 1f - ramp(0f, 1f, s)
+                            val scale = 1f - 0.08f * s
+                            scaleX = scale
+                            scaleY = scale
+                            translationY = 14.dp.toPx() * s
+                            val r = 18.dp.toPx() * s
+                            renderEffect = if (blur && r >= 0.5f) BlurEffect(r, r, TileMode.Decal) else null
+                        }
+                        .padding(SINK_ROOM),
+                ) {
+                    Row(Modifier.fillMaxSize(), verticalAlignment = Alignment.CenterVertically) {
+                        DockPill(c, width - CHROME_TAB_HEIGHT - SEARCH_GAP, inline, { 0f }, anchor = MINI_ROW / 2, Modifier.weight(1f).fillMaxHeight())
+                        Spacer(Modifier.width(SEARCH_GAP))
+                        SearchOrb(c.searchSelected) {
+                            if (!c.searchSelected) haptics.tick()
+                            c.onSearch()
                         }
                     }
                 }
-                // Minimized, the circle as a whole brings the dock back.
-                if (inline) {
-                    Box(
-                        Modifier
-                            .matchParentSize()
-                            .clickable(onClickLabel = "Show navigation", onClick = onExpand)
-                            .semantics { role = Role.Button },
-                    )
-                }
             }
-
-            SearchOrb(
-                searchSelected,
-                Modifier.placed(
-                    x = { t -> width - lerp(CHROME_TAB_HEIGHT, MINI_ROW, t) },
-                    bottom = { 0.dp },
-                    w = row,
-                    h = row,
-                ),
-            ) {
-                if (!searchSelected) haptics.tick()
-                onSearch()
+            val mini = c.mini
+            if (mini != null) {
+                mini(
+                    false,
+                    Modifier.placed(progress, x = { 0.dp }, bottom = { t -> lerp(CHROME_TAB_HEIGHT + CARD_GAP, 0.dp, t) }, w = { width }, h = { CHROME_MINI_HEIGHT }),
+                )
+            } else if (buttonShown) {
+                val current = c.selected?.let(c.tabs::getOrNull) ?: c.tabs.first()
+                TabOrb(
+                    current,
+                    c.searchSelected,
+                    Modifier.align(Alignment.BottomCenter).graphicsLayer {
+                        val a = ramp(0.5f, 1f, progress())
+                        alpha = a
+                        val s = lerp(0.85f, 1f, a)
+                        scaleX = s
+                        scaleY = s
+                    },
+                    c.onExpand,
+                )
             }
         }
     }
 }
 
-private fun lerp(a: Dp, b: Dp, t: Float): Dp = a + (b - a) * t
-
 /**
- * How the chrome swaps between the full dock and the corner bubble, for
- * each [DockMotion]. Null [motion] is the reduced-motion version: a quick
- * crossfade. [steps] is how many pieces the dock has (tabs plus Search),
- * which sets how long a cascade takes to finish.
- */
-private fun AnimatedContentTransitionScope<Boolean>.foldTransform(motion: DockMotion?, steps: Int): ContentTransform {
-    val transform = when (motion) {
-        null -> fadeIn(tween(160)) togetherWith fadeOut(tween(120))
-        DockMotion.FOLD -> {
-            // One unhurried curve for every part: the incoming chrome rises a
-            // little and fades in once the outgoing one has mostly faded,
-            // while the size change and the cover glide on the same timing.
-            val enter = fadeIn(tween(FOLD_FADE_IN_MS, delayMillis = FOLD_FADE_DELAY_MS, easing = LinearOutSlowInEasing)) +
-                slideInVertically(tween(FOLD_MS, easing = FOLD_EASING)) { it / 4 } +
-                scaleIn(tween(FOLD_MS, easing = FOLD_EASING), initialScale = 0.94f, transformOrigin = TransformOrigin(1f, 1f))
-            val exit = fadeOut(tween(FOLD_FADE_OUT_MS, easing = FastOutLinearInEasing)) +
-                slideOutVertically(tween(FOLD_MS, easing = FOLD_EASING)) { it / 5 } +
-                scaleOut(tween(FOLD_MS, easing = FOLD_EASING), targetScale = 0.96f, transformOrigin = TransformOrigin(1f, 1f))
-            enter togetherWith exit
-        }
-        // Down past the edge without a bounce; back up on a spring that
-        // carries a little past its place and settles.
-        DockMotion.GLIDE ->
-            (slideInVertically(spring(dampingRatio = 0.72f, stiffness = 320f, visibilityThreshold = IntOffset.VisibilityThreshold)) { it } + fadeIn(tween(160))) togetherWith
-                (slideOutVertically(spring(dampingRatio = 1f, stiffness = 380f, visibilityThreshold = IntOffset.VisibilityThreshold)) { it * 3 / 2 } + fadeOut(tween(220, delayMillis = 140)))
-        // The dock clips itself (see Dock); the swap only has to wait for it.
-        DockMotion.RETRACT -> fadeIn(tween(140)) togetherWith fadeOut(tween(180, delayMillis = RETRACT_MS - 180))
-        // The tabs move themselves (see Dock); the glass sinks after them,
-        // starting once half have dropped so it's never left standing empty.
-        DockMotion.CASCADE -> {
-            val glassDelay = steps * CASCADE_STEP_MS / 2 + 40
-            fadeIn(tween(220)) togetherWith
-                (fadeOut(tween(CASCADE_DROP_MS + 60, glassDelay, FastOutLinearInEasing)) + slideOutVertically(tween(CASCADE_DROP_MS + 60, glassDelay, FastOutLinearInEasing)) { it / 6 })
-        }
-        // The pill and Search morph on their own (shared bounds); everything
-        // else cross-fades quickly, the way iOS 26's tab bar minimizes.
-        DockMotion.MINIMIZE -> fadeIn(tween(220, delayMillis = 60)) togetherWith fadeOut(tween(150))
-    }
-    val size: FiniteAnimationSpec<IntSize> = when (motion) {
-        null -> tween(200, easing = FOLD_EASING)
-        DockMotion.GLIDE -> spring(dampingRatio = 1f, stiffness = 380f, visibilityThreshold = IntSize.VisibilityThreshold)
-        DockMotion.RETRACT -> tween(RETRACT_MS, easing = FastOutSlowInEasing)
-        DockMotion.MINIMIZE -> spring(dampingRatio = 0.85f, stiffness = 380f, visibilityThreshold = IntSize.VisibilityThreshold)
-        else -> tween(FOLD_MS, easing = FOLD_EASING)
-    }
-    return transform.using(SizeTransform(clip = false) { _, _ -> size })
-}
-
-/** How the now-playing card travels between its full size and the bubble. */
-private fun boundsSpec(motion: DockMotion?): FiniteAnimationSpec<Rect> = when (motion) {
-    null -> tween(200, easing = FOLD_EASING)
-    DockMotion.GLIDE -> spring(dampingRatio = 0.82f, stiffness = 300f, visibilityThreshold = Rect.VisibilityThreshold)
-    DockMotion.RETRACT -> tween(RETRACT_MS, easing = FastOutSlowInEasing)
-    DockMotion.MINIMIZE -> spring(dampingRatio = 0.82f, stiffness = 380f, visibilityThreshold = Rect.VisibilityThreshold)
-    else -> tween(FOLD_MS, easing = FOLD_EASING)
-}
-
-@OptIn(ExperimentalSharedTransitionApi::class)
-private class SharedMini(
-    private val layout: SharedTransitionScope,
-    private val scope: AnimatedVisibilityScope,
-    private val spec: FiniteAnimationSpec<Rect>,
-) {
-    /** A piece of the dock that changes shape between the two layouts (the pill into a circle, say). */
-    @Composable
-    fun Modifier.sharedPart(key: String): Modifier = with(layout) {
-        this@sharedPart.sharedBounds(
-            rememberSharedContentState(key),
-            scope,
-            enter = fadeIn(tween(200, delayMillis = 40)),
-            exit = fadeOut(tween(120)),
-            boundsTransform = { _, _ -> spec },
-            resizeMode = SharedTransitionScope.ResizeMode.RemeasureToBounds,
-            clipInOverlayDuringTransition = OverlayClip(CircleShape),
-        )
-    }
-
-    @Composable
-    fun Modifier.sharedMini(): Modifier = with(layout) {
-        this@sharedMini.sharedElement(
-            rememberSharedContentState("mini"),
-            scope,
-            boundsTransform = { _, _ -> spec },
-        )
-    }
-}
-
-/**
- * For [DockMotion.CASCADE]: piece [i] of the dock drops into the glass a
- * beat after the one before it, and on the way back rises a beat later,
- * landing just past its place and easing back.
- */
-private fun cascade(i: Int): Pair<EnterTransition, ExitTransition> {
-    val inDelay = CASCADE_LEAD_MS + i * CASCADE_STEP_MS
-    val outDelay = i * CASCADE_STEP_MS
-    val enter = slideInVertically(tween(CASCADE_RISE_MS, inDelay, BACK_OUT)) { it } + fadeIn(tween(180, inDelay))
-    val exit = slideOutVertically(tween(CASCADE_DROP_MS, outDelay, FastOutLinearInEasing)) { it } + fadeOut(tween(CASCADE_DROP_MS, outDelay))
-    return enter to exit
-}
-
-/**
- * For [DockMotion.RETRACT]: a pill that keeps its end on the Search side
- * (the right, or the left in right-to-left languages) and its round ends
- * while the far edge slides over, down to a circle at [progress] 0, so the
- * dock pulls into the Search button.
- */
-private class RetractShape(private val progress: Float) : Shape {
-    override fun createOutline(size: Size, layoutDirection: LayoutDirection, density: Density): Outline {
-        val width = size.height + (size.width - size.height) * progress.coerceIn(0f, 1f)
-        val radius = CornerRadius(size.height / 2f)
-        val left = if (layoutDirection == LayoutDirection.Rtl) 0f else size.width - width
-        return Outline.Rounded(RoundRect(left, 0f, left + width, size.height, radius))
-    }
-}
-
-/**
- * The dock: a floating glass pill holding the destinations, each an icon
- * over its name, with a soft lens of the accent colour that slides to the
- * open one; and Search in its own round button beside it.
+ * The dock's glass pill with the tabs in it, at whatever size [modifier]
+ * gives it. The tabs stay laid out at the open dock's width [full]; as
+ * [fold] goes to 1 the pill's edges pass over them, the names fold away, the
+ * other tabs fade, and the row slides so the open tab's middle lands
+ * [anchor] in from the pill's start. While [folded], the pill as a whole
+ * brings the dock back.
  */
 @Composable
-private fun Dock(
-    tabs: List<ChromeTab>,
-    selected: Int?,
-    onSelect: (Int) -> Unit,
-    searchSelected: Boolean,
-    onSearch: () -> Unit,
-    motion: DockMotion?,
-    lens: DockLens,
-    scope: AnimatedVisibilityScope,
-    shared: SharedMini? = null,
-) {
+private fun DockPill(c: ChromeContent, full: Dp, folded: Boolean, fold: () -> Float, anchor: Dp, modifier: Modifier) {
     val haptics = com.opentune.ui.components.rememberHaptics()
     val ink = dockInk()
-    val reveal: State<Float>? = if (motion == DockMotion.RETRACT) {
-        // Even in and out, so the edge is seen travelling rather than snapping most of the way at once.
-        scope.transition.animateFloat({ tween(RETRACT_MS, easing = FastOutSlowInEasing) }, label = "retract") { if (it == EnterExitState.Visible) 1f else 0f }
-    } else {
-        null
-    }
-    // Piece i of the dock in a cascade; nothing for the other motions.
-    val wave: (Int) -> Modifier = { i ->
-        if (motion != DockMotion.CASCADE) Modifier else with(scope) {
-            val (enter, exit) = cascade(i)
-            Modifier.animateEnterExit(enter, exit, label = "wave$i")
-        }
-    }
-    Row(
-        Modifier
-            .fillMaxWidth()
-            .height(CHROME_TAB_HEIGHT)
-            .then(
-                if (reveal == null) Modifier else Modifier.graphicsLayer {
-                    val r = reveal.value
-                    clip = r < 1f
-                    if (r < 1f) shape = RetractShape(r)
-                },
-            ),
-        verticalAlignment = Alignment.CenterVertically,
+    val pill = RoundedCornerShape(percent = 50)
+    val slot = (full - DOCK_INSET * 2) / c.tabs.size
+    val shown = c.selected?.takeIf { it in c.tabs.indices }
+    // The lens rests where it last was while Search is open, faded out.
+    var resting by remember { mutableIntStateOf(shown ?: 0) }
+    if (shown != null) resting = shown
+    Box(
+        modifier
+            .dockShadow(pill)
+            .glass(pill, tint = ink.film ?: MaterialTheme.colorScheme.surfaceContainerHigh)
+            .dockHighlight(pill)
+            .clip(pill),
     ) {
-        BoxWithConstraints(
-            Modifier.weight(1f).fillMaxHeight()
-                .then(if (shared == null) Modifier else with(shared) { Modifier.sharedPart("dock") })
-                .dockShadow(DOCK_SHAPE).glass(DOCK_SHAPE, tint = ink.film ?: MaterialTheme.colorScheme.surfaceContainerHigh).dockHighlight(DOCK_SHAPE).padding(DOCK_INSET),
+        val (left, right) = rememberStretchingLens(resting, slot, c.lens)
+        val lensAlpha by animateFloatAsState(if (shown != null) 1f else 0f, tween(260, easing = FastOutSlowInEasing), label = "lensAlpha")
+        Box(
+            Modifier
+                .layout { measurable, constraints ->
+                    val inset = DOCK_INSET.roundToPx()
+                    val w = (full - DOCK_INSET * 2).roundToPx()
+                    val h = (constraints.maxHeight - inset * 2).coerceAtLeast(0)
+                    val placeable = measurable.measure(Constraints.fixed(w, h))
+                    // From the open tab's own place to [anchor].
+                    val slide = (anchor - DOCK_INSET - slot * (resting + 0.5f)).toPx() * fold()
+                    layout(constraints.maxWidth, constraints.maxHeight) { placeable.place(inset + slide.roundToInt(), inset) }
+                },
         ) {
-            val slot = maxWidth / tabs.size
-            val shown = selected?.takeIf { it in tabs.indices }
-            // The lens rests where it last was while Search is open, faded out.
-            var resting by remember { mutableIntStateOf(shown ?: 0) }
-            if (shown != null) resting = shown
-            val (left, right) = rememberStretchingLens(resting, slot, if (motion == null) DockLens.GLIDE else lens)
-            val lensAlpha by animateFloatAsState(if (shown != null) 1f else 0f, tween(260, easing = FastOutSlowInEasing), label = "lensAlpha")
             Box(
                 Modifier
-                    .then(wave(resting))
-                    .offset { androidx.compose.ui.unit.IntOffset(left().roundToPx(), 0) }
+                    .offset { IntOffset(left().roundToPx(), 0) }
                     .layout { measurable, constraints ->
                         val w = (right() - left()).roundToPx().coerceAtLeast(0)
                         val placeable = measurable.measure(constraints.copy(minWidth = w, maxWidth = w))
                         layout(placeable.width, placeable.height) { placeable.place(0, 0) }
                     }
                     .fillMaxHeight()
-                    .graphicsLayer {
-                        alpha = lensAlpha
-                        // A touch thinner while it's stretched, like a drop pulled sideways.
-                        val stretch = ((right() - left()) / slot - 1f).coerceIn(0f, 1f)
-                        scaleY = 1f - 0.08f * stretch
-                    }
+                    .graphicsLayer { alpha = lensAlpha * (1f - fold()).coerceIn(0f, 1f) }
                     .clip(LENS_SHAPE)
                     .background(Brush.verticalGradient(listOf(ink.lensTop, ink.lensBottom)))
                     .border(1.dp, Brush.verticalGradient(listOf(ink.rimTop, ink.rimBottom)), LENS_SHAPE),
             )
-            // Clipped to the glass, so tabs in a cascade sink into it rather than below it.
-            Row(Modifier.fillMaxSize().clip(LENS_SHAPE)) {
-                tabs.forEachIndexed { i, tab ->
-                    DockItem(tab, i == shown, wave(i).width(slot).fillMaxHeight()) {
+            Row(Modifier.fillMaxSize()) {
+                c.tabs.forEachIndexed { i, tab ->
+                    DockItem(
+                        tab,
+                        i == shown,
+                        Modifier
+                            .width(slot)
+                            .fillMaxHeight()
+                            // The other tabs fade as the edge reaches them.
+                            .graphicsLayer { if (i != resting) alpha = (1f - fold() * 1.6f).coerceIn(0f, 1f) },
+                        collapse = fold,
+                    ) {
                         if (i != shown) haptics.tick()
-                        onSelect(i)
+                        c.onSelect(i)
                     }
                 }
             }
         }
-        Spacer(Modifier.width(10.dp))
-        SearchOrb(searchSelected, wave(tabs.size).then(if (shared == null) Modifier else with(shared) { Modifier.sharedPart("search") })) {
-            if (!searchSelected) haptics.tick()
-            onSearch()
+        if (folded) {
+            Box(
+                Modifier
+                    .matchParentSize()
+                    .clickable(onClickLabel = "Show navigation", onClick = c.onExpand)
+                    .semantics { role = Role.Button },
+            )
         }
     }
 }
@@ -754,8 +671,9 @@ internal fun SearchOrb(selected: Boolean, modifier: Modifier = Modifier, onClick
 }
 
 /**
- * The open tab on its own, for [DockMotion.MINIMIZE]: its filled icon in the
- * accent colour inside a glass circle. Tapping it brings the whole dock back.
+ * The open tab on its own, for [DockMotion.SINK] with nothing playing: its
+ * filled icon in the accent colour inside a glass circle. Tapping it brings
+ * the whole dock back.
  */
 @Composable
 private fun TabOrb(tab: ChromeTab, searchSelected: Boolean, modifier: Modifier, onClick: () -> Unit) {

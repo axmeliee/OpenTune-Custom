@@ -512,15 +512,14 @@ enum class ControlStyle(val label: String, val summary: String) {
 
 /**
  * How the dock tucks away while a page scrolls down, and comes back. Each
- * one either ends somewhere different or travels a different way.
+ * ends in a different shape and gets there a different way. A saved choice
+ * that has since been dropped reads back as [MINIMIZE], the default.
  */
 @Serializable
 enum class DockMotion(val label: String, val summary: String) {
     MINIMIZE("Minimize", "Like iOS 26: the tabs shrink to the open one, with the song in a slim bar beside it"),
-    FOLD("Bubble", "The dock sinks away and the song shrinks into a round cover in the corner"),
-    GLIDE("Glide", "The dock slides off the bottom and springs back up"),
-    RETRACT("Retract", "The dock pulls into the Search button and unrolls from it"),
-    CASCADE("Cascade", "The tabs drop away one by one and come back in a wave"),
+    CAPSULE("Capsule", "The tabs and the song gather into one small capsule in the middle"),
+    SINK("Sink", "The tabs sink away into a blur and the song settles into their place"),
 }
 
 /** How synced lyrics move as the song plays. */
