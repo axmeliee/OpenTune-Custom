@@ -169,10 +169,19 @@ fun HomeScreen(
                     Modifier.fillMaxWidth().windowInsetsPadding(WindowInsets.statusBars)
                         .padding(start = 20.dp, end = 20.dp, top = 16.dp, bottom = 8.dp),
                 ) {
+                    // The greeting sits right over the name, the buttons beside the pair.
                     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                        Text(greeting, Modifier.weight(1f), style = MaterialTheme.typography.titleMedium,
-                            color = MaterialTheme.colorScheme.primary)
+                        Column(Modifier.weight(1f)) {
+                            Text(greeting, style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.primary)
+                            Text(
+                                firstName ?: "What's playing?",
+                                style = MaterialTheme.typography.displaySmall,
+                                maxLines = 2,
+                                overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+                                modifier = Modifier.padding(top = 2.dp),
+                            )
+                        }
                         if (onRecognize != null) {
                             GlassIconButton(Icons.Rounded.GraphicEq, "Name a song playing nearby", onRecognize, size = 48.dp)
                         }
@@ -184,8 +193,6 @@ fun HomeScreen(
                             }
                         }
                     }
-                    Spacer(Modifier.height(12.dp))
-                    Text(firstName ?: "What's playing?", style = MaterialTheme.typography.displaySmall)
                 }
             }
             item(key = "quick-picks") {
