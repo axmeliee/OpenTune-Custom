@@ -152,7 +152,7 @@ fun DesktopApp() {
                         )
                         Column(Modifier.weight(1f).fillMaxHeight()) {
                             TopStrip(song, onOpen = { playerOpen = true }, onQueue = { tab = Tab.QUEUE; searching = false; opened = null })
-                            CompositionLocalProvider(LocalPageBottom provides 24.dp) {
+                            CompositionLocalProvider(LocalPageBottom provides 24.dp, LocalWide provides true) {
                                 Box(Modifier.weight(1f).fillMaxWidth()) {
                                     Box(Modifier.fillMaxSize().align(Alignment.TopCenter).widthIn(max = 1100.dp)) { Page(sidebarSearch = true) }
                                 }
@@ -186,6 +186,9 @@ fun DesktopApp() {
 /** From this width the window gets a sidebar and a player strip instead of the dock. */
 private val WIDE = 980.dp
 
+/** Whether the pages sit beside the sidebar, which already carries the mark. */
+private val LocalWide = staticCompositionLocalOf { false }
+
 /** Room under each page's last row: above the dock and mini player, or a little in a wide window. */
 private val LocalPageBottom = staticCompositionLocalOf { PAGE_BOTTOM }
 
@@ -200,7 +203,10 @@ private fun Sidebar(selected: Tab?, searching: Boolean, onSelect: (Tab) -> Unit,
         Modifier.width(240.dp).fillMaxHeight().background(scheme.surfaceContainerLow)
             .padding(top = DesktopWindow.topInset + 16.dp, start = 12.dp, end = 12.dp, bottom = 16.dp),
     ) {
-        Text("OpenTune", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, modifier = Modifier.padding(start = 10.dp, bottom = 14.dp))
+        Row(Modifier.padding(start = 10.dp, bottom = 14.dp), verticalAlignment = Alignment.CenterVertically) {
+            androidx.compose.foundation.Image(rememberLogo(Logo.MARK), null, Modifier.size(width = 30.dp, height = 23.dp))
+            Text("OpenTune", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, modifier = Modifier.padding(start = 10.dp))
+        }
         TextField(
             query, { query = it },
             placeholder = { Text("Search", style = MaterialTheme.typography.bodyMedium) },
@@ -553,7 +559,15 @@ private fun HomePage(onOpen: (ShelfItem) -> Unit) {
     LaunchedEffect(Unit) { load() }
     val loaded = shelves
     LazyColumn(contentPadding = PaddingValues(top = 24.dp, bottom = LocalPageBottom.current), verticalArrangement = Arrangement.spacedBy(22.dp)) {
-        item { PageTitle(greeting()) }
+        item {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                PageTitle(greeting())
+                Spacer(Modifier.weight(1f))
+                if (!LocalWide.current) {
+                    androidx.compose.foundation.Image(rememberLogo(Logo.MARK), "OpenTune", Modifier.padding(end = 24.dp).size(width = 34.dp, height = 26.dp))
+                }
+            }
+        }
         when {
             failed -> item { Message("Couldn't load Home", "Check your connection and try again.", action = "Try again" to ::load) }
             loaded == null -> item { Loading() }

@@ -145,11 +145,17 @@ compose.desktop {
             vendor = "OpenTune"
             // What jlink's scan suggests, plus scripting for Rhino and EC ciphers for HTTPS.
             modules("java.instrument", "java.management", "java.net.http", "java.scripting", "jdk.crypto.ec", "jdk.dynalink", "jdk.httpserver", "jdk.jfr", "jdk.unsupported")
+            macOS {
+                iconFile.set(project.file("packaging/icons/AppIcon.icns"))
+                bundleID = "com.opentune.desktop"
+            }
             windows {
+                iconFile.set(project.file("packaging/icons/AppIcon.ico"))
                 menuGroup = "OpenTune"
                 upgradeUuid = "6c1f6c2e-5a3b-4d34-9a51-0e9c1d8f2a71"
             }
             linux {
+                iconFile.set(project.file("packaging/icons/AppIcon.png"))
                 debMaintainer = "78946189+justshivv@users.noreply.github.com"
             }
         }

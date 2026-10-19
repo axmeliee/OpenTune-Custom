@@ -21,6 +21,7 @@ fun main() {
         Window(
             onCloseRequest = ::exitApplication,
             title = "OpenTune",
+            icon = rememberLogo(Logo.APP),
             state = rememberWindowState(size = DpSize(1180.dp, 760.dp)),
         ) {
             window.minimumSize = java.awt.Dimension(760, 520)
