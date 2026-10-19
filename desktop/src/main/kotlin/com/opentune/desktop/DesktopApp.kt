@@ -60,7 +60,9 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.TextField
 import androidx.compose.material3.TextFieldDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
@@ -73,6 +75,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
+import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
@@ -113,6 +117,8 @@ private val PAGE_BOTTOM = DOCK_HEIGHT + MINI_HEIGHT + 48.dp
 fun DesktopApp() {
     var tab by remember { mutableStateOf(Tab.HOME) }
     var searching by remember { mutableStateOf(false) }
+    // What the sidebar's search box last searched for, in a wide window.
+    var searchFor by remember { mutableStateOf<String?>(null) }
     // An album, playlist or artist opened from Home, over the page.
     var opened by remember { mutableStateOf<ShelfItem?>(null) }
     var playerOpen by remember { mutableStateOf(false) }
@@ -120,35 +126,209 @@ fun DesktopApp() {
     val index by Player.index.collectAsState()
     val song = queue.getOrNull(index)
 
+    @Composable
+    fun Page(sidebarSearch: Boolean) {
+        val collection = opened
+        when {
+            collection != null -> CollectionPage(collection, onBack = { opened = null })
+            searching -> SearchPage(if (sidebarSearch) searchFor.orEmpty() else null)
+            tab == Tab.HOME -> HomePage(onOpen = { opened = it })
+            tab == Tab.LIBRARY -> LibraryPage()
+            else -> SongPage("Up next", queue, "The queue is empty.", current = index, onPlay = { _, i -> Player.playAt(i) })
+        }
+    }
+
     DesktopTheme {
         Surface(color = MaterialTheme.colorScheme.background, modifier = Modifier.fillMaxSize()) {
-            Box(Modifier.fillMaxSize()) {
-                // Pages in a readable column, as on a tablet held sideways.
-                Box(Modifier.fillMaxSize().align(Alignment.TopCenter).widthIn(max = 1100.dp)) {
-                    val collection = opened
-                    when {
-                        collection != null -> CollectionPage(collection, onBack = { opened = null })
-                        searching -> SearchPage()
-                        tab == Tab.HOME -> HomePage(onOpen = { opened = it })
-                        tab == Tab.LIBRARY -> LibraryPage()
-                        else -> SongPage("Up next", queue, "The queue is empty.", current = index, onPlay = { _, i -> Player.playAt(i) })
-                    }
-                }
-                Column(
-                    Modifier.align(Alignment.BottomCenter).padding(bottom = 18.dp).widthIn(max = 560.dp).fillMaxWidth().padding(horizontal = 16.dp),
-                    verticalArrangement = Arrangement.spacedBy(8.dp),
-                ) {
-                    if (song != null) MiniPlayer(song, onOpen = { playerOpen = true })
-                    Row(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
-                        Dock(
+            BoxWithConstraints(Modifier.fillMaxSize()) {
+                if (maxWidth >= WIDE) {
+                    // A computer-sized window: the pages beside a sidebar, the player along the top.
+                    Row(Modifier.fillMaxSize()) {
+                        Sidebar(
                             selected = tab.takeUnless { searching || opened != null },
+                            searching = searching,
                             onSelect = { tab = it; searching = false; opened = null },
-                            modifier = Modifier.weight(1f),
+                            onSearch = { q -> searchFor = q; searching = true; opened = null },
                         )
-                        SearchOrb(searching) { searching = !searching; opened = null }
+                        Column(Modifier.weight(1f).fillMaxHeight()) {
+                            TopStrip(song, onOpen = { playerOpen = true }, onQueue = { tab = Tab.QUEUE; searching = false; opened = null })
+                            CompositionLocalProvider(LocalPageBottom provides 24.dp) {
+                                Box(Modifier.weight(1f).fillMaxWidth()) {
+                                    Box(Modifier.fillMaxSize().align(Alignment.TopCenter).widthIn(max = 1100.dp)) { Page(sidebarSearch = true) }
+                                }
+                            }
+                        }
+                    }
+                } else {
+                    // A narrow window keeps the phone's dock and mini player.
+                    Box(Modifier.fillMaxSize().padding(top = DesktopWindow.topInset)) { Page(sidebarSearch = false) }
+                    Column(
+                        Modifier.align(Alignment.BottomCenter).padding(bottom = 18.dp).widthIn(max = 560.dp).fillMaxWidth().padding(horizontal = 16.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        if (song != null) MiniPlayer(song, onOpen = { playerOpen = true })
+                        Row(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
+                            Dock(
+                                selected = tab.takeUnless { searching || opened != null },
+                                onSelect = { tab = it; searching = false; opened = null },
+                                modifier = Modifier.weight(1f),
+                            )
+                            SearchOrb(searching) { searching = !searching; opened = null }
+                        }
                     }
                 }
                 if (playerOpen && song != null) NowPlaying(song, onClose = { playerOpen = false })
+            }
+        }
+    }
+}
+
+/** From this width the window gets a sidebar and a player strip instead of the dock. */
+private val WIDE = 980.dp
+
+/** Room under each page's last row: above the dock and mini player, or a little in a wide window. */
+private val LocalPageBottom = staticCompositionLocalOf { PAGE_BOTTOM }
+
+// ---- Wide window ---------------------------------------------------------------
+
+/** The sidebar: the app's name, search, and the pages, under the window's own buttons on a Mac. */
+@Composable
+private fun Sidebar(selected: Tab?, searching: Boolean, onSelect: (Tab) -> Unit, onSearch: (String) -> Unit) {
+    val scheme = MaterialTheme.colorScheme
+    var query by remember { mutableStateOf("") }
+    Column(
+        Modifier.width(240.dp).fillMaxHeight().background(scheme.surfaceContainerLow)
+            .padding(top = DesktopWindow.topInset + 16.dp, start = 12.dp, end = 12.dp, bottom = 16.dp),
+    ) {
+        Text("OpenTune", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, modifier = Modifier.padding(start = 10.dp, bottom = 14.dp))
+        TextField(
+            query, { query = it },
+            placeholder = { Text("Search", style = MaterialTheme.typography.bodyMedium) },
+            leadingIcon = { Icon(Icons.Rounded.Search, null, Modifier.size(20.dp)) },
+            trailingIcon = { if (query.isNotEmpty()) IconButton(onClick = { query = "" }) { Icon(Icons.Rounded.Close, "Clear", Modifier.size(18.dp)) } },
+            singleLine = true,
+            textStyle = MaterialTheme.typography.bodyMedium,
+            shape = RoundedCornerShape(12.dp),
+            colors = TextFieldDefaults.colors(
+                focusedIndicatorColor = Color.Transparent,
+                unfocusedIndicatorColor = Color.Transparent,
+                focusedContainerColor = scheme.surfaceContainerHigh,
+                unfocusedContainerColor = scheme.surfaceContainerHigh,
+            ),
+            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+            keyboardActions = KeyboardActions(onSearch = { query.trim().takeIf { it.isNotEmpty() }?.let(onSearch) }),
+            modifier = Modifier.fillMaxWidth().height(52.dp),
+        )
+        Spacer(Modifier.height(14.dp))
+        Text("MUSIC", style = MaterialTheme.typography.labelSmall, color = scheme.onSurfaceVariant, modifier = Modifier.padding(start = 10.dp, top = 6.dp, bottom = 6.dp))
+        Tab.entries.forEach { t -> SidebarItem(t.label, if (t == selected) t.selectedIcon else t.icon, t == selected) { onSelect(t) } }
+        SidebarItem("Search", Icons.Rounded.Search, searching) { query.trim().takeIf { it.isNotEmpty() }?.let(onSearch) ?: onSearch("") }
+    }
+}
+
+@Composable
+private fun SidebarItem(label: String, icon: ImageVector, selected: Boolean, onClick: () -> Unit) {
+    val scheme = MaterialTheme.colorScheme
+    Row(
+        Modifier.fillMaxWidth().height(38.dp).clip(RoundedCornerShape(10.dp))
+            .background(if (selected) scheme.primary.copy(alpha = 0.16f) else Color.Transparent)
+            .clickable(onClick = onClick).padding(horizontal = 10.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Icon(icon, null, tint = if (selected) scheme.primary else scheme.onSurfaceVariant, modifier = Modifier.size(20.dp))
+        Text(
+            label, style = MaterialTheme.typography.bodyMedium, fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
+            color = if (selected) scheme.onSurface else scheme.onSurfaceVariant, modifier = Modifier.padding(start = 12.dp),
+        )
+    }
+}
+
+/**
+ * The player along the top of a wide window: the controls on the left, the
+ * song in a capsule in the middle with a thin line for where it is, and
+ * volume, like and the queue on the right.
+ */
+@Composable
+private fun TopStrip(song: Song?, onOpen: () -> Unit, onQueue: () -> Unit) {
+    val scheme = MaterialTheme.colorScheme
+    val playing by Player.playing.collectAsState()
+    val loading by Player.loading.collectAsState()
+    val error by Player.error.collectAsState()
+    val volume by Player.volume.collectAsState()
+    val liked by Library.liked.collectAsState()
+    Row(
+        Modifier.fillMaxWidth().height(DesktopWindow.topInset + 64.dp).padding(top = DesktopWindow.topInset).padding(horizontal = 16.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            IconButton(onClick = Player::previous, enabled = song != null) { Icon(Icons.Rounded.SkipPrevious, "Previous", Modifier.size(26.dp)) }
+            Box(
+                Modifier.size(40.dp).clip(CircleShape).background(if (song != null) scheme.onSurface else scheme.surfaceContainerHigh)
+                    .clickable(enabled = song != null, onClick = Player::toggle),
+                contentAlignment = Alignment.Center,
+            ) {
+                if (loading) CircularProgressIndicator(Modifier.size(20.dp), color = scheme.surface, strokeWidth = 2.dp)
+                else Icon(if (playing) Icons.Rounded.Pause else Icons.Rounded.PlayArrow, if (playing) "Pause" else "Play", tint = scheme.surface, modifier = Modifier.size(24.dp))
+            }
+            IconButton(onClick = Player::next, enabled = song != null) { Icon(Icons.Rounded.SkipNext, "Next", Modifier.size(26.dp)) }
+        }
+        Box(Modifier.weight(1f).padding(horizontal = 20.dp), contentAlignment = Alignment.Center) {
+            NowPlayingCapsule(song, error, onOpen)
+        }
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            if (song != null) {
+                val isLiked = liked.any { it.videoId == song.videoId }
+                IconButton(onClick = { Library.setLiked(song, !isLiked) }) {
+                    Icon(if (isLiked) Icons.Rounded.Favorite else Icons.Rounded.FavoriteBorder, if (isLiked) "Unlike" else "Like",
+                        tint = if (isLiked) scheme.primary else scheme.onSurfaceVariant, modifier = Modifier.size(22.dp))
+                }
+            }
+            Icon(Icons.AutoMirrored.Rounded.VolumeUp, "Volume", tint = scheme.onSurfaceVariant, modifier = Modifier.size(20.dp))
+            var level by remember { mutableFloatStateOf(volume.toFloat()) }
+            Slider(
+                value = level, onValueChange = { level = it; Player.setVolume(it.toDouble()) },
+                colors = SliderDefaults.colors(inactiveTrackColor = scheme.onSurface.copy(alpha = 0.18f)),
+                modifier = Modifier.width(110.dp).padding(horizontal = 6.dp),
+            )
+            IconButton(onClick = onQueue) { Icon(Icons.AutoMirrored.Rounded.QueueMusic, "Up next", tint = scheme.onSurfaceVariant) }
+        }
+    }
+}
+
+/** The song playing, in a rounded box with a thin progress line along its foot; click to open the player. */
+@Composable
+private fun NowPlayingCapsule(song: Song?, error: String?, onOpen: () -> Unit) {
+    val scheme = MaterialTheme.colorScheme
+    val shape = RoundedCornerShape(12.dp)
+    Box(Modifier.widthIn(max = 560.dp).fillMaxWidth().height(48.dp).clip(shape).background(scheme.surfaceContainer)) {
+        if (song == null) {
+            Text("Nothing playing", color = scheme.onSurfaceVariant, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.align(Alignment.Center))
+            return@Box
+        }
+        val progress = rememberProgress(song)
+        Row(Modifier.fillMaxSize().clickable(onClick = onOpen), verticalAlignment = Alignment.CenterVertically) {
+            Cover(song.thumbnailUrl, 48.dp, RoundedCornerShape(topStart = 12.dp, bottomStart = 12.dp))
+            Column(Modifier.weight(1f).padding(horizontal = 12.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                Text(song.title, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Text(
+                    error ?: song.artist, style = MaterialTheme.typography.bodySmall, maxLines = 1, overflow = TextOverflow.Ellipsis,
+                    color = if (error != null) scheme.error else scheme.onSurfaceVariant,
+                )
+            }
+            Text(
+                "${Time.format(progress.positionMs)} / ${Time.format(progress.durationMs)}",
+                style = MaterialTheme.typography.labelSmall, color = scheme.onSurfaceVariant, modifier = Modifier.padding(end = 12.dp),
+            )
+        }
+        // Where the song is; clicking along the line seeks there.
+        BoxWithConstraints(Modifier.align(Alignment.BottomCenter).fillMaxWidth().height(6.dp)) {
+            val width = constraints.maxWidth.toFloat()
+            Box(
+                Modifier.fillMaxSize().pointerInput(progress.durationMs) {
+                    detectTapGestures { at -> if (progress.durationMs > 0) Player.seekTo((at.x / width * progress.durationMs).toLong()) }
+                },
+            ) {
+                Box(Modifier.align(Alignment.BottomStart).fillMaxWidth(progress.fraction()).height(2.dp).background(scheme.primary))
             }
         }
     }
@@ -372,7 +552,7 @@ private fun HomePage(onOpen: (ShelfItem) -> Unit) {
     }
     LaunchedEffect(Unit) { load() }
     val loaded = shelves
-    LazyColumn(contentPadding = PaddingValues(top = 24.dp, bottom = PAGE_BOTTOM), verticalArrangement = Arrangement.spacedBy(22.dp)) {
+    LazyColumn(contentPadding = PaddingValues(top = 24.dp, bottom = LocalPageBottom.current), verticalArrangement = Arrangement.spacedBy(22.dp)) {
         item { PageTitle(greeting()) }
         when {
             failed -> item { Message("Couldn't load Home", "Check your connection and try again.", action = "Try again" to ::load) }
@@ -403,8 +583,8 @@ private fun greeting(): String = when (java.time.LocalTime.now().hour) {
 }
 
 @Composable
-private fun SearchPage() {
-    var query by remember { mutableStateOf("") }
+private fun SearchPage(fromSidebar: String? = null) {
+    var query by remember { mutableStateOf(fromSidebar.orEmpty()) }
     var results by remember { mutableStateOf<List<Song>?>(null) }
     var searching by remember { mutableStateOf(false) }
     var failed by remember { mutableStateOf(false) }
@@ -418,9 +598,16 @@ private fun SearchPage() {
             searching = false
         }
     }
+    // The sidebar's box asks; this page shows what it found.
+    LaunchedEffect(fromSidebar) {
+        if (!fromSidebar.isNullOrBlank()) {
+            query = fromSidebar
+            run()
+        }
+    }
     Column(Modifier.fillMaxSize().padding(top = 24.dp)) {
-        PageTitle("Search")
-        TextField(
+        PageTitle(if (fromSidebar.isNullOrBlank()) "Search" else "Results for \"$fromSidebar\"")
+        if (fromSidebar == null) TextField(
             query, { query = it },
             placeholder = { Text("Songs, albums, artists") },
             leadingIcon = { Icon(Icons.Rounded.Search, null) },
@@ -525,7 +712,7 @@ private fun SongList(songs: List<Song>, current: Int = -1, onPlay: (List<Song>, 
     val queue by Player.queue.collectAsState()
     val index by Player.index.collectAsState()
     val playingId = queue.getOrNull(index)?.videoId
-    LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(top = 4.dp, bottom = PAGE_BOTTOM)) {
+    LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(top = 4.dp, bottom = LocalPageBottom.current)) {
         itemsIndexed(songs, key = { i, s -> "$i:${s.videoId}" }) { i, song ->
             val isLiked = liked.any { it.videoId == song.videoId }
             val isCurrent = if (current >= 0) i == current else song.videoId == playingId

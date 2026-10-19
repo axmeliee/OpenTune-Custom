@@ -24,6 +24,7 @@ fun main() {
             state = rememberWindowState(size = DpSize(1180.dp, 760.dp)),
         ) {
             window.minimumSize = java.awt.Dimension(760, 520)
+            DesktopWindow.style(window)
             DesktopApp()
         }
     }
