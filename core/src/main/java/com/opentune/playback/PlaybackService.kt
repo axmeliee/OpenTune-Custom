@@ -196,6 +196,9 @@ class PlaybackService : MediaLibraryService() {
                 /* handleAudioFocus= */ true,
             )
             .setHandleAudioBecomingNoisy(true)
+            // On a watch, music waits for Bluetooth headphones rather than playing from
+            // its speaker, and Wear OS offers to connect some. Other devices are unaffected.
+            .setSuppressPlaybackOnUnsuitableOutput(true)
             .build()
         player.addListener(playerListener)
 

@@ -18,3 +18,4 @@ dependencyResolutionManagement {
 rootProject.name = "OpenTune"
 include(":app")
 include(":core")
+include(":wear")

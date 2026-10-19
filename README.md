@@ -290,6 +290,11 @@ iOS 16 or newer.
   moves between rows and buttons with a clear highlight, OK opens or plays,
   and left and right on the seek bar skip through the song. The screen stays
   on while music plays.
+- **Wear OS.** A separate watch app (`wear/`) that plays on the watch
+  itself, over its Wi-Fi or LTE and Bluetooth headphones, with no phone
+  needed. Search by voice or keyboard, play your liked and recent songs on
+  the watch, skip, like, see what's up next, and turn the crown for volume.
+  It asks for headphones rather than playing from the watch's speaker.
 - **Opens YouTube links.** music.youtube.com, youtube.com and youtu.be
   links, or links shared to the app, open in OpenTune.
 

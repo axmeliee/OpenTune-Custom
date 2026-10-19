@@ -60,13 +60,18 @@ jobs:
             app/build/screenshots/
             core/build/reports/
             core/build/test-results/
+            wear/build/reports/
+            wear/build/test-results/
+            wear/build/screenshots/
           if-no-files-found: ignore
 
       - name: APKs
         uses: actions/upload-artifact@v4
         with:
           name: apks
-          path: app/build/outputs/apk/release/*.apk
+          path: |
+            app/build/outputs/apk/release/*.apk
+            wear/build/outputs/apk/release/*.apk
 
   website:
     runs-on: ubuntu-latest

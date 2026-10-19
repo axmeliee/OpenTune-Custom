@@ -1,10 +1,5 @@
 package com.opentune
 
-import com.opentune.data.AppLog
-import com.opentune.data.subsonic.Subsonic
-import com.opentune.data.listenbrainz.ListenBrainz
-import com.opentune.data.covers.AlbumCovers
-import com.opentune.data.autoeq.AutoEq
 import android.app.Application
 import coil3.ImageLoader
 import coil3.PlatformContext
@@ -14,19 +9,10 @@ import coil3.memory.MemoryCache
 import coil3.network.okhttp.OkHttpNetworkFetcherFactory
 import coil3.request.crossfade
 import com.opentune.data.Http
-import okio.Path.Companion.toOkioPath
-import com.opentune.data.account.AccountStore
-import com.opentune.data.download.Downloads
-import com.opentune.data.LoudnessStore
 import com.opentune.data.MusicRepository
-import com.opentune.data.history.History
+import com.opentune.data.subsonic.Subsonic
 import com.opentune.ui.ScreenCache
-import com.opentune.data.innertube.InnerTubeXResolver
-import com.opentune.data.innertube.UpgradedTracks
-import com.opentune.data.lastfm.LastFm
-import com.opentune.data.library.LibraryStore
-import com.opentune.data.settings.AppSettings
-import com.opentune.playback.QueueStore
+import okio.Path.Companion.toOkioPath
 
 class OpenTuneApp : Application(), SingletonImageLoader.Factory {
     /**
@@ -52,58 +38,12 @@ class OpenTuneApp : Application(), SingletonImageLoader.Factory {
             .crossfade(200)
             .build()
 
-    @androidx.annotation.OptIn(androidx.media3.common.util.UnstableApi::class)
     override fun onCreate() {
         super.onCreate()
         // The home-screen widget follows the shared player service.
         com.opentune.data.AppHooks.onPlayerChanged = { context, player -> com.opentune.widget.NowPlayingWidget.refresh(context, player) }
         com.opentune.data.AppHooks.onPlayerStopped = { context -> com.opentune.widget.NowPlayingWidget.stopped(context) }
-        // Media3's warnings and errors (a failed load, a decoder that won't
-        // start) into the app's own log as well as logcat, for "Copy log".
-        androidx.media3.common.util.Log.setLogger(object : androidx.media3.common.util.Log.Logger {
-            private val system = androidx.media3.common.util.Log.Logger.DEFAULT
-            override fun d(tag: String, message: String, throwable: Throwable?) = system.d(tag, message, throwable)
-            override fun i(tag: String, message: String, throwable: Throwable?) = system.i(tag, message, throwable)
-            override fun w(tag: String, message: String, throwable: Throwable?) {
-                AppLog.add('W', tag, message, throwable)
-                system.w(tag, message, throwable)
-            }
-            override fun e(tag: String, message: String, throwable: Throwable?) {
-                AppLog.add('E', tag, message, throwable)
-                system.e(tag, message, throwable)
-            }
-        })
-        AppSettings.init(this)
-        com.opentune.data.lossless.SpotiflacSession.init(this)
-        History.init(this)
-        LoudnessStore.init(this)
-        UpgradedTracks.init(this)
-        QueueStore.init(this)
-        com.opentune.data.together.Together.init(this)
-        LastFm.init(this)
-        Subsonic.init(this)
-        ListenBrainz.init(this)
-        com.opentune.data.radio.Radio.init(this)
-        com.opentune.data.releases.NewReleases.init(this)
-        com.opentune.data.UpdateCheck.init(this)
-        com.opentune.data.UpdateCheck.schedule(this)
-        com.opentune.data.Usage.init(this)
-        // Spotify sign-in is gone; drop any tokens an earlier version kept.
-        deleteSharedPreferences("spotify")
-        // The waveform seek bar is gone; drop the waveforms an earlier version saved.
-        java.io.File(filesDir, "waveforms").takeIf { it.exists() }?.let { dir -> Thread { dir.deleteRecursively() }.start() }
-        com.opentune.data.podcasts.Podcasts.init(this)
-        AlbumCovers.init(this)
-        AutoEq.init(this)
-        com.opentune.data.library.LibraryArtwork.init(this)
-        LibraryStore.init(this)
-        Downloads.init(this)
-        com.opentune.data.download.DownloadedLists.init(this)
-        AccountStore.init(this)
-        com.opentune.data.library.LibraryCache.init(this)
-        // After library and account: it sends playlist changes still waiting, when signed in.
-        com.opentune.data.library.PlaylistSync.init(this)
-        InnerTubeXResolver.init(this)
+        com.opentune.data.Core.init(this)
         // Last session's Home, shown at once and refreshed in the background.
         MusicRepository.init(this)?.let { ScreenCache.put("home", it, at = 0L) }
         // After history, library, downloads and account: they tell an existing user from a new one.
