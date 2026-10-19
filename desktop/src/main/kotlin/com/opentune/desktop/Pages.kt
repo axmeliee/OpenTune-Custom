@@ -1,0 +1,57 @@
+package com.opentune.desktop
+
+import com.opentune.data.innertube.Innertube
+import com.opentune.data.innertube.InnertubeParser
+import com.opentune.data.model.SearchFilter
+import com.opentune.data.model.SearchResult
+import com.opentune.data.model.ShelfItem
+import com.opentune.data.model.Song
+import com.opentune.data.podcasts.PodcastParser
+
+/** What the desktop pages show, from YouTube Music through the shared client. */
+object Pages {
+    data class Shelf(val title: String, val items: List<ShelfItem>)
+
+    /** Home's rows, each card a song, album, playlist or artist. */
+    suspend fun home(): List<Shelf> =
+        InnertubeParser.parseHome(Innertube.browse("FEmusic_home"))
+            .map { Shelf(it.title, it.items.filter { i -> i.videoId != null || i.browseId != null }) }
+            .filter { it.items.isNotEmpty() }
+
+    /**
+     * Songs for [query]: YouTube Music's songs-only search, as the phone asks
+     * it, and its mixed results when that finds none.
+     */
+    suspend fun search(query: String): List<Song> =
+        songsIn(InnertubeParser.parseSearchPage(Innertube.search(query, SearchFilter.SONGS.params)).rows)
+            .ifEmpty { songsIn(InnertubeParser.parseSearchPage(Innertube.search(query)).rows) }
+
+    /** The songs behind a card: an album or playlist's tracks, an artist's top songs, a podcast's episodes. */
+    suspend fun songsOf(browseId: String): List<Song> {
+        val page = Innertube.browse(browseId)
+        if (browseId.startsWith("UC")) return InnertubeParser.parseArtistPage(page).songs
+        if (browseId.startsWith("MPSP")) return PodcastParser.parseShow(browseId, page).episodes.map { it.toSong() }
+        return InnertubeParser.parsePlaylistShelf(page)?.songs?.takeIf { it.isNotEmpty() }
+            ?: InnertubeParser.collectSongsDeep(page)
+    }
+
+    /** A card that plays on its own, as a song. */
+    internal fun songOf(item: ShelfItem): Song? = item.videoId?.let { id ->
+        Song(id, item.title, artistIn(item.subtitle), item.thumbnailUrl, isExplicit = item.explicit)
+    }
+
+    /** The artist in a card's grey line, such as "Song • Artist • 2.1M plays". */
+    internal fun artistIn(subtitle: String): String =
+        subtitle.split(" • ").map { it.trim() }.firstOrNull { it.isNotEmpty() && it !in KINDS && !it.endsWith("plays") && !it.endsWith("views") }
+            ?: subtitle
+
+    private val KINDS = setOf("Song", "Video", "Single", "Album", "EP", "Playlist")
+
+    internal fun songsIn(rows: List<SearchResult>): List<Song> = rows.mapNotNull {
+        when (it) {
+            is SearchResult.TopTrack -> it.song
+            is SearchResult.Track -> it.song
+            is SearchResult.Browse -> null
+        }
+    }.distinctBy { it.videoId }
+}

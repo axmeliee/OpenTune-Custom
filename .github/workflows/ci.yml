@@ -73,6 +73,43 @@ jobs:
             app/build/outputs/apk/release/*.apk
             wear/build/outputs/apk/release/*.apk
 
+  # The desktop app: its tests, and an installer for each system.
+  desktop:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            package: packageDeb
+          - os: windows-latest
+            package: packageMsi
+          - os: macos-latest
+            package: packageDmg
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+      # The build includes the Android modules, which need the SDK to configure.
+      - uses: android-actions/setup-android@v3
+        with:
+          packages: platform-tools platforms;android-37.0 build-tools;36.0.0
+      - uses: gradle/actions/setup-gradle@v4
+      - name: Desktop tests and installer
+        shell: bash
+        run: ./gradlew --no-daemon :desktop:test :desktop:${{ matrix.package }}
+      - uses: actions/upload-artifact@v4
+        with:
+          name: desktop-${{ matrix.os }}
+          path: |
+            desktop/build/compose/binaries/main/deb/*.deb
+            desktop/build/compose/binaries/main/msi/*.msi
+            desktop/build/compose/binaries/main/dmg/*.dmg
+          if-no-files-found: error
+
   website:
     runs-on: ubuntu-latest
     timeout-minutes: 10

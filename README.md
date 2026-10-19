@@ -295,6 +295,13 @@ iOS 16 or newer.
   needed. Search by voice or keyboard, play your liked and recent songs on
   the watch, skip, like, see what's up next, and turn the crown for volume.
   It asks for headphones rather than playing from the watch's speaker.
+- **Desktop (early).** A Windows, macOS and Linux app (`desktop/`, run it
+  with `./gradlew :desktop:run`; CI builds an MSI, DMG and DEB). It has
+  Home, search, albums, playlists, artists and podcasts, a queue that
+  carries on with YouTube Music's up-next, and liked and recent songs kept
+  on your computer. It uses the phone app's YouTube Music client as-is, but
+  finds streams with NewPipe only, so some songs don't play yet. On Linux
+  it needs FFmpeg's libraries (libavcodec) for audio.
 - **Opens YouTube links.** music.youtube.com, youtube.com and youtu.be
   links, or links shared to the app, open in OpenTune.
 
