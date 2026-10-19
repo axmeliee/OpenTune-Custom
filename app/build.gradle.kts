@@ -81,6 +81,8 @@ android {
         compose = true
         buildConfig = true
     }
+    // The recorded service answers the tests read live with the code they came from, in :core.
+    sourceSets["test"].resources.srcDir(rootProject.file("core/src/test/resources"))
     testOptions {
         // Lets JVM tests run code that logs through android.util.Log.
         unitTests.isReturnDefaultValues = true
@@ -92,37 +94,6 @@ android {
 kotlin {
     compilerOptions {
         jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_17)
-    }
-}
-
-/*
- * NewPipeExtractor ships its own org.schabi.newpipe.extractor.utils.Utils, and
- * app/src/main/java carries a patched copy at the same package path (see that
- * file for why). A release build merges every input into one dex set, where
- * D8 rejects the duplicate type outright, so the library's copy is stripped
- * from its jar before it reaches dexing, leaving exactly one definition.
- *
- * The artifact is resolved on its own and non-transitive purely to re-jar it;
- * its transitive dependencies are declared by hand below, since dropping the
- * module drops them too.
- */
-val newPipeExtractorRaw: Configuration by configurations.creating {
-    isTransitive = false
-    isCanBeConsumed = false
-}
-dependencies {
-    newPipeExtractorRaw("com.github.TeamNewPipe:NewPipeExtractor:v0.26.3")
-}
-val newPipeExtractorStripped = tasks.register<org.gradle.api.tasks.bundling.Jar>(
-    "stripNewPipeExtractorUtils"
-) {
-    archiveFileName.set("NewPipeExtractor-v0.26.3-noutils.jar")
-    destinationDirectory.set(layout.buildDirectory.dir("stripped-libs"))
-    // `elements` keeps resolution lazy: the jar is only opened when this task runs,
-    // not while Gradle configures the build.
-    from(newPipeExtractorRaw.elements.map { jars -> jars.map { zipTree(it.asFile) } }) {
-        exclude("org/schabi/newpipe/extractor/utils/Utils.class")
-        exclude("org/schabi/newpipe/extractor/utils/Utils\$*.class")
     }
 }
 
@@ -143,8 +114,6 @@ dependencies {
     implementation("dev.chrisbanes.haze:haze:1.7.1")
     // Apple-style Liquid Glass (lens refraction, highlights) on Android 13+.
     implementation("io.github.kyant0:backdrop:2.0.0-alpha03")
-    // Downloads that keep going after the app is closed.
-    implementation("androidx.work:work-runtime-ktx:2.10.1")
     implementation("androidx.activity:activity-compose:1.9.3")
     implementation("androidx.navigation:navigation-compose:2.8.5")
     implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.8.7")
@@ -152,15 +121,8 @@ dependencies {
     implementation("androidx.core:core-ktx:1.15.0")
     debugImplementation("androidx.compose.ui:ui-tooling")
 
-    // ---- Media playback: Media3 / ExoPlayer ----
-    implementation("androidx.media3:media3-exoplayer:1.11.0")
-    implementation("androidx.media3:media3-session:1.11.0")
-    implementation("androidx.media3:media3-common:1.11.0")
-    implementation("androidx.media3:media3-datasource-okhttp:1.11.0")
-    implementation("androidx.media3:media3-database:1.11.0")
-    // Internet radio stations that stream HLS rather than Icecast.
-    implementation("androidx.media3:media3-exoplayer-hls:1.11.0")
-    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-guava:1.11.0")
+    // Services, library, settings and the player service, shared with the watch app.
+    implementation(project(":core"))
 
     // ---- QR codes: the Listen together invite. Encoder only; no Android parts. ----
     implementation("com.google.zxing:core:3.5.4")
@@ -168,28 +130,6 @@ dependencies {
     // ---- Images ----
     implementation("io.coil-kt.coil3:coil-compose:3.0.4")
     implementation("io.coil-kt.coil3:coil-network-okhttp:3.0.4")
-
-    // ---- Innertube (YouTube Music) client: Ktor + kotlinx.serialization ----
-    implementation("io.ktor:ktor-client-core:3.5.2")
-    implementation("io.ktor:ktor-client-okhttp:3.5.2")
-    implementation("io.ktor:ktor-client-content-negotiation:3.5.2")
-    implementation("io.ktor:ktor-serialization-kotlinx-json:3.5.2")
-
-    // ---- InnerTubeX: a second stream extractor (client catalog, cipher tiers, PoTokens) ----
-    // Ktor and serialization above are held at its versions.
-    implementation("com.github.MetrolistGroup.innertubex:innertubex-android:v0.7.4")
-    implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.11.0")
-
-    // ---- Stream resolution: NewPipe solves YouTube's signature + `n` throttling ----
-    // Pinned to v0.26.3: the newer v0.26.4's player-JS parser fails to parse
-    // the current player build's deobfuscation function.
-    implementation(files(newPipeExtractorStripped))
-    implementation("com.github.TeamNewPipe:nanojson:e9d656ddb49a412a5a0a5d5ef20ca7ef09549996")
-    implementation("org.jsoup:jsoup:1.22.2")
-    implementation("com.google.code.findbugs:jsr305:3.0.2")
-    implementation("com.google.protobuf:protobuf-javalite:4.35.0")
-    implementation("org.mozilla:rhino:1.8.1")
-    implementation("org.mozilla:rhino-engine:1.8.1")
 
     testImplementation("junit:junit:4.13.2")
     testImplementation("org.robolectric:robolectric:4.17")

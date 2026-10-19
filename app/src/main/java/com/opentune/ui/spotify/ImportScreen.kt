@@ -386,7 +386,7 @@ private fun ProgressCard(p: PlaylistImport.Progress, actions: SongActions, onOpe
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Text(p.name, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
             when {
-                p.error != null -> Text(p.error, color = MaterialTheme.colorScheme.error)
+                p.error != null -> Text(p.error!!, color = MaterialTheme.colorScheme.error)
                 p.total == 0 && !p.finished -> {
                     Text("Getting started…")
                     LinearProgressIndicator(Modifier.fillMaxWidth())

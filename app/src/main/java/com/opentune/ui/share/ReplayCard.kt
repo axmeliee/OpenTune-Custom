@@ -197,7 +197,7 @@ object ReplayCard {
                 photo?.let { load(it, 200) } ?: load(a.thumbnailUrl, 200)
             }
         }
-        val logo = runCatching { ContextCompat.getDrawable(context, R.drawable.ic_stat_opentune)?.toBitmap(96, 96) }.getOrNull()
+        val logo = runCatching { ContextCompat.getDrawable(context, com.opentune.core.R.drawable.ic_stat_opentune)?.toBitmap(96, 96) }.getOrNull()
         Images(songs.awaitAll(), artists.awaitAll(), albums.awaitAll(), logo)
     }
 

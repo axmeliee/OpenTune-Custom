@@ -55,6 +55,9 @@ class OpenTuneApp : Application(), SingletonImageLoader.Factory {
     @androidx.annotation.OptIn(androidx.media3.common.util.UnstableApi::class)
     override fun onCreate() {
         super.onCreate()
+        // The home-screen widget follows the shared player service.
+        com.opentune.data.AppHooks.onPlayerChanged = { context, player -> com.opentune.widget.NowPlayingWidget.refresh(context, player) }
+        com.opentune.data.AppHooks.onPlayerStopped = { context -> com.opentune.widget.NowPlayingWidget.stopped(context) }
         // Media3's warnings and errors (a failed load, a decoder that won't
         // start) into the app's own log as well as logcat, for "Copy log".
         androidx.media3.common.util.Log.setLogger(object : androidx.media3.common.util.Log.Logger {
