@@ -44,4 +44,50 @@ class DesktopTest {
         Library.setLiked(song, false)
         assertFalse(Library.isLiked(song.videoId))
     }
+
+    @Test fun playlistsKeepTheirSongsInOrderBetweenRuns() {
+        val file = Files.createTempDirectory("opentune").resolve("desktop.json").toFile()
+        Library.useFile(file)
+        val a = Song("aaaaaaaaaaa", "Lanterns", "River Choir", "https://example.com/a.jpg")
+        val b = Song("bbbbbbbbbbb", "Paper Boats", "River Choir", "https://example.com/b.jpg")
+        val id = Library.createPlaylist("  Evening  ")
+        Library.addToPlaylist(id, a)
+        Library.addToPlaylist(id, b)
+        Library.addToPlaylist(id, a) // already there
+        Library.useFile(file)
+        val p = Library.playlists.value.single()
+        assertEquals("Evening", p.name)
+        assertEquals(listOf("aaaaaaaaaaa", "bbbbbbbbbbb"), p.songs.map { it.id })
+        assertEquals(listOf("https://example.com/a.jpg", "https://example.com/b.jpg"), p.covers)
+        Library.removeFromPlaylist(id, "aaaaaaaaaaa")
+        Library.renamePlaylist(id, "")
+        assertEquals("Evening", Library.playlists.value.single().name)
+        assertEquals(listOf("bbbbbbbbbbb"), Library.playlists.value.single().songs.map { it.id })
+        Library.deletePlaylist(id)
+        assertTrue(Library.playlists.value.isEmpty())
+    }
+
+    /** The stand-in for Android's preferences, which the shared settings and Subsonic code save through. */
+    @Test fun preferencesAreWrittenAndReadBack() {
+        val root = Files.createTempDirectory("opentune").toFile()
+        val prefs = android.content.Context(root).getSharedPreferences("settings", android.content.Context.MODE_PRIVATE)
+        prefs.edit().putString("state", "{\"a\":1}").putInt("n", 3).putBoolean("on", true).apply()
+        val again = android.content.Context(root).getSharedPreferences("settings", android.content.Context.MODE_PRIVATE)
+        assertEquals("{\"a\":1}", again.getString("state", null))
+        assertEquals(3, again.getInt("n", 0))
+        assertTrue(again.getBoolean("on", false))
+        assertTrue(again.contains("n"))
+        again.edit().remove("n").commit()
+        assertFalse(android.content.Context(root).getSharedPreferences("settings", 0).contains("n"))
+    }
+
+    @Test fun settingsSurviveARestart() {
+        val root = Files.createTempDirectory("opentune").toFile()
+        com.opentune.data.settings.AppSettings.init(android.content.Context(root))
+        com.opentune.data.settings.AppSettings.addRecentSearch("lofi")
+        com.opentune.data.settings.AppSettings.setLyricsOffset("dQw4w9WgXcQ", 250)
+        com.opentune.data.settings.AppSettings.init(android.content.Context(root))
+        assertEquals(listOf("lofi"), com.opentune.data.settings.AppSettings.recentSearches.value)
+        assertEquals(250L, com.opentune.data.settings.AppSettings.lyrics.value.offsets["dQw4w9WgXcQ"])
+    }
 }

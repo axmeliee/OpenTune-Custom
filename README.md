@@ -297,11 +297,15 @@ iOS 16 or newer.
   It asks for headphones rather than playing from the watch's speaker.
 - **Desktop (early).** A Windows, macOS and Linux app (`desktop/`, run it
   with `./gradlew :desktop:run`; CI builds an MSI, DMG and DEB). It has
-  Home, search, albums, playlists, artists and podcasts, a queue that
-  carries on with YouTube Music's up-next, and liked and recent songs kept
-  on your computer. It uses the phone app's YouTube Music client as-is, but
-  finds streams with NewPipe only, so some songs don't play yet. On Linux
-  it needs FFmpeg's libraries (libavcodec) for audio.
+  Home, search with recent searches, albums, playlists, artists and
+  podcasts, a queue that carries on with YouTube Music's up-next, synced
+  lyrics from the phone's sources (lit word by word, with a per-song source
+  and offset), your own playlists, liked and recent songs, your own
+  Subsonic server, the 15-band equalizer and its presets, speed,
+  balance and a sleep timer. It uses the phone app's code for YouTube Music,
+  lyrics, Subsonic and settings as-is, but finds streams with
+  NewPipe only, so some songs don't play yet. Signing in to YouTube Music
+  isn't there. On Linux it needs FFmpeg's libraries (libavcodec) for audio.
 - **Opens YouTube links.** music.youtube.com, youtube.com and youtu.be
   links, or links shared to the app, open in OpenTune.
 

@@ -31,23 +31,30 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.QueueMusic
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
+import androidx.compose.material.icons.automirrored.rounded.PlaylistAdd
 import androidx.compose.material.icons.automirrored.rounded.QueueMusic
 import androidx.compose.material.icons.automirrored.rounded.VolumeUp
 import androidx.compose.material.icons.outlined.Home
 import androidx.compose.material.icons.outlined.LibraryMusic
+import androidx.compose.material.icons.outlined.Settings
+import androidx.compose.material.icons.rounded.Bedtime
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.ExpandMore
 import androidx.compose.material.icons.rounded.Favorite
 import androidx.compose.material.icons.rounded.FavoriteBorder
+import androidx.compose.material.icons.rounded.History
 import androidx.compose.material.icons.rounded.Home
+import androidx.compose.material.icons.rounded.Lyrics
 import androidx.compose.material.icons.rounded.LibraryMusic
 import androidx.compose.material.icons.rounded.Pause
 import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material.icons.rounded.SearchOff
+import androidx.compose.material.icons.rounded.Settings
 import androidx.compose.material.icons.rounded.SkipNext
 import androidx.compose.material.icons.rounded.SkipPrevious
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -95,14 +102,17 @@ import androidx.compose.ui.unit.dp
 import coil3.compose.AsyncImage
 import com.opentune.data.model.ShelfItem
 import com.opentune.data.model.Song
+import com.opentune.data.settings.AppSettings
+import com.opentune.data.subsonic.Subsonic
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
-/** The dock's tabs, as on the phone; search sits apart in its own circle. */
-private enum class Tab(val label: String, val icon: ImageVector, val selectedIcon: ImageVector) {
+/** The pages, in the sidebar and (all but Settings) the dock; search sits apart in its own circle. */
+private enum class Tab(val label: String, val icon: ImageVector, val selectedIcon: ImageVector, val inDock: Boolean = true) {
     HOME("Home", Icons.Outlined.Home, Icons.Rounded.Home),
     LIBRARY("Library", Icons.Outlined.LibraryMusic, Icons.Rounded.LibraryMusic),
     QUEUE("Up next", Icons.AutoMirrored.Outlined.QueueMusic, Icons.AutoMirrored.Rounded.QueueMusic),
+    SETTINGS("Settings", Icons.Outlined.Settings, Icons.Rounded.Settings, inDock = false),
 }
 
 private val DOCK_HEIGHT = 64.dp
@@ -132,8 +142,9 @@ fun DesktopApp() {
         when {
             collection != null -> CollectionPage(collection, onBack = { opened = null })
             searching -> SearchPage(if (sidebarSearch) searchFor.orEmpty() else null)
-            tab == Tab.HOME -> HomePage(onOpen = { opened = it })
+            tab == Tab.HOME -> HomePage(onOpen = { opened = it }, onSettings = { tab = Tab.SETTINGS })
             tab == Tab.LIBRARY -> LibraryPage()
+            tab == Tab.SETTINGS -> SettingsPage()
             else -> SongPage("Up next", queue, "The queue is empty.", current = index, onPlay = { _, i -> Player.playAt(i) })
         }
     }
@@ -187,10 +198,10 @@ fun DesktopApp() {
 private val WIDE = 980.dp
 
 /** Whether the pages sit beside the sidebar, which already carries the mark. */
-private val LocalWide = staticCompositionLocalOf { false }
+internal val LocalWide = staticCompositionLocalOf { false }
 
 /** Room under each page's last row: above the dock and mini player, or a little in a wide window. */
-private val LocalPageBottom = staticCompositionLocalOf { PAGE_BOTTOM }
+internal val LocalPageBottom = staticCompositionLocalOf { PAGE_BOTTOM }
 
 // ---- Wide window ---------------------------------------------------------------
 
@@ -227,8 +238,11 @@ private fun Sidebar(selected: Tab?, searching: Boolean, onSelect: (Tab) -> Unit,
         )
         Spacer(Modifier.height(14.dp))
         Text("MUSIC", style = MaterialTheme.typography.labelSmall, color = scheme.onSurfaceVariant, modifier = Modifier.padding(start = 10.dp, top = 6.dp, bottom = 6.dp))
-        Tab.entries.forEach { t -> SidebarItem(t.label, if (t == selected) t.selectedIcon else t.icon, t == selected) { onSelect(t) } }
+        Tab.entries.filter { it.inDock }.forEach { t -> SidebarItem(t.label, if (t == selected) t.selectedIcon else t.icon, t == selected) { onSelect(t) } }
         SidebarItem("Search", Icons.Rounded.Search, searching) { query.trim().takeIf { it.isNotEmpty() }?.let(onSearch) ?: onSearch("") }
+        Spacer(Modifier.weight(1f))
+        val settings = Tab.SETTINGS
+        SidebarItem(settings.label, if (settings == selected) settings.selectedIcon else settings.icon, settings == selected) { onSelect(settings) }
     }
 }
 
@@ -348,7 +362,7 @@ private fun Dock(selected: Tab?, onSelect: (Tab) -> Unit, modifier: Modifier) {
     val pill = RoundedCornerShape(percent = 50)
     val accent = MaterialTheme.colorScheme.primary
     Row(modifier.height(DOCK_HEIGHT).floating(pill).padding(DOCK_INSET)) {
-        Tab.entries.forEach { t ->
+        Tab.entries.filter { it.inDock }.forEach { t ->
             val on = t == selected
             val ink = if (on) accent else MaterialTheme.colorScheme.onSurfaceVariant
             Column(
@@ -423,9 +437,53 @@ private fun MiniPlayer(song: Song, onOpen: () -> Unit) {
     }
 }
 
-/** The full player over everything: big cover, names, seek bar, controls, volume. */
+/**
+ * The full player over everything: big cover, names, seek bar, controls,
+ * volume. Lyrics sit beside it in a wide window, or take the cover's place
+ * in a narrow one.
+ */
 @Composable
 private fun NowPlaying(song: Song, onClose: () -> Unit) {
+    var showLyrics by remember { mutableStateOf(true) }
+    Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background).clickable(enabled = false) {}) {
+        // The cover, faint, behind everything.
+        AsyncImage(Subsonic.resolveCover(song.thumbnailUrl), null, contentScale = ContentScale.Crop, alpha = 0.18f, modifier = Modifier.fillMaxSize())
+        Box(Modifier.fillMaxSize().background(Brush.verticalGradient(listOf(Color.Black.copy(alpha = 0.4f), Color.Black))))
+        IconButton(onClick = onClose, modifier = Modifier.padding(16.dp).align(Alignment.TopStart)) { Icon(Icons.Rounded.ExpandMore, "Close", Modifier.size(30.dp)) }
+        BoxWithConstraints(Modifier.fillMaxSize().padding(horizontal = 48.dp, vertical = 56.dp)) {
+            val beside = maxWidth >= 900.dp
+            val (roomHigh, roomWide) = maxHeight to maxWidth
+            if (beside && showLyrics) {
+                Row(Modifier.fillMaxSize(), horizontalArrangement = Arrangement.spacedBy(48.dp), verticalAlignment = Alignment.CenterVertically) {
+                    BoxWithConstraints(Modifier.weight(1f).fillMaxHeight()) {
+                        val coverSize = minOf(maxHeight - 280.dp, maxWidth * 0.8f, 420.dp).coerceAtLeast(140.dp)
+                        Column(Modifier.fillMaxSize(), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
+                            Cover(song.thumbnailUrl, coverSize, RoundedCornerShape(24.dp), Modifier.shadow(24.dp, RoundedCornerShape(24.dp)))
+                            Spacer(Modifier.height(28.dp))
+                            PlayerControls(song, showLyrics) { showLyrics = !showLyrics }
+                        }
+                    }
+                    LyricsPane(song, Modifier.weight(1f).fillMaxHeight())
+                }
+            } else {
+                Column(Modifier.fillMaxSize(), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
+                    if (showLyrics) {
+                        LyricsPane(song, Modifier.weight(1f).widthIn(max = 640.dp).fillMaxWidth())
+                    } else {
+                        val coverSize = minOf(roomHigh - 280.dp, roomWide * 0.45f, 460.dp).coerceAtLeast(160.dp)
+                        Cover(song.thumbnailUrl, coverSize, RoundedCornerShape(24.dp), Modifier.shadow(24.dp, RoundedCornerShape(24.dp)))
+                    }
+                    Spacer(Modifier.height(28.dp))
+                    PlayerControls(song, showLyrics) { showLyrics = !showLyrics }
+                }
+            }
+        }
+    }
+}
+
+/** Names, like, the lyrics switch, seek bar, the buttons and volume, under the cover. */
+@Composable
+private fun PlayerControls(song: Song, showLyrics: Boolean, onLyrics: () -> Unit) {
     val playing by Player.playing.collectAsState()
     val loading by Player.loading.collectAsState()
     val error by Player.error.collectAsState()
@@ -433,74 +491,95 @@ private fun NowPlaying(song: Song, onClose: () -> Unit) {
     val liked by Library.liked.collectAsState()
     val progress = rememberProgress(song)
     var dragging by remember { mutableStateOf<Float?>(null) }
+    var adding by remember { mutableStateOf(false) }
+    var timing by remember { mutableStateOf(false) }
+    val sleep by Player.sleep.collectAsState()
     val isLiked = liked.any { it.videoId == song.videoId }
     val faint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.18f)
-    Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background).clickable(enabled = false) {}) {
-        // The cover, faint, behind everything.
-        AsyncImage(song.thumbnailUrl, null, contentScale = ContentScale.Crop, alpha = 0.18f, modifier = Modifier.fillMaxSize())
-        Box(Modifier.fillMaxSize().background(Brush.verticalGradient(listOf(Color.Black.copy(alpha = 0.4f), Color.Black))))
-        IconButton(onClick = onClose, modifier = Modifier.padding(16.dp).align(Alignment.TopStart)) { Icon(Icons.Rounded.ExpandMore, "Close", Modifier.size(30.dp)) }
-        BoxWithConstraints(Modifier.fillMaxSize().padding(horizontal = 48.dp, vertical = 56.dp)) {
-            val coverSize = minOf(maxHeight - 280.dp, maxWidth * 0.45f, 460.dp).coerceAtLeast(160.dp)
-            Column(Modifier.fillMaxSize(), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
-                Cover(song.thumbnailUrl, coverSize, RoundedCornerShape(24.dp), Modifier.shadow(24.dp, RoundedCornerShape(24.dp)))
-                Spacer(Modifier.height(28.dp))
-                Row(Modifier.widthIn(max = 560.dp).fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                    Column(Modifier.weight(1f)) {
-                        Text(song.title, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                        Text(
-                            error ?: song.artist, style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis,
-                            color = if (error != null) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                    }
-                    IconButton(onClick = { Library.setLiked(song, !isLiked) }) {
-                        Icon(
-                            if (isLiked) Icons.Rounded.Favorite else Icons.Rounded.FavoriteBorder, if (isLiked) "Unlike" else "Like",
-                            tint = if (isLiked) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
-                        )
-                    }
-                }
-                Column(Modifier.widthIn(max = 560.dp).fillMaxWidth().padding(top = 12.dp)) {
-                    Slider(
-                        value = dragging ?: progress.fraction(),
-                        onValueChange = { dragging = it },
-                        onValueChangeFinished = { dragging?.let { Player.seekTo((it * progress.durationMs).toLong()) }; dragging = null },
-                        enabled = progress.durationMs > 0,
-                        colors = SliderDefaults.colors(inactiveTrackColor = faint),
-                    )
-                    Row {
-                        Text(Time.format(progress.positionMs), style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        Spacer(Modifier.weight(1f))
-                        Text(Time.format(progress.durationMs), style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    }
-                }
-                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(28.dp), modifier = Modifier.padding(top = 8.dp)) {
-                    IconButton(onClick = Player::previous, modifier = Modifier.size(56.dp)) { Icon(Icons.Rounded.SkipPrevious, "Previous", Modifier.size(38.dp)) }
-                    Box(
-                        Modifier.size(76.dp).clip(CircleShape).background(MaterialTheme.colorScheme.onSurface).clickable(onClick = Player::toggle),
-                        contentAlignment = Alignment.Center,
-                    ) {
-                        if (loading) {
-                            CircularProgressIndicator(Modifier.size(34.dp), color = MaterialTheme.colorScheme.surface, strokeWidth = 3.dp)
-                        } else {
-                            Icon(
-                                if (playing) Icons.Rounded.Pause else Icons.Rounded.PlayArrow, if (playing) "Pause" else "Play",
-                                tint = MaterialTheme.colorScheme.surface, modifier = Modifier.size(40.dp),
-                            )
-                        }
-                    }
-                    IconButton(onClick = Player::next, modifier = Modifier.size(56.dp)) { Icon(Icons.Rounded.SkipNext, "Next", Modifier.size(38.dp)) }
-                }
-                Row(Modifier.widthIn(max = 320.dp).fillMaxWidth().padding(top = 18.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Icon(Icons.AutoMirrored.Rounded.VolumeUp, "Volume", tint = MaterialTheme.colorScheme.onSurfaceVariant)
-                    var level by remember { mutableFloatStateOf(volume.toFloat()) }
-                    Slider(
-                        value = level, onValueChange = { level = it; Player.setVolume(it.toDouble()) },
-                        colors = SliderDefaults.colors(inactiveTrackColor = faint),
-                        modifier = Modifier.weight(1f).padding(start = 10.dp),
+    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+        Row(Modifier.widthIn(max = 560.dp).fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            Column(Modifier.weight(1f)) {
+                Text(song.title, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Text(
+                    error ?: song.artist, style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis,
+                    color = if (error != null) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            IconButton(onClick = onLyrics) {
+                Icon(
+                    Icons.Rounded.Lyrics, if (showLyrics) "Hide lyrics" else "Show lyrics",
+                    tint = if (showLyrics) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
+                )
+            }
+            Box {
+                IconButton(onClick = { adding = true }) { Icon(Icons.AutoMirrored.Rounded.PlaylistAdd, "Add to playlist") }
+                AddToPlaylistMenu(song, adding) { adding = false }
+            }
+            IconButton(onClick = { Library.setLiked(song, !isLiked) }) {
+                Icon(
+                    if (isLiked) Icons.Rounded.Favorite else Icons.Rounded.FavoriteBorder, if (isLiked) "Unlike" else "Like",
+                    tint = if (isLiked) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
+                )
+            }
+        }
+        Column(Modifier.widthIn(max = 560.dp).fillMaxWidth().padding(top = 12.dp)) {
+            Slider(
+                value = dragging ?: progress.fraction(),
+                onValueChange = { dragging = it },
+                onValueChangeFinished = { dragging?.let { Player.seekTo((it * progress.durationMs).toLong()) }; dragging = null },
+                enabled = progress.durationMs > 0,
+                colors = SliderDefaults.colors(inactiveTrackColor = faint),
+            )
+            Row {
+                Text(Time.format(progress.positionMs), style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Spacer(Modifier.weight(1f))
+                Text(Time.format(progress.durationMs), style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+        }
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(28.dp), modifier = Modifier.padding(top = 8.dp)) {
+            IconButton(onClick = Player::previous, modifier = Modifier.size(56.dp)) { Icon(Icons.Rounded.SkipPrevious, "Previous", Modifier.size(38.dp)) }
+            Box(
+                Modifier.size(76.dp).clip(CircleShape).background(MaterialTheme.colorScheme.onSurface).clickable(onClick = Player::toggle),
+                contentAlignment = Alignment.Center,
+            ) {
+                if (loading) {
+                    CircularProgressIndicator(Modifier.size(34.dp), color = MaterialTheme.colorScheme.surface, strokeWidth = 3.dp)
+                } else {
+                    Icon(
+                        if (playing) Icons.Rounded.Pause else Icons.Rounded.PlayArrow, if (playing) "Pause" else "Play",
+                        tint = MaterialTheme.colorScheme.surface, modifier = Modifier.size(40.dp),
                     )
                 }
             }
+            IconButton(onClick = Player::next, modifier = Modifier.size(56.dp)) { Icon(Icons.Rounded.SkipNext, "Next", Modifier.size(38.dp)) }
+        }
+        Row(Modifier.widthIn(max = 380.dp).fillMaxWidth().padding(top = 18.dp), verticalAlignment = Alignment.CenterVertically) {
+            Icon(Icons.AutoMirrored.Rounded.VolumeUp, "Volume", tint = MaterialTheme.colorScheme.onSurfaceVariant)
+            var level by remember { mutableFloatStateOf(volume.toFloat()) }
+            Slider(
+                value = level, onValueChange = { level = it; Player.setVolume(it.toDouble()) },
+                colors = SliderDefaults.colors(inactiveTrackColor = faint),
+                modifier = Modifier.weight(1f).padding(start = 10.dp),
+            )
+            Box {
+                IconButton(onClick = { timing = true }) {
+                    Icon(
+                        Icons.Rounded.Bedtime, "Sleep timer",
+                        tint = if (sleep != null) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                DropdownMenu(timing, onDismissRequest = { timing = false }) {
+                    Box(Modifier.padding(horizontal = 16.dp, vertical = 8.dp).widthIn(max = 300.dp)) { SleepChips(sleep) }
+                }
+            }
+        }
+        (sleep as? Player.Sleep.At)?.let { at ->
+            var left by remember { mutableLongStateOf(0L) }
+            LaunchedEffect(at) { while (true) { left = at.epochMs - System.currentTimeMillis(); delay(1_000) } }
+            Text("Stopping in ${Time.format(left)}", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
+        }
+        if (sleep == Player.Sleep.EndOfSong) {
+            Text("Stopping after this song", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
         }
     }
 }
@@ -548,7 +627,7 @@ private fun ProgressRing(progress: () -> Float, stroke: Dp, modifier: Modifier) 
 // ---- Pages -------------------------------------------------------------------
 
 @Composable
-private fun HomePage(onOpen: (ShelfItem) -> Unit) {
+private fun HomePage(onOpen: (ShelfItem) -> Unit, onSettings: () -> Unit) {
     var shelves by remember { mutableStateOf<List<Pages.Shelf>?>(null) }
     var failed by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
@@ -564,7 +643,9 @@ private fun HomePage(onOpen: (ShelfItem) -> Unit) {
                 PageTitle(greeting())
                 Spacer(Modifier.weight(1f))
                 if (!LocalWide.current) {
-                    androidx.compose.foundation.Image(rememberLogo(Logo.MARK), "OpenTune", Modifier.padding(end = 24.dp).size(width = 34.dp, height = 26.dp))
+                    // The sidebar carries the mark and Settings in a wide window; here they sit by the greeting.
+                    IconButton(onClick = onSettings) { Icon(Icons.Outlined.Settings, "Settings", tint = MaterialTheme.colorScheme.onSurfaceVariant) }
+                    androidx.compose.foundation.Image(rememberLogo(Logo.MARK), "OpenTune", Modifier.padding(start = 4.dp, end = 24.dp).size(width = 34.dp, height = 26.dp))
                 }
             }
         }
@@ -603,8 +684,10 @@ private fun SearchPage(fromSidebar: String? = null) {
     var searching by remember { mutableStateOf(false) }
     var failed by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
+    val recentSearches by AppSettings.recentSearches.collectAsState()
     fun run() {
         val q = query.trim().takeIf { it.isNotEmpty() } ?: return
+        AppSettings.addRecentSearch(q)
         searching = true
         failed = false
         scope.launch {
@@ -642,6 +725,7 @@ private fun SearchPage(fromSidebar: String? = null) {
         when {
             searching -> Loading()
             failed -> Message("Couldn't search", "Check your connection and try again.")
+            found == null && recentSearches.isNotEmpty() -> RecentSearches(recentSearches) { query = it; run() }
             found == null -> Message("Find something to play", "Search for a song or an artist.", icon = Icons.Rounded.Search)
             found.isEmpty() -> Message("No results", "Try different words.", icon = Icons.Rounded.SearchOff)
             else -> SongList(found) { songs, i -> Player.playAll(songs, i) }
@@ -649,34 +733,61 @@ private fun SearchPage(fromSidebar: String? = null) {
     }
 }
 
+/** What you searched for lately, as the phone lists it under the search box. */
 @Composable
-private fun LibraryPage() {
-    var recent by remember { mutableStateOf(false) }
-    val liked by Library.liked.collectAsState()
-    val played by Library.recent.collectAsState()
-    Column(Modifier.fillMaxSize().padding(top = 24.dp)) {
-        PageTitle("Library")
-        Row(Modifier.padding(horizontal = 24.dp, vertical = 8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            FilterChip(!recent, { recent = false }, label = { Text("Liked songs") })
-            FilterChip(recent, { recent = true }, label = { Text("Recent") })
+private fun RecentSearches(queries: List<String>, onPick: (String) -> Unit) {
+    Column(Modifier.fillMaxWidth().padding(top = 8.dp)) {
+        Row(Modifier.padding(horizontal = 24.dp), verticalAlignment = Alignment.CenterVertically) {
+            Text("Recent searches", style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f))
+            TextButton(onClick = AppSettings::clearRecentSearches) { Text("Clear") }
         }
-        val songs = if (recent) played else liked
-        if (songs.isEmpty()) {
-            Message(
-                if (recent) "Nothing played yet" else "No liked songs yet",
-                if (recent) "Songs you play show here." else "Tap the heart on a song to keep it here.",
-            )
-        } else {
-            SongList(songs) { s, i -> Player.playAll(s, i) }
+        queries.forEach { q ->
+            Row(
+                Modifier.fillMaxWidth().clickable { onPick(q) }.padding(start = 24.dp, end = 12.dp, top = 2.dp, bottom = 2.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Icon(Icons.Rounded.History, null, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(20.dp))
+                Text(q, style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f).padding(start = 14.dp))
+                IconButton(onClick = { AppSettings.removeRecentSearch(q) }) {
+                    Icon(Icons.Rounded.Close, "Remove", tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(18.dp))
+                }
+            }
         }
     }
 }
+
+/** Liked songs, your playlists, and what you played lately. */
+@Composable
+private fun LibraryPage() {
+    var shelf by remember { mutableStateOf(Shelf.LIKED) }
+    var playlist by remember { mutableStateOf<String?>(null) }
+    val liked by Library.liked.collectAsState()
+    val played by Library.recent.collectAsState()
+    val server by Subsonic.server.collectAsState()
+    playlist?.let { id -> return PlaylistPage(id, onBack = { playlist = null }) }
+    Column(Modifier.fillMaxSize().padding(top = 24.dp)) {
+        PageTitle("Library")
+        Row(Modifier.padding(horizontal = 24.dp, vertical = 8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Shelf.entries.filter { it != Shelf.SERVER || server != null }.forEach { s -> FilterChip(shelf == s, { shelf = s }, label = { Text(s.label) }) }
+        }
+        when (shelf) {
+            Shelf.PLAYLISTS -> PlaylistGrid(onOpen = { playlist = it })
+            Shelf.LIKED -> if (liked.isEmpty()) Message("No liked songs yet", "Click the heart on a song to keep it here.")
+                else SongList(liked) { s, i -> Player.playAll(s, i) }
+            Shelf.SERVER -> if (server != null) ServerShelf() else Message("No music server connected", "Connect one in Settings.")
+            Shelf.RECENT -> if (played.isEmpty()) Message("Nothing played yet", "Songs you play show here.")
+                else SongList(played) { s, i -> Player.playAll(s, i) }
+        }
+    }
+}
+
+private enum class Shelf(val label: String) { LIKED("Liked songs"), PLAYLISTS("Playlists"), SERVER("Your server"), RECENT("Recent") }
 
 @Composable
 private fun SongPage(title: String, songs: List<Song>, empty: String, current: Int = -1, onPlay: (List<Song>, Int) -> Unit) {
     Column(Modifier.fillMaxSize().padding(top = 24.dp)) {
         PageTitle(title)
-        if (songs.isEmpty()) Message(empty, null) else SongList(songs, current, onPlay)
+        if (songs.isEmpty()) Message(empty, null) else SongList(songs, current, onPlay = onPlay)
     }
 }
 
@@ -720,8 +831,9 @@ private fun CollectionPage(item: ShelfItem, onBack: () -> Unit) {
 
 // ---- Rows and cards ----------------------------------------------------------
 
+/** Songs, one to a row: play on click, add to a playlist, like, and [onRemove] where a list can lose them. */
 @Composable
-private fun SongList(songs: List<Song>, current: Int = -1, onPlay: (List<Song>, Int) -> Unit) {
+internal fun SongList(songs: List<Song>, current: Int = -1, onRemove: ((Song) -> Unit)? = null, onPlay: (List<Song>, Int) -> Unit) {
     val liked by Library.liked.collectAsState()
     val queue by Player.queue.collectAsState()
     val index by Player.index.collectAsState()
@@ -730,6 +842,7 @@ private fun SongList(songs: List<Song>, current: Int = -1, onPlay: (List<Song>, 
         itemsIndexed(songs, key = { i, s -> "$i:${s.videoId}" }) { i, song ->
             val isLiked = liked.any { it.videoId == song.videoId }
             val isCurrent = if (current >= 0) i == current else song.videoId == playingId
+            var adding by remember { mutableStateOf(false) }
             Row(
                 Modifier.fillMaxWidth().clickable { onPlay(songs, i) }.padding(horizontal = 16.dp, vertical = 6.dp),
                 verticalAlignment = Alignment.CenterVertically,
@@ -745,11 +858,22 @@ private fun SongList(songs: List<Song>, current: Int = -1, onPlay: (List<Song>, 
                         maxLines = 1, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
+                Box {
+                    IconButton(onClick = { adding = true }) {
+                        Icon(Icons.AutoMirrored.Rounded.PlaylistAdd, "Add to playlist", tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                    AddToPlaylistMenu(song, adding) { adding = false }
+                }
                 IconButton(onClick = { Library.setLiked(song, !isLiked) }) {
                     Icon(
                         if (isLiked) Icons.Rounded.Favorite else Icons.Rounded.FavoriteBorder, if (isLiked) "Unlike" else "Like",
                         tint = if (isLiked) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
                     )
+                }
+                if (onRemove != null) {
+                    IconButton(onClick = { onRemove(song) }) {
+                        Icon(Icons.Rounded.Close, "Remove", tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
                 }
             }
         }
@@ -757,7 +881,7 @@ private fun SongList(songs: List<Song>, current: Int = -1, onPlay: (List<Song>, 
 }
 
 @Composable
-private fun Card(item: ShelfItem, onClick: () -> Unit) {
+internal fun Card(item: ShelfItem, onClick: () -> Unit) {
     val round = item.browseId?.startsWith("UC") == true
     val align = if (round) TextAlign.Center else TextAlign.Start
     Column(Modifier.width(160.dp).clip(MaterialTheme.shapes.medium).clickable(onClick = onClick).padding(bottom = 4.dp)) {
@@ -771,9 +895,10 @@ private fun Card(item: ShelfItem, onClick: () -> Unit) {
 }
 
 @Composable
-private fun Cover(url: String?, size: Dp, shape: Shape, modifier: Modifier = Modifier) {
+internal fun Cover(url: String?, size: Dp, shape: Shape, modifier: Modifier = Modifier) {
     AsyncImage(
-        model = url,
+        // A song on your own server carries a reference to its cover, without the credentials.
+        model = Subsonic.resolveCover(url),
         contentDescription = null,
         contentScale = ContentScale.Crop,
         modifier = modifier.size(size).aspectRatio(1f).clip(shape).background(MaterialTheme.colorScheme.surfaceContainerHigh),
@@ -782,17 +907,17 @@ private fun Cover(url: String?, size: Dp, shape: Shape, modifier: Modifier = Mod
 
 /** A page's big bold name, as the phone's pages start. */
 @Composable
-private fun PageTitle(text: String) {
+internal fun PageTitle(text: String) {
     Text(text, style = MaterialTheme.typography.headlineLarge, modifier = Modifier.padding(horizontal = 24.dp, vertical = 4.dp))
 }
 
 @Composable
-private fun Loading() {
+internal fun Loading() {
     Box(Modifier.fillMaxWidth().padding(48.dp), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
 }
 
 @Composable
-private fun Message(title: String, message: String?, icon: ImageVector? = null, action: Pair<String, () -> Unit>? = null) {
+internal fun Message(title: String, message: String?, icon: ImageVector? = null, action: Pair<String, () -> Unit>? = null) {
     Column(Modifier.fillMaxWidth().padding(48.dp), horizontalAlignment = Alignment.CenterHorizontally) {
         icon?.let { Icon(it, null, Modifier.size(40.dp).padding(bottom = 8.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant) }
         Text(title, style = MaterialTheme.typography.titleMedium)

@@ -10,7 +10,9 @@ plugins {
 /*
  * OpenTune for Windows, macOS and Linux. It compiles the parts of :core
  * that are plain Kotlin as they are: the YouTube Music client and parser,
- * the song models and the HTTP client. Everything else, the player
+ * the song models, the HTTP client, settings, lyrics and Subsonic.
+ * The few Android classes those touch (Context, SharedPreferences, Log)
+ * have desktop stand-ins in src/shim. Everything else, the player
  * included, is its own. Nothing from core's lossless code is part of it.
  */
 // core makes the NewPipe jar used below.
@@ -31,6 +33,20 @@ val sharedFromCore = listOf(
     "com/opentune/data/Http.kt",
     "com/opentune/data/DebugLog.kt",
     "com/opentune/data/AppLog.kt",
+    "com/opentune/data/TrackIds.kt",
+    "com/opentune/data/settings/AppSettings.kt",
+    // Lyrics from every source the phone asks, without the romanizer (Android's ICU).
+    "com/opentune/data/lyrics/Lyrics.kt",
+    "com/opentune/data/lyrics/LyricsRepository.kt",
+    "com/opentune/data/lyrics/LyricsQuality.kt",
+    "com/opentune/data/lyrics/SongParts.kt",
+    "com/opentune/data/lyrics/BetterLyrics.kt",
+    "com/opentune/data/lyrics/KuGou.kt",
+    "com/opentune/data/lyrics/LyricsPlus.kt",
+    "com/opentune/data/lyrics/NetEase.kt",
+    "com/opentune/data/lyrics/SimpMusic.kt",
+    "com/opentune/data/lyrics/YouTubeCaptions.kt",
+    "com/opentune/data/subsonic/Subsonic.kt",
     // NewPipe's patched helper, see that file.
     "org/schabi/newpipe/extractor/utils/Utils.java",
 )
@@ -62,7 +78,8 @@ sourceSets {
         kotlin {
             srcDir(coreSources)
             srcDir(generateBuildConfig)
-            include("com/opentune/desktop/**", "com/opentune/core/**")
+            srcDir("src/shim/kotlin")
+            include("com/opentune/desktop/**", "com/opentune/core/**", "shim/**")
             include(sharedFromCore.filter { it.endsWith(".kt") || it.endsWith("**") })
         }
         java {

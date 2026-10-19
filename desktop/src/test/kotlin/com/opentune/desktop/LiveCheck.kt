@@ -57,4 +57,13 @@ class LiveCheck {
         assertTrue("didn't advance", at > 1.0)
         javafx.application.Platform.runLater { player.dispose() }
     }
+
+    /** The phone's lyrics sources, from the desktop: synced lyrics for a well-known song. */
+    @Test fun lyricsAreFound() = runBlocking {
+        assumeTrue(System.getProperty("opentune.live") == "true")
+        com.opentune.data.settings.AppSettings.init(android.content.Context(kotlin.io.path.createTempDirectory("opentune").toFile()))
+        val found = com.opentune.data.lyrics.LyricsRepository.lyricsFor("dQw4w9WgXcQ", "Never Gonna Give You Up", "Rick Astley", 213_000)
+        println("LIVE lyrics: ${found?.source} ${found?.javaClass?.simpleName} ${(found as? com.opentune.data.lyrics.Lyrics.Synced)?.lines?.size} lines")
+        assertTrue("no synced lyrics", found is com.opentune.data.lyrics.Lyrics.Synced)
+    }
 }
