@@ -286,6 +286,10 @@ iOS 16 or newer.
   OpenTune"), and tap a song to play its list from there. Sideloaded
   builds show up in Android Auto once "Unknown sources" is turned on in
   Android Auto's developer settings.
+- **Android TV.** The same APK shows up in the TV's row of apps. The remote
+  moves between rows and buttons with a clear highlight, OK opens or plays,
+  and left and right on the seek bar skip through the song. The screen stays
+  on while music plays.
 - **Opens YouTube links.** music.youtube.com, youtube.com and youtu.be
   links, or links shared to the app, open in OpenTune.
 

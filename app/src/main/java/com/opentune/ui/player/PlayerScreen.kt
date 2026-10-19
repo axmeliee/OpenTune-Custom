@@ -884,7 +884,7 @@ private fun HeartButton(liked: Boolean, onClick: () -> Unit) {
         Box(
             Modifier.size(46.dp).graphicsLayer { scaleX = scale; scaleY = scale }
                 .glass(CircleShape, Color.White.copy(alpha = 0.16f))
-                .clickable(interactionSource = interactions, indication = null) {
+                .clickable(interactionSource = interactions, indication = com.opentune.ui.components.FocusRing(CircleShape)) {
                     haptics.pattern(if (liked) com.opentune.ui.components.Haptics.Pattern.OFF else com.opentune.ui.components.Haptics.Pattern.LIKE)
                     if (!liked && !still) bursts++
                     onClick()

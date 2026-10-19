@@ -244,7 +244,7 @@ private fun Tile(index: Int, still: Boolean, lit: Boolean, modifier: Modifier, o
             .background(scheme.primary.copy(alpha = 0.22f * glow))
             .border(1.dp, scheme.onSurface.copy(alpha = 0.08f * (1f - glow)), shape)
             .border(1.dp, scheme.primary.copy(alpha = 0.6f * glow), shape)
-            .clickable(interactionSource = interaction, indication = null, role = Role.Button, onClick = onClick)
+            .clickable(interactionSource = interaction, indication = com.opentune.ui.components.FocusRing(shape), role = Role.Button, onClick = onClick)
             .padding(8.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center,

@@ -155,7 +155,7 @@ private fun pressAmount(pressed: Boolean, animate: Boolean): Float {
 }
 
 private fun Modifier.button(interaction: MutableInteractionSource, enabled: Boolean, label: String, onClick: () -> Unit) =
-    clickable(interactionSource = interaction, indication = null, enabled = enabled, onClick = onClick)
+    clickable(interactionSource = interaction, indication = com.opentune.ui.components.FocusRing(androidx.compose.foundation.shape.CircleShape), enabled = enabled, onClick = onClick)
         .semantics { role = Role.Button; contentDescription = label }
 
 /** Echo Music's nine-lobed, eight-second play-button rotation; GPL-3.0 attribution in THIRD_PARTY_NOTICES.md. */

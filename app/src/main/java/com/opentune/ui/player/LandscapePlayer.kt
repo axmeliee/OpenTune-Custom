@@ -260,7 +260,7 @@ private fun Tap(label: String, onClick: () -> Unit, enabled: Boolean = true, con
         Modifier
             .size(64.dp)
             .clip(CircleShape)
-            .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null, enabled = enabled, onClick = onClick)
+            .clickable(interactionSource = remember { MutableInteractionSource() }, indication = com.opentune.ui.components.FocusRing(CircleShape), enabled = enabled, onClick = onClick)
             .semantics { contentDescription = label },
         contentAlignment = Alignment.Center,
     ) { content() }

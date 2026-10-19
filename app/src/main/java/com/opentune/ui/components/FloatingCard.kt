@@ -465,7 +465,7 @@ fun SheetButton(
             }
             .clip(CircleShape)
             .background(fill)
-            .clickable(interactionSource = interaction, indication = null, enabled = enabled, role = Role.Button) {
+            .clickable(interactionSource = interaction, indication = FocusRing(CircleShape), enabled = enabled, role = Role.Button) {
                 haptics.tick()
                 if (closes && card != null) card.close(onClick) else onClick()
             }

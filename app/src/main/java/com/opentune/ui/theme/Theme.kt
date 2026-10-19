@@ -96,13 +96,33 @@ fun OpenTuneTheme(
     }
     val scheme = if (dark && settings.pureBlack) base.toPureBlack() else base
 
+    val context = LocalContext.current
+    val tv = remember { com.opentune.ui.tv.Tv.isTv(context) }
     MaterialTheme(
         colorScheme = scheme.animated(),
         typography = AppTypography,
         shapes = AppShapes,
     ) {
-        CompositionLocalProvider(LocalArtworkSeed provides artworkSeed, content = content)
+        CompositionLocalProvider(
+            LocalArtworkSeed provides artworkSeed,
+            com.opentune.ui.tv.LocalIsTv provides tv,
+            com.opentune.ui.components.LocalFocusRingColor provides MaterialTheme.colorScheme.primary,
+        ) {
+            // From across the room the usual faint focus tint can't be seen.
+            if (tv) TvRipples(content) else content()
+        }
     }
+}
+
+@OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
+@Composable
+private fun TvRipples(content: @Composable () -> Unit) {
+    CompositionLocalProvider(
+        androidx.compose.material3.LocalRippleConfiguration provides androidx.compose.material3.RippleConfiguration(
+            rippleAlpha = androidx.compose.material.ripple.RippleAlpha(draggedAlpha = 0.16f, focusedAlpha = 0.32f, hoveredAlpha = 0.1f, pressedAlpha = 0.24f),
+        ),
+        content = content,
+    )
 }
 
 /**

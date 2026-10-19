@@ -4,10 +4,13 @@ import androidx.compose.runtime.getValue
 import android.content.Intent
 import android.os.Build
 import android.os.Bundle
+import android.view.WindowManager
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.padding
+import androidx.compose.ui.unit.dp
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.LaunchedEffect
@@ -26,18 +29,31 @@ import com.opentune.ui.theme.OpenTuneTheme
 import com.opentune.ui.theme.rememberArtworkSeed
 
 class MainActivity : ComponentActivity() {
+    private var tv = false
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         if (savedInstanceState == null) receive(intent)
+        tv = com.opentune.ui.tv.Tv.isTv(this)
         setContent {
             val vm: PlayerViewModel = viewModel()
             val theme by AppSettings.theme.collectAsState()
             val ui by AppSettings.ui.collectAsState()
             LaunchedEffect(ui.highRefreshRate) { preferRefreshRate(ui.highRefreshRate) }
+            // A TV dims and starts its screensaver after a few minutes without a key press;
+            // while music plays from here, the cover and lyrics stay on screen instead.
+            val playing by vm.isPlaying.collectAsState()
+            LaunchedEffect(playing) {
+                if (!tv) return@LaunchedEffect
+                if (playing) window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+                else window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+            }
             val song by vm.currentSong.collectAsState()
             OpenTuneTheme(theme, artworkSeed = rememberArtworkSeed(song?.thumbnailUrl)) {
                 Surface(modifier = Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
+                    // Some TVs crop the picture's edges: keep pages and buttons inside the safe area.
+                    androidx.compose.foundation.layout.Box(if (tv) Modifier.padding(horizontal = 28.dp, vertical = 16.dp) else Modifier) {
                     // A fresh install's welcome comes first; Home, built after it, starts from the picks.
                     androidx.compose.animation.AnimatedContent(
                         ui.welcome == WelcomeState.DUE,
@@ -54,6 +70,7 @@ class MainActivity : ComponentActivity() {
                         label = "welcome",
                     ) { welcome ->
                         if (welcome) WelcomeScreen(onDone = {}) else AppRoot(vm)
+                    }
                     }
                 }
             }

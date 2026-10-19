@@ -191,7 +191,7 @@ private fun OptionRow(text: String, selected: Boolean, index: Int, still: Boolea
                 scaleY = press
             }
             .clip(RoundedCornerShape(22.dp))
-            .clickable(interactionSource = interaction, indication = null, onClick = onClick)
+            .clickable(interactionSource = interaction, indication = com.opentune.ui.components.FocusRing(RoundedCornerShape(22.dp)), onClick = onClick)
             .semantics { role = Role.RadioButton; this.selected = selected }
             .heightIn(min = 60.dp)
             .padding(horizontal = 16.dp, vertical = 12.dp),

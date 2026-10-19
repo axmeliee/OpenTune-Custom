@@ -1,5 +1,12 @@
 package com.opentune.ui.player
 
+import androidx.compose.foundation.focusable
+import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.key
+import androidx.compose.ui.input.key.onKeyEvent
+import androidx.compose.ui.input.key.type
 import com.opentune.data.settings.AppSettings
 import com.opentune.ui.components.livingArt
 
@@ -547,6 +554,10 @@ fun SeekBar(
         .animateFloat(-0.3f, 1.3f, infiniteRepeatable(tween(1_300, easing = LinearEasing)), label = "sweep") else null
     val sheen = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.55f)
 
+    // A remote or keyboard focuses the bar and moves through the song with left and right.
+    var focused by remember { mutableStateOf(false) }
+    val focusRing = MaterialTheme.colorScheme.primary
+
     Column(modifier) {
         Box {
         if (lyricAt != null) ScrubLyric(dragFraction, durationMs, lyricAt)
@@ -554,6 +565,13 @@ fun SeekBar(
             Modifier
                 .fillMaxWidth()
                 .height(28.dp)
+                .onFocusChanged { focused = it.isFocused }
+                .onKeyEvent { e ->
+                    val step = seekStepMs(e.key, durationMs) ?: return@onKeyEvent false
+                    if (e.type == KeyEventType.KeyDown) onSeek((position() + step).coerceIn(0L, durationMs))
+                    true
+                }
+                .focusable()
                 // Redrawn every frame while playing; its own layer keeps that from
                 // re-recording the rest of the player.
                 .graphicsLayer()
@@ -593,10 +611,11 @@ fun SeekBar(
                     }
                 },
         ) {
-            val h = trackHeight.toPx()
+            val h = trackHeight.toPx() * (if (focused) 2f else 1f)
             val y = (size.height - h) / 2
             val r = CornerRadius(h / 2)
             val f = fraction()
+            if (focused) drawRoundRect(focusRing, Offset(-3.dp.toPx(), y - 3.dp.toPx()), Size(size.width + 6.dp.toPx(), h + 6.dp.toPx()), CornerRadius(h / 2 + 3.dp.toPx()), style = Stroke(2.dp.toPx()))
             val b = if (durationMs > 0) (buffered().toFloat() / durationMs).coerceIn(0f, 1f) else 0f
             drawRoundRect(inactive, Offset(0f, y), Size(size.width, h), r)
             if (sweep != null) {
@@ -1009,5 +1028,16 @@ private fun BoxScope.ScrubLyric(dragFraction: Float?, durationMs: Long, lyricAt:
         ) { t ->
             Text(t, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold, maxLines = 2, overflow = TextOverflow.Ellipsis, textAlign = androidx.compose.ui.text.style.TextAlign.Center)
         }
+    }
+}
+
+/** How far left or right on a remote moves the song: 10 seconds, or a fiftieth of a long one. */
+internal fun seekStepMs(key: Key, durationMs: Long): Long? {
+    if (durationMs <= 0) return null
+    val step = maxOf(10_000L, durationMs / 50)
+    return when (key) {
+        Key.DirectionRight, Key.MediaFastForward -> step
+        Key.DirectionLeft, Key.MediaRewind -> -step
+        else -> null
     }
 }
