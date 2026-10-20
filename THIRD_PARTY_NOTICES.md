@@ -13,17 +13,21 @@ OpenTune adapts these in `ui/player/EchoMotion.kt`, `PlayerButtons.kt`
 and `ui/PageMotion.kt`, with its own palette, pause/lifecycle
 handling and reduced-motion behavior. See [Echo motion](docs/echo-motion.md).
 
-The community lossless provider protocols, endpoint registry, SpotiFLAC session
-signing and verification flow under `data/lossless/` and `ui/settings/SpotiflacVerification.kt`
-are adapted from
+The earlier community lossless integration was adapted from
 [Spotui](https://github.com/Spotui/Spotui/tree/main/app/src/main/java/com/music/spotui/lossless)
-under GPLv3. OpenTune adds YouTube Music identity lookup through
-[Odesli](https://odesli.co), cancellable network requests, FLAC validation,
-separate rendition caches and playback fallback.
+under GPLv3, with Qobuz relay protocol references from
+[Meld](https://github.com/FrancescoGrazioso/Meld) (Metrolist Project, GPLv3).
+Its fixed provider registry, relay and SpotiFLAC verification implementation have
+been removed; FLAC validation and rendition-cache behavior remain in `data/lossless/`.
 
-The Qobuz relay protocol in `data/lossless/QobuzCatalog.kt` follows
-[Meld's QobuzAudioProvider](https://github.com/FrancescoGrazioso/Meld/blob/main/app/src/main/kotlin/com/metrolist/music/qobuz/QobuzAudioProvider.kt)
-(Metrolist Project, copyright 2026, GPLv3). The JioSaavn URL decoding and
+The HTTP add-on client in `data/addons/` implements the documented
+[BitChord add-on protocol](https://bitchord.kushagrasingh.in/docs), informed by
+[BitChord's source](https://github.com/kushagrasinghx/BitChord) under GPLv3.
+OpenTune supplies its own settings, persistence, strict catalog matching,
+transport validation and ordered lookup integration. No executable extension
+packages are bundled.
+
+The JioSaavn URL decoding and
 conditional 320 kbps rendition selection follow
 [BitChord's JioSaavnService](https://github.com/kushagrasinghx/BitChord/blob/main/app/src/main/java/com/music/bitchord/data/jiosaavn/JioSaavnService.kt)
 (GPLv3). OpenTune adds conservative catalog matching and byte/size verification.
