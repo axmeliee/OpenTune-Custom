@@ -1011,6 +1011,8 @@ class PlaybackService : MediaLibraryService() {
         val key = uri?.let(::externalStreamKeyOf)
         val rendition = if (item != null && key != null) ExternalStreams.get(item.mediaId, key) else null
         NerdStats.onExternalSource(rendition?.label)
+        val downloaded = item?.let { com.opentune.data.download.Downloads.entryNow(it.mediaId) }
+            ?.takeIf { uri?.scheme == "file" && it.path == uri.path }
         val provider = when {
             item == null -> "No track selected"
             rendition != null -> rendition.provider
@@ -1018,10 +1020,10 @@ class PlaybackService : MediaLibraryService() {
             LocalMusic.isLocal(item.mediaId) -> "Local file"
             Radio.isRadio(item.mediaId) -> "Internet radio"
             Subsonic.isSubsonic(item.mediaId) -> "Your music server"
-            uri?.scheme == "file" -> "Downloaded file"
+            uri?.scheme == "file" -> downloaded?.source?.let { "$it · downloaded" } ?: "Downloaded file"
             else -> StreamResolver.engineFor(item.mediaId, uri?.let(::isUpgradedUri) == true)?.let { "YouTube · $it" } ?: "YouTube · cached stream or resolving"
         }
-        NerdStats.onPlaybackSource(NerdStats.Source(provider, rendition?.bits, rendition?.sampleRate,
+        NerdStats.onPlaybackSource(NerdStats.Source(provider, rendition?.bits ?: downloaded?.bits, rendition?.sampleRate ?: downloaded?.sampleRate,
             rendition?.kbps ?: if (rendition == null && item != null && uri?.let(::videoIdOf) != null)
                 StreamResolver.bitrateFor(item.mediaId, isUpgradedUri(uri)) else null,
             selectionDetail = if (item != null && uri?.let(::videoIdOf) != null && uri.let(::startupToken) == null)

@@ -83,7 +83,7 @@ internal fun SourceQualityBadge(mediaId: String, format: AudioFormatInfo?, onCli
 internal fun isHighestQuality(source: NerdStats.Source?, format: AudioFormatInfo?): Boolean {
     if (source == null || source.provider.startsWith("Checking highest")) return false
     val codec = format?.codec
-    return source.bits != null || codec?.contains("FLAC", ignoreCase = true) == true || codec?.contains("ALAC", ignoreCase = true) == true
+    return codec?.contains("FLAC", ignoreCase = true) == true || codec?.contains("ALAC", ignoreCase = true) == true
 }
 
 /**
@@ -157,9 +157,9 @@ internal fun sourceQualityLabel(source: NerdStats.Source?, format: AudioFormatIn
     if (source == null) return "Resolving audio…"
     val provider = source.provider.removePrefix("YouTube · ")
     if (source.provider.startsWith("Checking highest")) return "Checking highest quality…"
-    val codec = format?.codec ?: if (source.bits != null) "FLAC" else null
-    val bits = source.bits ?: format?.bitDepth
-    val rate = source.sampleRate ?: format?.sampleRateHz
+    val codec = format?.codec
+    val bits = format?.bitDepth ?: source.bits
+    val rate = format?.sampleRateHz ?: source.sampleRate
     val quality = if (codec?.contains("FLAC", ignoreCase = true) == true) {
         listOfNotNull("FLAC", bits?.let { "$it-bit" }, rate?.let { "${String.format(Locale.ROOT, "%.1f", it / 1000.0).removeSuffix(".0")} kHz" }).joinToString(" · ")
     } else listOfNotNull(codec, (format?.bitrateKbps ?: source.kbps)?.let { "$it kbps" }).joinToString(" · ")

@@ -1,5 +1,5 @@
 """Read-only protocol probes; never log signed audio URLs or URL path tokens."""
-import json, urllib.request, urllib.parse, time, pathlib
+import json, urllib.request, urllib.parse, time, pathlib, shutil, subprocess
 ROOTS = [
     ('bluebit', 'https://bluebit.jucepe0929.workers.dev'),
     ('mono', 'https://eljohnzc-mono.de.deplexo.com'),
@@ -50,6 +50,11 @@ for name,base in ROOTS:
                                     with urllib.request.urlopen(urllib.request.Request(address,headers={'Range':'bytes=0-4095'}),timeout=18) as seg:
                                         data=seg.read(4096)
                                         report['segment']={'flac':data.startswith(b'fLaC'),'mp4':b'ftyp' in data[:32] or b'styp' in data[:32],'playlist':data.startswith(b'#EXTM3U'),'mpegts':data[:1]==b'G'}
+                    if shutil.which('ffprobe'):
+                        try:
+                            decoded=subprocess.run(['ffprobe','-v','error','-read_intervals','%+1','-show_entries','stream=codec_name,sample_rate,channels,bits_per_raw_sample','-of','json',url],capture_output=True,text=True,timeout=25)
+                            report['decoder']=safe(json.loads(decoded.stdout)) if decoded.returncode==0 else {'error':'Media probe failed','exitCode':decoded.returncode}
+                        except Exception:report['decoder']={'error':'Media probe did not complete'}
                 break
     except Exception as error:report['error']=type(error).__name__+(': HTTP '+str(error.code) if hasattr(error,'code') else '')
     (out/(name+'.json')).write_text(json.dumps(report,indent=2))
