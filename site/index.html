@@ -515,6 +515,9 @@ footer .about p { color: var(--muted); font-size: 14px; max-width: 46ch; margin-
   .eq { height: 170px; }
   .nav .gh { display: none; }
   .nav .ios-btn .sub { display: none; }
+  /* Discord stays, as its logo only, so the three nav buttons don't crowd. */
+  .nav .dc span { display: none; }
+  .nav .dc { padding: 0 11px; }
   .nav .wrap { gap: 10px; }
   .nav-right .btn-small { padding: 0 12px; gap: 6px; }
   .ticker-list { font-size: 17px; padding-block: 16px; }
@@ -573,7 +576,7 @@ footer .about p { color: var(--muted); font-size: 14px; max-width: 46ch; margin-
       <a href="#faq">FAQ</a>
     </nav>
     <div class="nav-right">
-      <a class="btn btn-line btn-small" href="https://discord.gg/6udrCVh5n" target="_blank" rel="noopener"><svg class="logo-ico"><use href="#i-discord"/></svg>Discord</a>
+      <a class="btn btn-line btn-small dc" href="https://discord.gg/6udrCVh5n" target="_blank" rel="noopener" aria-label="Join the Discord"><svg class="logo-ico"><use href="#i-discord"/></svg><span>Discord</span></a>
       <a class="btn btn-line btn-small gh" href="https://github.com/justshivv/Opentune" target="_blank" rel="noopener"><svg class="line-ico"><use href="#i-star"/></svg>Star<span class="sub" id="stars-nav" hidden></span></a>
       <a data-latest-apk class="btn btn-small dl" href="https://github.com/justshivv/Opentune/releases/latest" target="_blank" rel="noopener"><svg class="logo-ico"><use href="#i-android"/></svg>Android</a>
       <a class="btn btn-line btn-small ios-btn" href="#iphone"><svg class="logo-ico"><use href="#i-apple"/></svg>iOS<span class="sub">early</span></a>
