@@ -16,7 +16,7 @@ object AddonHttp {
         .cookieJar(CookieJar.NO_COOKIES).authenticator(Authenticator.NONE).proxyAuthenticator(Authenticator.NONE)
         .followRedirects(false).followSslRedirects(false)
         .callTimeout(8, TimeUnit.SECONDS).connectTimeout(4, TimeUnit.SECONDS).readTimeout(8, TimeUnit.SECONDS)
-        .dns { host -> Dns.SYSTEM.lookup(host).also { addresses -> require(addresses.isNotEmpty() && addresses.all(::publicAddress)) { "Add-ons must use a public HTTPS address." } } }
+        .dns { host -> Dns.SYSTEM.lookup(host).also { addresses -> if (addresses.isEmpty() || addresses.any { !publicAddress(it) }) throw java.net.UnknownHostException("Add-ons must use a public HTTPS address.") } }
         .build() }
     val mediaClient by lazy { client.newBuilder().callTimeout(0, TimeUnit.MILLISECONDS)
         .readTimeout(25, TimeUnit.SECONDS).followRedirects(true).addNetworkInterceptor { chain ->
