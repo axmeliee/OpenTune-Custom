@@ -7,6 +7,8 @@
   &nbsp;·&nbsp;
   <a href="https://justshivv.github.io/Opentune/">Website</a>
   &nbsp;·&nbsp;
+  <a href="https://discord.gg/6udrCVh5n">Discord</a>
+  &nbsp;·&nbsp;
   <a href="#features">Features</a>
   &nbsp;·&nbsp;
   <a href="#building">Build it yourself</a>
@@ -28,6 +30,9 @@ An Android music player for YouTube Music. It talks to YouTube's internal
 no server of your own. Sign in if you want your likes and playlists.
 
 Built with Kotlin, Jetpack Compose and Media3. Android 8.0 and newer.
+
+Questions, ideas or bug reports: join the
+[Discord](https://discord.gg/6udrCVh5n).
 
 ## See it
 
