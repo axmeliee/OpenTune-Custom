@@ -22,3 +22,6 @@ ios/Payload/
 ios/*.ipa
 ios/OpenTuneCore/.build/
 ios/OpenTune/Info.plist
+
+# Website check output (scripts/check-website.py), uploaded by CI, not committed.
+website-reports/
