@@ -434,12 +434,8 @@ private fun settingsSections(
     val lib by AppSettings.library.collectAsState()
     val metered = remember { AppSettings.onMeteredNetwork() }
     var qualityDialog by remember { mutableStateOf<Boolean?>(null) } // true = Wi-Fi, false = mobile
-    var verifyLossless by remember { mutableStateOf(false) }
-    var qobuzRelayDialog by remember { mutableStateOf(false) }
-    if (qobuzRelayDialog) QobuzRelayDialog(pb.qobuzRelayUrl) { qobuzRelayDialog = false }
-    val losslessConnected by com.opentune.data.lossless.SpotiflacSession.connected.collectAsState()
-    val losslessNeedsVerification by com.opentune.data.lossless.SpotiflacSession.needsVerification.collectAsState()
-    if (verifyLossless) SpotiflacVerification { verifyLossless = false }
+    var audioAddons by remember { mutableStateOf(false) }
+    if (audioAddons) AudioAddonsSheet { audioAddons = false }
     var folderDialog by remember { mutableStateOf(false) }
     var cacheBytes by remember { mutableLongStateOf(0L) }
     var message by remember { mutableStateOf<String?>(null) }
@@ -606,7 +602,7 @@ private fun settingsSections(
             title = "Download quality",
             options = AudioQuality.entries,
             selected = lib.downloadQuality,
-            label = { "${it.label} · ${if (it == AudioQuality.MAX) "Best YouTube download offered" else it.summary}" },
+            label = { "${it.label} · ${if (it == AudioQuality.MAX) "Lossless from add-ons when available; YouTube fallback" else it.summary}" },
             onSelect = { q -> AppSettings.updateLibrary { it.copy(downloadQuality = q) } },
             onDismiss = { downloadQualityDialog = false },
         )
@@ -692,24 +688,15 @@ private fun settingsSections(
                         )
                     })
                 },
-                Entry("Lossless streaming", "flac tidal amazon qobuz spotiflac") {
-                    ToggleRow("Lossless below Max", pb.losslessStreaming, { v -> AppSettings.updatePlayback { it.copy(losslessStreaming = v) } }, summary = "Also look for FLAC after playback starts at other quality levels. Max automatically checks highest-quality sources before YouTube.", icon = Icons.Rounded.HighQuality)
+                Entry("Lossless streaming", "flac lossless addons") {
+                    ToggleRow("Lossless below Max", pb.losslessStreaming, { v -> AppSettings.updatePlayback { it.copy(losslessStreaming = v) } }, summary = "Also check your audio add-ons after playback starts at other quality levels. Max checks them automatically in your chosen order.", icon = Icons.Rounded.HighQuality)
                 },
                 Entry("Unmetered networks only", "flac saavn mobile wifi data") {
                     ToggleRow("Unmetered networks only", pb.losslessUnmeteredOnly, { v -> AppSettings.updatePlayback { it.copy(losslessUnmeteredOnly = v) } }, summary = "When on, mobile data uses YouTube even at Max. Turn off to try FLAC and JioSaavn on mobile data", icon = Icons.Rounded.Wifi)
                 },
-                Entry("Prefer hi-res lossless", "24 bit flac qobuz") {
-                    ToggleRow("Prefer hi-res lossless", pb.losslessHiRes, { v -> AppSettings.updatePlayback { it.copy(losslessHiRes = v) } }, summary = "Prefer hi-res for background upgrades too. Max always checks hi-res first. Uses more data.", icon = Icons.Rounded.HighQuality)
+                Entry("Audio add-ons", "source URL manifest order priority lossless flac high res") {
+                    SettingRow("Audio add-ons", icon = Icons.Rounded.HighQuality, summary = "Add service URLs and choose source priority", onClick = { audioAddons = true })
                 },
-                Entry("SpotiFLAC verification", "lossless session connect verify") {
-                    SettingRow("SpotiFLAC verification", icon = Icons.Rounded.HighQuality, summary = if (losslessConnected) "Connected · tap to renew" else if (losslessNeedsVerification) "Verify again · provider session needs renewing" else "Optional · public providers work without it", onClick = { verifyLossless = true })
-                },
-                Entry("Qobuz relay", "lossless custom server endpoint") {
-                    SettingRow("Qobuz relay", icon = Icons.Rounded.HighQuality, summary = if (pb.qobuzRelayUrl.isBlank()) "Optional · use your own compatible server" else "Custom server configured", onClick = { qobuzRelayDialog = true })
-                },
-                if (losslessConnected) Entry("Disconnect SpotiFLAC", "lossless session sign out") {
-                    SettingRow("Disconnect SpotiFLAC", icon = Icons.AutoMirrored.Rounded.Logout, onClick = { com.opentune.data.lossless.SpotiflacSession.clear() })
-                } else null,
                 Entry("Bit-perfect USB output", "dac exclusive passthrough hi-fi audiophile mixer bypass") {
                     ToggleRow(
                         "Bit-perfect USB output",

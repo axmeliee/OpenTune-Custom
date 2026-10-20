@@ -76,6 +76,9 @@ data class DownloadEntry(
     val addedAt: Long = System.currentTimeMillis(),
     /** Identifies the worker allowed to publish updates, including after cancellation/retry. */
     val workId: String? = null,
+    val source: String? = null,
+    val bits: Int? = null,
+    val sampleRate: Int? = null,
 )
 
 /**
@@ -253,7 +256,15 @@ class DownloadWorker(context: Context, params: WorkerParameters) : CoroutineWork
             val dir = jobDir.apply { mkdirs() }
             // A playlist queues every song at once; a few at a time each get the
             // bandwidth, and YouTube isn't asked for dozens of streams together.
+            var addon: com.opentune.data.addons.AddonStream? = null
             val target = songsAtOnce.withPermit {
+                if (maxKbps == Int.MAX_VALUE) addon = com.opentune.data.addons.AddonResolver.resolve(entry.song.toSong(), parseDuration(entry.song.durationText), download = true)
+                val chosen = addon
+                if (chosen != null && chosen.extension != null) {
+                    File(dir, "$id.${chosen.extension}").also { target ->
+                        fetch(chosen.url, File(dir, "$id.part"), target, entry.song.title, chosen) { p -> publish { it.copy(progress = p) } }
+                    }
+                } else {
                 val stream = StreamResolver.resolveForDownload(id, maxKbps)
                 File(dir, "$id.${stream.downloadExtension}").also { target ->
                     fetch(stream.url, File(dir, "$id.part"), target, entry.song.title) { p ->
@@ -261,11 +272,13 @@ class DownloadWorker(context: Context, params: WorkerParameters) : CoroutineWork
                     }
                 }
             }
+            }
             val art = runCatching { fetchArt(entry.song.thumbnailUrl.artworkAt(PLAYER_ART_PX), File(dir, "$id.jpg")) }.getOrNull()
             publish {
                 it.copy(
                     state = DownloadState.DONE, progress = 1f, path = target.path, artPath = art?.path,
-                    bytes = target.length(), loudnessDb = StreamResolver.loudnessDbFor(id),
+                    bytes = target.length(), loudnessDb = if (addon == null) StreamResolver.loudnessDbFor(id) else null,
+                    source = addon?.provider, bits = addon?.bits, sampleRate = addon?.sampleRate,
                 )
             }
             // Lyrics too, so they show offline; a miss doesn't fail the download.
@@ -292,8 +305,18 @@ class DownloadWorker(context: Context, params: WorkerParameters) : CoroutineWork
     }
 
     /** The audio, in ranges (see [RangedFetch]), then moved into place. */
-    private suspend fun fetch(url: String, part: File, target: File, title: String, onProgress: (Float) -> Unit) {
-        RangedFetch.fetch(Http.client, url, StreamResolver.mediaHeadersFor(url), part) { p ->
+    private suspend fun fetch(url: String, part: File, target: File, title: String, addon: com.opentune.data.addons.AddonStream? = null, onProgress: (Float) -> Unit) {
+        fun permitted() {
+            if (addon != null) {
+                val current = com.opentune.data.addons.AddonStore.addons.value.firstOrNull { it.key == addon.addonId }
+                check(current != null && current.manifest.downloads && com.opentune.data.addons.AddonStore.usable(current)) { "Add-on disabled or download permission changed." }
+            }
+        }
+        permitted()
+        RangedFetch.fetch(if (addon == null) Http.client else com.opentune.data.addons.AddonHttp.mediaClient, url,
+            if (addon == null) StreamResolver.mediaHeadersFor(url) else emptyMap(), part,
+            maxBytes = if (addon == null) Long.MAX_VALUE else 512L * 1024 * 1024) { p ->
+            permitted()
             onProgress(p)
             runCatching { setForegroundAsync(foregroundInfo(title, p)) }
         }
@@ -365,12 +388,14 @@ internal object RangedFetch {
         headers: Map<String, String>,
         part: File,
         parallel: Int = PARALLEL,
+        maxBytes: Long = Long.MAX_VALUE,
         onProgress: (Float) -> Unit,
     ) = withContext(Dispatchers.IO) {
         // Ranges land out of order, so a partial file isn't a prefix to resume from.
         part.delete()
         val total = url.toHttpUrlOrNull()?.queryParameter("clen")?.toLongOrNull()?.takeIf { it > 0 }
             ?: sizeFrom(client, url, headers)
+        require(total in 1..maxBytes) { "Audio file exceeds the download size limit." }
         val done = AtomicLong(0)
         val reported = AtomicLong(0)
         RandomAccessFile(part, "rw").use { file ->

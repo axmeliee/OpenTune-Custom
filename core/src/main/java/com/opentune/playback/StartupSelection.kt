@@ -30,7 +30,7 @@ internal class StartupSelection(
     suspend fun resolve(spec: DataSpec): DataSpec = mutex.withLock {
         currentCoroutineContext().ensureActive()
         if (selected == null) {
-            val rendition = if (maximum()) cached(song.videoId) ?: try {
+            val rendition = if (maximum()) cached(song.videoId)?.takeIf { it.mimeType == null } ?: try {
                 withTimeoutOrNull(lookupBudgetMs) { findJioSaavn(song, song.durationMillis()) }
             } catch (e: CancellationException) {
                 throw e

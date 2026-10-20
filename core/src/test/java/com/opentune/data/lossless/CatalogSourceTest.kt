@@ -27,16 +27,6 @@ class CatalogSourceTest {
         assertNotEquals(CatalogIdentity.key("दिन"), CatalogIdentity.key("दीन"))
     }
 
-    @Test fun qobuzChecksSeparateVersionFieldAndRejectsPreview() {
-        val track = JSONObject("""{"id":123,"title":"Husn","duration":217,"performer":{"name":"Anuv Jain"},"album":{"title":"Husn"}}""")
-        val root = JSONObject().put("success", true).put("data", JSONObject().put("tracks", JSONObject().put("items", org.json.JSONArray().put(track))))
-        assertEquals("123", QobuzCatalog.match(root, identity))
-        track.put("version", "Live")
-        assertNull(QobuzCatalog.match(root, identity))
-        assertNull(QobuzCatalog.streamUrl(JSONObject("""{"success":true,"previewDetected":true,"data":{"url":"https://cdn.example/song.flac"}}""")))
-        assertNull(QobuzCatalog.streamUrl(JSONObject("""{"success":false,"data":{"url":"https://cdn.example/song.flac"}}""")))
-    }
-
     @Test fun saavnRequiresCatalog320FlagAndIdentity() {
         val song = JSONObject("""{"id":"X0zxHHfs","title":"Husn","more_info":{"album":"Husn","duration":"217","320kbps":"true","artistMap":{"primary_artists":[{"name":"Anuv Jain"}]}}}""")
         val root = JSONObject().put("results", org.json.JSONArray().put(song))

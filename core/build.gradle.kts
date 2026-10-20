@@ -90,6 +90,7 @@ dependencies {
     api("androidx.media3:media3-database:1.11.0")
     // Internet radio stations that stream HLS rather than Icecast.
     api("androidx.media3:media3-exoplayer-hls:1.11.0")
+    api("androidx.media3:media3-exoplayer-dash:1.11.0")
     api("org.jetbrains.kotlinx:kotlinx-coroutines-guava:1.11.0")
 
     // ---- Innertube (YouTube Music) client: Ktor + kotlinx.serialization ----

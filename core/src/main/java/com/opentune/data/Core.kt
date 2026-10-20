@@ -39,7 +39,9 @@ object Core {
             }
         })
         AppSettings.init(app)
-        com.opentune.data.lossless.SpotiflacSession.init(app)
+        com.opentune.data.addons.AddonStore.init(app)
+        com.opentune.data.addons.AddonOutput.init(app)
+        com.opentune.data.addons.AddonStore.onChanged = com.opentune.data.lossless.ExternalStreams::retryLookups
         History.init(app)
         LoudnessStore.init(app)
         UpgradedTracks.init(app)

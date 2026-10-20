@@ -11,12 +11,13 @@ import java.util.concurrent.ConcurrentHashMap
 object ExternalStreams {
     data class Rendition(val key: String, val url: String, val label: String, val lossless: Boolean, val at: Long,
         val provider: String = label, val bits: Int? = null, val sampleRate: Int? = null, val kbps: Int? = null,
-        val maximumSearch: Boolean = false, val sessionRevision: Long = 0)
+        val maximumSearch: Boolean = false, val sessionRevision: Long = 0,
+        val addonId: String? = null, val mimeType: String? = null)
     private val renditions = ConcurrentHashMap<String, Rendition>()
     private val pinned = ConcurrentHashMap<String, Pair<String, Rendition>>()
     private val failedUntil = ConcurrentHashMap<String, Long>()
     private val reports = ConcurrentHashMap<String, String>()
-    private const val TTL = 10 * 60_000L
+    private const val TTL = 5 * 60_000L
 
     fun selectionDetail(videoId: String): String? = reports[videoId]
 
@@ -26,21 +27,21 @@ object ExternalStreams {
         if ((failedUntil[videoId] ?: 0) > now) return null
         return renditions[videoId]?.takeIf {
             now - it.at < TTL && allowed(it.lossless) &&
-                (it.lossless || it.sessionRevision == SpotiflacSession.revision.value)
+                (it.addonId == null || (it.sessionRevision == com.opentune.data.addons.AddonStore.revision.value && addonAllowed(it)))
         }
     }
 
     /** JioSaavn has its own fast path; never wait for a FLAC search before it. */
     suspend fun findJioSaavn(song: Song, durationMs: Long): Rendition? {
         if (!allowed(false) || (failedUntil[song.videoId] ?: 0) > now()) return null
-        cached(song.videoId)?.let { return it }
+        cached(song.videoId)?.takeIf { it.mimeType == null }?.let { return it }
         val duration = CatalogMetadata.duration(song, durationMs)
         if (duration <= 0) return null
         val url = JioSaavnSource.resolve(song, duration, report = { report(song.videoId, it) }) ?: return null
         val rendition = Rendition(java.util.UUID.randomUUID().toString(), url, "JioSaavn · 320 kbps (lossy)", false, now(),
-            provider = "JioSaavn", kbps = 320, sessionRevision = SpotiflacSession.revision.value)
+            provider = "JioSaavn", kbps = 320, sessionRevision = com.opentune.data.addons.AddonStore.revision.value)
         // A simultaneous FLAC result remains the preferred cached rendition.
-        cached(song.videoId)?.takeIf { it.lossless }?.let { return it }
+        cached(song.videoId)?.takeIf { it.lossless && it.mimeType == null }?.let { return it }
         remember(song.videoId, rendition)
         return rendition
     }
@@ -70,7 +71,7 @@ object ExternalStreams {
         if ((failedUntil[videoId] ?: 0) > now) return null
         renditions[videoId]?.takeIf {
             !force && (!losslessOnly || it.lossless) && now - it.at < TTL && allowed(it.lossless) &&
-                (it.lossless || it.sessionRevision == SpotiflacSession.revision.value) && (!beforePlayback || it.maximumSearch) &&
+                (it.addonId == null || (it.sessionRevision == com.opentune.data.addons.AddonStore.revision.value && addonAllowed(it))) && (!beforePlayback || it.maximumSearch) &&
                 (it.lossless || beforePlayback || StreamResolver.worthExternalUpgrade(videoId, 320))
         }?.let { return it }
         val duration = CatalogMetadata.duration(song, durationMs)
@@ -81,7 +82,7 @@ object ExternalStreams {
         val detail = java.util.concurrent.CopyOnWriteArrayList<String>()
         val track = if (allowed(true)) LosslessSource.resolve(song, duration,
             beforePlayback || AppSettings.playback.value.losslessHiRes, bestAvailable = beforePlayback, report = { detail.addIfAbsent(it) }) else null
-        if (allowed(true)) detail += if (track == null) "FLAC: no verified matching stream available" else "FLAC: verified ${track.bits}-bit, ${track.sampleRate} Hz"
+        if (allowed(true)) detail += if (track == null) "FLAC: no verified matching stream available" else "Add-on audio selected; playback diagnostics show the decoded format"
         val saavn = if (!losslessOnly && track == null && allowed(false) && (beforePlayback || StreamResolver.worthExternalUpgrade(videoId, 320)))
             JioSaavnSource.resolve(song, duration, report = { detail += it }) else null
         report(videoId, detail.joinToString("\n").ifEmpty { "No external source eligible for this quality setting." })
@@ -92,9 +93,9 @@ object ExternalStreams {
         }
         // Even two FLACs of the same recording can have different byte offsets.
         val rendition = Rendition(java.util.UUID.randomUUID().toString(), track?.url ?: saavn!!,
-            track?.let { "${it.provider} · ${it.bits}-bit FLAC · ${it.sampleRate} Hz" } ?: "JioSaavn · 320 kbps (lossy)", track != null, now(),
+            track?.let { "${it.provider} · lossless requested" } ?: "JioSaavn · 320 kbps (lossy)", track != null, now(),
             provider = track?.provider ?: "JioSaavn", bits = track?.bits, sampleRate = track?.sampleRate,
-            kbps = if (track == null) 320 else null, maximumSearch = beforePlayback, sessionRevision = SpotiflacSession.revision.value)
+            kbps = if (track == null) 320 else null, maximumSearch = beforePlayback, sessionRevision = com.opentune.data.addons.AddonStore.revision.value, addonId = track?.addonId, mimeType = track?.mimeType)
         remember(videoId, rendition)
         return rendition
     }
@@ -110,7 +111,7 @@ object ExternalStreams {
 
     fun resolve(videoId: String, key: String): String {
         val rendition = get(videoId, key)
-        if (rendition == null || !allowed(rendition.lossless) || now() - rendition.at >= TTL) {
+        if (rendition == null || !addonAllowed(rendition) || !allowed(rendition.lossless) || now() - rendition.at >= TTL) {
             throw IOException("External rendition expired; resume the original stream")
         }
         return rendition.url
@@ -119,16 +120,22 @@ object ExternalStreams {
     /** Verification/renewal should take effect immediately, including after a cached miss. */
     fun retryLookups() {
         failedUntil.clear()
+        com.opentune.data.addons.AddonResolver.retry()
         reports.clear()
         // Keep currently playing rendition keys valid until the player swaps sources.
     }
 
     fun failed(videoId: String) {
-        renditions.remove(videoId)
+        val addon = renditions.remove(videoId)?.addonId
+        if (addon != null) com.opentune.data.addons.AddonResolver.failed(addon, videoId)
         pinned.entries.removeIf { it.value.first == videoId }
-        failedUntil[videoId] = now() + TTL
-        report(videoId, "The selected external stream failed during playback; using YouTube. External retry paused for 10 minutes.")
+        if (addon == null) failedUntil[videoId] = now() + TTL
+        report(videoId, if (addon != null) "The selected add-on failed during playback; using fallback audio and trying the next add-on." else "The selected external stream failed during playback; using YouTube temporarily.")
     }
+
+    private fun addonAllowed(rendition: Rendition): Boolean = rendition.addonId?.let { key ->
+        com.opentune.data.addons.AddonStore.addons.value.firstOrNull { it.key == key }?.let(com.opentune.data.addons.AddonStore::usable) == true
+    } ?: true
 
     private fun now(): Long = System.nanoTime() / 1_000_000
 }

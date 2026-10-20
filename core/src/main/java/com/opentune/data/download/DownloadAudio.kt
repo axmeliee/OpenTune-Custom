@@ -12,7 +12,7 @@ import java.io.IOException
 internal object DownloadAudio {
     fun validate(file: File) {
         if (file.length() == 0L) throw IOException("The server returned empty audio")
-        val extractors = arrayOf(Mp4Extractor(), FragmentedMp4Extractor(), MatroskaExtractor())
+        val extractors = arrayOf(Mp4Extractor(), FragmentedMp4Extractor(), MatroskaExtractor(), androidx.media3.extractor.flac.FlacExtractor(), androidx.media3.extractor.wav.WavExtractor(), androidx.media3.extractor.ogg.OggExtractor())
         try {
             val playable = extractors.any { extractor ->
                 file.inputStream().buffered().use { stream ->

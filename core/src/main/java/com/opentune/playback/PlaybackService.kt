@@ -141,6 +141,19 @@ class PlaybackService : MediaLibraryService() {
             override fun createMediaSource(mediaItem: MediaItem): MediaSource {
                 val input = mediaItem.localConfiguration?.uri ?: return sources.createMediaSource(mediaItem)
                 if (videoIdOf(input) == null) return sources.createMediaSource(mediaItem)
+                val addonKey = externalStreamKeyOf(input)
+                val addon = addonKey?.let { ExternalStreams.get(mediaItem.mediaId, it) }?.takeIf { it.addonId != null }
+                if (addon != null) {
+                    val http = androidx.media3.datasource.okhttp.OkHttpDataSource.Factory(com.opentune.data.addons.AddonHttp.mediaClient)
+                    val data = androidx.media3.datasource.ResolvingDataSource.Factory(
+                        androidx.media3.datasource.DefaultDataSource.Factory(context, http)
+                    ) { spec ->
+                        // Re-check enablement/output before each manifest or segment request.
+                        val resolved = ExternalStreams.resolve(mediaItem.mediaId, addon.key)
+                        if (externalStreamKeyOf(spec.uri) != null) spec.withUri(android.net.Uri.parse(resolved)) else spec
+                    }
+                    return DefaultMediaSourceFactory(data).createMediaSource(mediaItem.buildUpon().setMimeType(addon.mimeType).build())
+                }
                 val uri = withoutStartup(input)
                 val id = videoIdOf(uri) ?: return sources.createMediaSource(mediaItem)
                 if (!isYouTubeId(id) || Podcasts.isEpisode(id) || externalStreamKeyOf(uri) != null ||
@@ -264,8 +277,8 @@ class PlaybackService : MediaLibraryService() {
             }
         }
         scope.launch {
-            com.opentune.data.lossless.SpotiflacSession.revision.collect { revision ->
-                if (revision > 0 && com.opentune.data.lossless.SpotiflacSession.connected.value) scheduleUpgrade(force = true)
+            com.opentune.data.addons.AddonStore.revision.collect { revision ->
+                if (revision > 0) scheduleUpgrade(force = true)
             }
         }
         scope.launch { PlaybackRequests.upgrade.collect { scheduleUpgrade(force = true) } }
@@ -972,7 +985,7 @@ class PlaybackService : MediaLibraryService() {
         swappingTo = id
         // If the player updates the item in place there's no transition to clear this.
         scope.launch { delay(2_000); if (swappingTo == id) swappingTo = null }
-        player.replaceMediaItem(index, item.buildUpon().setUri(uri).build())
+        player.replaceMediaItem(index, item.buildUpon().setUri(uri).setMimeType(externalStreamKeyOf(uri)?.let { ExternalStreams.get(id, it)?.mimeType }).build())
         updateExternalStats()
         applyLoudness()
         if (player.currentMediaItemIndex != index || player.currentPosition < position - 1_000) player.seekTo(index, position)
@@ -1291,7 +1304,7 @@ class PlaybackService : MediaLibraryService() {
             // without recreating the download they deliberately removed.
             val index = player.currentMediaItemIndex
             val position = player.currentPosition
-            player.replaceMediaItem(index, item.buildUpon().setUri(streamUri(mediaId, upgraded = false)).build())
+            player.replaceMediaItem(index, item.buildUpon().setUri(streamUri(mediaId, upgraded = false)).setMimeType(null).build())
             player.seekTo(index, position)
             player.prepare()
             return
@@ -1305,7 +1318,7 @@ class PlaybackService : MediaLibraryService() {
             com.opentune.data.download.Downloads.enqueue(this, item.toSong())
             val index = player.currentMediaItemIndex
             val position = player.currentPosition
-            player.replaceMediaItem(index, item.buildUpon().setUri(streamUri(mediaId, upgraded = false)).build())
+            player.replaceMediaItem(index, item.buildUpon().setUri(streamUri(mediaId, upgraded = false)).setMimeType(null).build())
             player.seekTo(index, position)
             player.prepare()
             return
@@ -1317,7 +1330,7 @@ class PlaybackService : MediaLibraryService() {
             val index = player.currentMediaItemIndex
             val position = player.currentPosition
             swappingTo = mediaId
-            player.replaceMediaItem(index, item.buildUpon().setUri(youtubeFallbackUri(mediaId)).build())
+            player.replaceMediaItem(index, item.buildUpon().setUri(youtubeFallbackUri(mediaId)).setMimeType(null).build())
             updateExternalStats()
             applyLoudness()
             player.seekTo(index, position)
