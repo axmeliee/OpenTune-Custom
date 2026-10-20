@@ -135,8 +135,8 @@ private enum class Tone(val color: Color) {
 
 /** Reports the selected media format; output mixer precision is shown separately. */
 internal fun signalQuality(format: AudioFormatInfo?, source: NerdStats.Source?): String {
-    val codec = format?.codec ?: if (source?.bits != null) "FLAC" else null
-    val bits = source?.bits ?: format?.bitDepth
+    val codec = format?.codec
+    val bits = format?.bitDepth ?: source?.bits
     val rate = format?.sampleRateHz ?: source?.sampleRate
     val kbps = format?.bitrateKbps ?: source?.kbps
     return listOfNotNull(

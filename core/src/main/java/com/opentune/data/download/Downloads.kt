@@ -251,12 +251,12 @@ class DownloadWorker(context: Context, params: WorkerParameters) : CoroutineWork
         }
         val jobDir = File(Downloads.directory(), "$id.${this.id}")
         publish { it.copy(state = DownloadState.DOWNLOADING, error = null) }
+        var addon: com.opentune.data.addons.AddonStream? = null
         return try {
             val maxKbps = AppSettings.library.value.downloadQuality.maxKbps
             val dir = jobDir.apply { mkdirs() }
             // A playlist queues every song at once; a few at a time each get the
             // bandwidth, and YouTube isn't asked for dozens of streams together.
-            var addon: com.opentune.data.addons.AddonStream? = null
             val target = songsAtOnce.withPermit {
                 if (maxKbps == Int.MAX_VALUE) addon = com.opentune.data.addons.AddonResolver.resolve(entry.song.toSong(), parseDuration(entry.song.durationText), download = true)
                 val chosen = addon
@@ -289,12 +289,15 @@ class DownloadWorker(context: Context, params: WorkerParameters) : CoroutineWork
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
-            Log.w(TAG, "Download of $id failed", e)
+            if (addon != null) {
+                com.opentune.data.addons.AddonResolver.failed(addon!!.addonId, id)
+                Log.w(TAG, "Add-on download of $id failed (${e.javaClass.simpleName})")
+            } else Log.w(TAG, "Download of $id failed", e)
             // A stream YouTube wouldn't hand over just then fails the same way as a
             // dropped connection: both are worth another go a little later.
             val retrying = runAttemptCount < MAX_ATTEMPTS
             publish { it.copy(state = if (retrying) DownloadState.QUEUED else DownloadState.FAILED,
-                progress = 0f, error = e.message) }
+                progress = 0f, error = if (addon != null) "Add-on download failed. Retry to check the next available source." else e.message) }
             if (retrying) Result.retry() else Result.failure()
         } finally {
             val current = Downloads.entryNow(id)

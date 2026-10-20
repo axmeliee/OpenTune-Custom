@@ -15,7 +15,9 @@ object AddonResolver {
 
     /** First verified match wins, in the listener's order. Playback never waits on this search. */
     suspend fun resolve(song: Song, durationMs: Long, download: Boolean = false,
-        report: (String) -> Unit = {}): AddonStream? = withContext(Dispatchers.IO) {
+        report: (String) -> Unit = {},
+        clientFor: (String) -> AddonClient = AddonClient::forBase,
+        probe: suspend (String, Int, Boolean) -> ByteArray = AddonHttp::bytes): AddonStream? = withContext(Dispatchers.IO) {
         if (durationMs <= 0) return@withContext null
         val identity = CatalogIdentity(song.title, song.artist, null, durationMs)
         for (addon in AddonStore.addons.value) {
@@ -25,7 +27,7 @@ object AddonResolver {
             if (download && !addon.manifest.downloads) { report("${addon.manifest.name}: streaming only"); continue }
             val result = withTimeoutOrNull(10_000) {
                 try {
-                    val client = AddonClient.forBase(addon.base)
+                    val client = clientFor(addon.base)
                     val manifest = client.manifest()
                     AddonStore.refreshed(addon.key, manifest)
                     fun permitted(): Boolean = AddonStore.addons.value.firstOrNull { it.key == addon.key }?.let {
@@ -48,13 +50,13 @@ object AddonResolver {
                         }
                         if (!permitted()) return@withTimeoutOrNull null
                         val checked = if (stream.transport == null && stream.codec == "flac") {
-                            val info = LosslessSource.flacInfo(AddonHttp.bytes(stream.url, 65536, prefix = true))
+                            val info = LosslessSource.flacInfo(probe(stream.url, 65536, true))
                             if (info == null || !LosslessSource.durationMatches(durationMs, info.durationMs)) {
                                 report("${manifest.name}: FLAC header or duration did not match"); continue
                             }
                             stream.copy(bits = info.bits, sampleRate = info.sampleRate)
                         } else {
-                            val prefix = AddonHttp.bytes(stream.url, 65536, prefix = true)
+                            val prefix = probe(stream.url, 65536, true)
                             if (stream.transport != null) {
                                 val text = prefix.toString(Charsets.UTF_8)
                                 val valid = if (stream.transport == "hls") text.trimStart().startsWith("#EXTM3U") && !Regex("#EXT-X-(?:SESSION-)?KEY:.*METHOD=(?!NONE)").containsMatchIn(text)

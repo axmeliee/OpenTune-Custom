@@ -213,6 +213,8 @@ class PlaybackService : MediaLibraryService() {
             // its speaker, and Wear OS offers to connect some. Other devices are unaffected.
             .setSuppressPlaybackOnUnsuitableOutput(true)
             .build()
+        player.trackSelectionParameters = player.trackSelectionParameters.buildUpon()
+            .setPreferredAudioMimeTypes("audio/flac", "audio/alac", "audio/raw").build()
         player.addListener(playerListener)
 
         val effects = SoundEffects(player)
@@ -691,9 +693,17 @@ class PlaybackService : MediaLibraryService() {
         }
 
         override fun onTracksChanged(tracks: Tracks) {
-            val rate = tracks.groups.firstOrNull { it.type == C.TRACK_TYPE_AUDIO && it.isSelected }
-                ?.let { g -> (0 until g.length).firstOrNull(g::isTrackSelected)?.let(g::getTrackFormat) }
-                ?.sampleRate?.takeIf { it > 0 } ?: return
+            val format = tracks.groups.firstOrNull { it.type == C.TRACK_TYPE_AUDIO && it.isSelected }
+                ?.let { g -> (0 until g.length).firstOrNull(g::isTrackSelected)?.let(g::getTrackFormat) } ?: return
+            val item = mediaSession?.player?.currentMediaItem
+            val rendition = item?.localConfiguration?.uri?.let(::externalStreamKeyOf)?.let { ExternalStreams.get(item.mediaId, it) }
+            if (rendition?.addonId != null && format.sampleMimeType != null &&
+                format.sampleMimeType !in setOf("audio/flac", "audio/alac", "audio/raw")) {
+                scope.launch { recover(PlaybackException("Add-on returned a lossy track for a lossless request", null,
+                    PlaybackException.ERROR_CODE_DECODING_FORMAT_UNSUPPORTED)) }
+                return
+            }
+            val rate = format.sampleRate.takeIf { it > 0 } ?: return
             if (rate != outputRate) {
                 outputRate = rate
                 if (AppSettings.playback.value.bitPerfectUsb) applyBitPerfect()
@@ -724,7 +734,10 @@ class PlaybackService : MediaLibraryService() {
         }
 
         override fun onPlayerError(error: PlaybackException) {
-            Log.e(TAG, "Playback error on ${mediaSession?.player?.currentMediaItem?.mediaId}: ${error.errorCodeName}", error)
+            val item = mediaSession?.player?.currentMediaItem
+            val external = item?.localConfiguration?.uri?.let(::externalStreamKeyOf) != null
+            if (external) Log.e(TAG, "External playback failed: ${error.errorCodeName}")
+            else Log.e(TAG, "Playback error on ${item?.mediaId}: ${error.errorCodeName}", error)
             recover(error)
         }
     }
