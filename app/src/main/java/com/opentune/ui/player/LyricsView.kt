@@ -73,7 +73,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.blur
-import androidx.compose.ui.draw.BlurredEdgeTreatment
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.TransformOrigin
@@ -457,12 +456,6 @@ private fun LyricLineView(
         }
     }
     val sweep = isActive && line.words.isNotEmpty()
-    // The Apple-style bloom: a grown, blurred copy of the line behind the crisp
-    // text, shown only over the words sung so far. Needs real blur, so it waits
-    // for Android 12+ and sits out the minimal animation.
-    val bloom = sweep && animation != LyricsAnimation.MINIMAL && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S
-    // With the bloom carrying the glow, the text shadow would only double it.
-    val lineStyle = if (bloom) base else style
     Column(
         Modifier
             .fillMaxWidth()
@@ -478,37 +471,24 @@ private fun LyricLineView(
             .then(if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && blur > 0.dp) Modifier.blur(blur) else Modifier),
     ) {
         if (sweep) {
-            Box(Modifier.fillMaxWidth()) {
-                if (bloom) {
-                    Text(
-                        text = text,
-                        style = base,
-                        color = bright,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .graphicsLayer { scaleX = 1.03f; scaleY = 1.03f; transformOrigin = TransformOrigin(origin, 0.5f) }
-                            .blur(BLOOM_RADIUS, BlurredEdgeTreatment.Unbounded)
-                            // Keep only the sung part of the halo; nothing until the line has been measured.
-                            .drawWithContent { if (wordBoxes.isNotEmpty()) { drawContent(); sweepDim(line, wordBoxes, position(), 1f) } },
-                    )
-                }
-                Text(
-                    text = text,
-                    style = lineStyle,
-                    color = bright,
-                    onTextLayout = { layout = it },
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        // Its own layer, so dimming the unsung words doesn't punch through what's behind.
-                        .graphicsLayer { compositingStrategy = CompositingStrategy.Offscreen }
-                        // The whole active line stays readable; sung words lift to full, unsung sit a touch below.
-                        .drawWithContent { drawContent(); sweepDim(line, wordBoxes, position(), if (bloom) 0.2f else 0.4f) },
-                )
-            }
+            // One crisp line: the whole active line stays readable and bright, sung words
+            // lift to full while those not reached yet sit a touch below. No blurred copy,
+            // so a line that wraps to two rows has no glowing halo or box around it.
+            Text(
+                text = text,
+                style = style,
+                color = bright,
+                onTextLayout = { layout = it },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    // Its own layer, so dimming the unsung words doesn't punch through what's behind.
+                    .graphicsLayer { compositingStrategy = CompositingStrategy.Offscreen }
+                    .drawWithContent { drawContent(); sweepDim(line, wordBoxes, position(), 0.3f) },
+            )
         } else {
             Text(
                 text = text,
-                style = lineStyle,
+                style = style,
                 color = if (isActive) bright else dim,
                 onTextLayout = { layout = it },
                 modifier = Modifier.fillMaxWidth(),
@@ -565,10 +545,6 @@ private fun DrawScope.sweepDim(line: LyricLine, boxes: List<Rect>, positionMs: L
         )
     }
 }
-
-/** How far the bloom halo spreads around the sung words. */
-private val BLOOM_RADIUS = 11.dp
-
 
 /** While the sources are asked: a small pill saying the lyrics are on their way, with a turning mark. */
 @Composable
