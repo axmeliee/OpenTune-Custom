@@ -18,6 +18,8 @@
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <!-- Android 16+: the playing song as a Live Update in the status bar. Granted at install. -->
     <uses-permission android:name="android.permission.WAKE_LOCK" />
+    <!-- High performance mode asks to be left out of battery saving, so frames aren't throttled. -->
+    <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
     <!-- Taps and buzzes at the strength set in Settings. -->
     <uses-permission android:name="android.permission.VIBRATE" />
     <!-- Reverb runs as an auxiliary effect on the output mix. -->

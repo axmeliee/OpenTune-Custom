@@ -144,6 +144,33 @@ object LrcParser {
     }
 }
 
+/** A stretch with no singing between two lines, long enough to show as an instrumental break. */
+data class LyricGap(val afterIndex: Int, val startMs: Long, val endMs: Long)
+
+/**
+ * When the singing in this line actually stops: the end of its last word, or
+ * the line's end when it carries no word timing. For a line-synced lyric the
+ * spread words finish a little before the next line, so a long tail of dead
+ * air after a short line shows up here as time with nothing being sung.
+ */
+fun LyricLine.sungUntilMs(): Long = words.maxOfOrNull { it.endMs } ?: endMs
+
+/**
+ * Instrumental breaks between lines: a line stops being sung and the next
+ * doesn't start for at least [minMs]. Used to show breathing dots in the gap
+ * instead of leaving the last line lit through a passage with no vocals.
+ */
+fun List<LyricLine>.instrumentalGaps(minMs: Long = 5_000L): List<LyricGap> {
+    val out = mutableListOf<LyricGap>()
+    for (i in indices) {
+        val next = getOrNull(i + 1) ?: break
+        val from = this[i].sungUntilMs()
+        val to = next.startMs
+        if (to - from >= minMs) out += LyricGap(i, from, to)
+    }
+    return out
+}
+
 /** Index of the line playing at [positionMs], or -1 before the first one. */
 fun List<LyricLine>.activeIndex(positionMs: Long): Int {
     var lo = 0

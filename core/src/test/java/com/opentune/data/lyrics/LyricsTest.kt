@@ -73,6 +73,33 @@ class LrcParserTest {
         assertEquals(1, lines.activeIndex(14_999))
         assertEquals(2, lines.activeIndex(60_000))
     }
+
+    @Test
+    fun instrumentalMarkerLeavesAGapBetweenLines() {
+        // The blank [00:08] marks where the singing stops before a long instrumental.
+        val lines = LrcParser.parse("[00:05.00]first line\n[00:08.00]\n[00:30.00]after the solo\n[00:33.00]end")
+        val gaps = lines.instrumentalGaps()
+        assertEquals(1, gaps.size)
+        assertEquals(0, gaps.first().afterIndex)
+        assertTrue(gaps.first().startMs <= 8_000L)
+        assertEquals(30_000L, gaps.first().endMs)
+    }
+
+    @Test
+    fun longTailAfterAShortLineCountsAsAGap() {
+        // No marker: the line runs until the next one 30 s later, but its words are
+        // spread over at most 8 s, so the rest of the stretch has nothing sung.
+        val lines = LrcParser.parse("[00:05.00]short line\n[00:35.00]next")
+        val gaps = lines.instrumentalGaps()
+        assertEquals(1, gaps.size)
+        assertTrue(gaps.first().startMs <= 13_000L)
+    }
+
+    @Test
+    fun ordinaryLineChangesAreNotGaps() {
+        val lines = LrcParser.parse("[00:05.00]one\n[00:08.00]two\n[00:11.00]three")
+        assertTrue(lines.instrumentalGaps().isEmpty())
+    }
 }
 
 class TrackNameCleanerTest {

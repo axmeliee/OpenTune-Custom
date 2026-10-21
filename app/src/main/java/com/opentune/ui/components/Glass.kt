@@ -133,8 +133,11 @@ fun Modifier.glass(shape: Shape, tint: Color = MaterialTheme.colorScheme.surface
                 blur(look.liquidBlur.toPx())
                 // A wide, deep lens: content bends visibly for the last stretch
                 // before the edge, with the light split into a fringe there. Deep
-                // enough that the glass reads as thick, like BitChord's.
-                lens(30.dp.toPx(), 62.dp.toPx(), depthEffect = true, chromaticAberration = true)
+                // enough that the glass reads as thick, like BitChord's, but never
+                // past the middle of a short pill, where the top and bottom bands
+                // would meet in a hard line across it.
+                val depth = lensDepth(30.dp.toPx(), size.minDimension)
+                lens(depth, 62.dp.toPx() * depth / 30.dp.toPx(), depthEffect = true, chromaticAberration = true)
             },
             highlight = { Highlight.Default },
             shadow = { Shadow.Default },
@@ -170,7 +173,8 @@ fun Modifier.glass(shape: Shape, tint: Color = MaterialTheme.colorScheme.surface
                 // colour fringing, the way Apple's glass reads over artwork.
                 colorControls(saturation = look.saturation)
                 blur(look.liquidBlur.toPx())
-                lens(24.dp.toPx(), 24.dp.toPx(), depthEffect = true, chromaticAberration = true)
+                val depth = lensDepth(24.dp.toPx(), size.minDimension)
+                lens(depth, depth, depthEffect = true, chromaticAberration = true)
             },
             highlight = { Highlight.Default },
             shadow = { Shadow.Default },
@@ -237,6 +241,9 @@ fun GlassPage(modifier: Modifier = Modifier, overlay: @Composable BoxScope.() ->
         ) { overlay() }
     }
 }
+
+/** How deep a lens may bend at the edge: [wanted], kept to under half the shape's short side. */
+private fun lensDepth(wanted: Float, shortSide: Float): Float = minOf(wanted, shortSide * 0.42f).coerceAtLeast(0f)
 
 /** The numbers behind a [GlassStyle], for frosted glass and for Liquid Glass. */
 internal data class GlassLook(

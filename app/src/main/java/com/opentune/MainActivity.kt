@@ -41,7 +41,7 @@ class MainActivity : ComponentActivity() {
             val vm: PlayerViewModel = viewModel()
             val theme by AppSettings.theme.collectAsState()
             val ui by AppSettings.ui.collectAsState()
-            LaunchedEffect(ui.highRefreshRate) { preferRefreshRate(ui.highRefreshRate) }
+            LaunchedEffect(ui.highRefreshRate, ui.refreshRateHz) { preferRefreshRate(ui.highRefreshRate, ui.refreshRateHz) }
             // A TV dims and starts its screensaver after a few minutes without a key press;
             // while music plays from here, the cover and lyrics stay on screen instead.
             val playing by vm.isPlaying.collectAsState()
@@ -100,17 +100,22 @@ class MainActivity : ComponentActivity() {
     }
 
     /**
-     * With [fastest], asks for the screen's quickest refresh rate at its
-     * current resolution, so scrolling and animation run at 90 or 120 Hz on
-     * phones that otherwise hold apps at 60. Without it the system decides.
+     * With [on] (high performance mode), asks for a fast refresh rate at the
+     * screen's current resolution, so scrolling and animation run at 90 or
+     * 120 Hz on phones that otherwise hold apps at 60: the mode nearest [hz],
+     * or the fastest one when [hz] is 0. Without it the system decides.
      */
-    private fun preferRefreshRate(fastest: Boolean) {
+    private fun preferRefreshRate(on: Boolean, hz: Int) {
         @Suppress("DEPRECATION")
         val display = (if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) display else windowManager.defaultDisplay) ?: return
         val now = display.mode
-        val best = if (!fastest) null else display.supportedModes
+        val modes = display.supportedModes
             .filter { it.physicalWidth == now.physicalWidth && it.physicalHeight == now.physicalHeight }
-            .maxByOrNull { it.refreshRate }
+        val best = when {
+            !on -> null
+            hz <= 0 -> modes.maxByOrNull { it.refreshRate }
+            else -> modes.minByOrNull { kotlin.math.abs(it.refreshRate - hz) }
+        }
         val id = best?.modeId ?: 0
         if (window.attributes.preferredDisplayModeId != id) {
             window.attributes = window.attributes.apply { preferredDisplayModeId = id }

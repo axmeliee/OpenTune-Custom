@@ -1032,8 +1032,8 @@ private fun settingsSections(
                 Entry("Frosted top edge", "status bar blur fade top scroll glass") {
                     ToggleRow("Frosted top edge", ui.frostedTopEdge, { v -> AppSettings.updateUi { it.copy(frostedTopEdge = v) } }, summary = "Pages blur and fade as they scroll under the status bar", icon = Icons.Rounded.Gradient)
                 },
-                Entry("High refresh rate", "120hz 90hz smooth fps refresh rate frame rate scrolling performance") {
-                    ToggleRow("High refresh rate", ui.highRefreshRate, { v -> AppSettings.updateUi { it.copy(highRefreshRate = v) } }, summary = "Runs the screen at its fastest rate while OpenTune is open, for smoother scrolling", icon = Icons.Rounded.Speed)
+                Entry("High performance mode", "120hz 90hz smooth fps refresh rate frame rate scrolling performance battery unrestricted lag") {
+                    HighPerformanceRows(ui)
                 },
                 Entry("Wide-screen layout", "tablet foldable large screen landscape rail side navigation dock columns") {
                     ToggleRow(

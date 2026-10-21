@@ -78,16 +78,17 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.unit.dp
+import com.opentune.data.lyrics.LyricGap
 import com.opentune.data.lyrics.LyricLine
 import com.opentune.data.lyrics.LyricWord
 import com.opentune.data.lyrics.Romanizer
+import com.opentune.data.lyrics.instrumentalGaps
 import com.opentune.data.lyrics.VOICE_SECOND
 import com.opentune.data.lyrics.VOICE_TOGETHER
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.withStyle
 import com.opentune.data.lyrics.Lyrics
-import com.opentune.data.lyrics.activeIndex
 import com.opentune.ui.LyricsState
 import com.opentune.ui.components.MessageState
 import com.opentune.ui.components.Placeholder
@@ -264,8 +265,22 @@ private fun SyncedLyrics(
     // snapping back. Restarts for each new set of lines (a new song).
     val clock = rememberLyricsClock(position, playing, seeks, trackKey = lines)
     val pos by rememberUpdatedState(clock)
-    // A line lights a moment before its timestamp, so it's there as the singer starts it.
-    val active by remember(lines) { derivedStateOf { lines.activeIndex(pos() + LINE_LEAD_MS) } }
+    // The lines with instrumental breaks folded in: a long stretch with no
+    // singing becomes a row of breathing dots, so the last sung line doesn't
+    // sit lit through a passage with no vocals.
+    val rows = remember(lines) { buildLyricRows(lines) }
+    // A line lights a moment before its timestamp, so it's there as the singer
+    // starts it; a gap's dots take over the moment the singing stops.
+    val activeRow by remember(rows) {
+        derivedStateOf {
+            val p = pos() + LINE_LEAD_MS
+            var found = -1
+            rows.forEachIndexed { i, row -> if (row.startMs <= p) found = i }
+            found
+        }
+    }
+    // The line the view is centred on, whether a line or the gap after it is lit.
+    val activeLine by remember(rows) { derivedStateOf { (rows.getOrNull(activeRow) as? LyricRow.Line)?.index ?: (rows.getOrNull(activeRow) as? LyricRow.Gap)?.gap?.afterIndex ?: -1 } }
     var following by remember { mutableStateOf(true) }
     val glide = remember { GlideSpeed() }
 
@@ -283,14 +298,15 @@ private fun SyncedLyrics(
     }
 
     BoxWithConstraints(Modifier.fillMaxSize()) {
-        val anchor = maxHeight * 0.3f
-        LaunchedEffect(active, following, reduced) {
+        // The current line sits near the top, leaving room for just the line before it.
+        val anchor = maxHeight * LINE_ANCHOR
+        LaunchedEffect(activeRow, following, reduced) {
             if (!following) {
                 glide.pxPerS = 0f
                 return@LaunchedEffect
             }
             // +1 for the intro item ahead of the first line.
-            glideTo(listState, (active + 1).coerceAtLeast(0), reduced, glide)
+            glideTo(listState, (activeRow + 1).coerceAtLeast(0), reduced, glide)
         }
 
         LazyColumn(
@@ -303,22 +319,32 @@ private fun SyncedLyrics(
                 val waiting by remember(firstStart) { derivedStateOf { firstStart > 2_500 && pos() < firstStart - 300 } }
                 IntroDots(visible = waiting)
             }
-            itemsIndexed(lines, key = { i, line -> "$i:${line.startMs}" }) { i, line ->
-                LyricLineView(
-                    line = line,
-                    distance = i - active,
-                    isActive = i == active,
-                    animation = animation,
-                    blurEnabled = blur && following,
-                    position = clock,
-                    romanized = romanized.getOrNull(i),
-                    duet = duet,
-                    onClick = {
-                        onSeek(line.startMs)
-                        following = true
-                    },
-                    onLongClick = onSyncLine?.let { sync -> { sync(line.startMs); following = true } },
-                )
+            itemsIndexed(rows, key = { _, row -> row.key }) { r, row ->
+                when (row) {
+                    is LyricRow.Line -> {
+                        val i = row.index
+                        val line = row.line
+                        LyricLineView(
+                            line = line,
+                            distance = i - activeLine,
+                            isActive = r == activeRow,
+                            animation = animation,
+                            blurEnabled = blur && following,
+                            position = clock,
+                            romanized = romanized.getOrNull(i),
+                            duet = duet,
+                            onClick = {
+                                onSeek(line.startMs)
+                                following = true
+                            },
+                            onLongClick = onSyncLine?.let { sync -> { sync(line.startMs); following = true } },
+                        )
+                    }
+                    is LyricRow.Gap -> GapDots(
+                        visible = r == activeRow,
+                        progress = { ((clock() - row.gap.startMs).toFloat() / (row.gap.endMs - row.gap.startMs)).coerceIn(0f, 1f) },
+                    )
+                }
             }
             item(key = "credit") { Credit(source) }
         }
@@ -341,6 +367,63 @@ private fun SyncedLyrics(
 
 /** How fast the list was gliding, kept from one line to the next. */
 private class GlideSpeed { var pxPerS = 0f }
+
+/** One row of the synced list: a sung line, or the instrumental break after one. */
+private sealed interface LyricRow {
+    val startMs: Long
+    val key: String
+
+    class Line(val index: Int, val line: LyricLine) : LyricRow {
+        override val startMs get() = line.startMs
+        override val key get() = "$index:${line.startMs}"
+    }
+
+    class Gap(val gap: LyricGap) : LyricRow {
+        override val startMs get() = gap.startMs
+        override val key get() = "gap:${gap.afterIndex}:${gap.startMs}"
+    }
+}
+
+private fun buildLyricRows(lines: List<LyricLine>): List<LyricRow> {
+    val gaps = lines.instrumentalGaps().associateBy { it.afterIndex }
+    return buildList {
+        lines.forEachIndexed { i, line ->
+            add(LyricRow.Line(i, line))
+            gaps[i]?.let { add(LyricRow.Gap(it)) }
+        }
+    }
+}
+
+/**
+ * Three dots for an instrumental break. They fill in one after another as the
+ * break runs out, so you can see the next line coming, and breathe while they wait.
+ */
+@Composable
+private fun GapDots(visible: Boolean, progress: () -> Float) {
+    AnimatedVisibility(visible, enter = fadeIn() + expandVertically(), exit = fadeOut() + shrinkVertically()) {
+        val transition = rememberInfiniteTransition(label = "gap")
+        val breath by transition.animateFloat(0.92f, 1.08f, infiniteRepeatable(tween(1_200), RepeatMode.Reverse), label = "breath")
+        val ink = MaterialTheme.colorScheme.onSurface
+        Row(
+            Modifier
+                .padding(vertical = 18.dp)
+                .graphicsLayer { scaleX = breath; scaleY = breath; transformOrigin = TransformOrigin(0f, 0.5f) },
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
+            repeat(3) { i ->
+                Box(
+                    Modifier
+                        .size(14.dp)
+                        .drawWithContent {
+                            // Each dot takes a third of the break to light, from dim to full.
+                            val lit = (progress() * 3f - i).coerceIn(0f, 1f)
+                            drawCircle(ink.copy(alpha = 0.3f + 0.7f * lit))
+                        },
+                )
+            }
+        }
+    }
+}
 
 /**
  * Scroll [index] to the top of the content area (the anchor), smoothly when
@@ -445,14 +528,27 @@ private fun LyricLineView(
     val text = remember(line) { if (line.words.isEmpty()) line.text else line.words.joinToString("") { it.text } }
     var layout by remember { mutableStateOf<TextLayoutResult?>(null) }
     // Where each word sits, worked out once per layout rather than every frame.
+    // A word's trailing space is left out, and a word that still runs across a
+    // wrap gets one box per row: a single box for the word that ends the first
+    // row would span both rows edge to edge and dim the whole line until sung.
     val wordBoxes = remember(layout, line) {
         val l = layout ?: return@remember emptyList()
         var start = 0
         line.words.map { w ->
             val end = (start + w.text.length).coerceAtMost(text.length)
-            val box = if (end > start) l.getPathForRange(start, end).getBounds() else Rect.Zero
+            var visibleEnd = end
+            while (visibleEnd > start && text[visibleEnd - 1].isWhitespace()) visibleEnd--
+            val boxes = if (visibleEnd <= start) emptyList() else {
+                val first = l.getLineForOffset(start)
+                val last = l.getLineForOffset(visibleEnd - 1)
+                (first..last).mapNotNull { row ->
+                    val from = maxOf(start, l.getLineStart(row))
+                    val to = minOf(visibleEnd, l.getLineEnd(row, visibleEnd = true))
+                    if (to > from) l.getPathForRange(from, to).getBounds() else null
+                }
+            }
             start = end
-            box
+            boxes
         }
     }
     val sweep = isActive && line.words.isNotEmpty()
@@ -516,33 +612,39 @@ private fun LyricLineView(
 
 /**
  * Sweeps word by word along the line as it's sung, cutting the alpha of the
- * part not reached yet by [removal] (a fraction of 0..1, fully removed at 1).
- * The crisp copy passes a small value, so the whole active line stays
- * readable and only lifts a little as each word lands; the bloom copy passes
- * 1, so its halo shows over the sung words alone. Done at draw time, so the
- * line isn't measured again every frame.
+ * part not reached yet by [removal] (a fraction of 0..1, fully removed at 1),
+ * so the whole active line stays readable and lifts a little as each word
+ * lands. A word split over two rows fills its first piece, then its second.
+ * Done at draw time, so the line isn't measured again every frame.
  */
-private fun DrawScope.sweepDim(line: LyricLine, boxes: List<Rect>, positionMs: Long, removal: Float) {
+private fun DrawScope.sweepDim(line: LyricLine, boxes: List<List<Rect>>, positionMs: Long, removal: Float) {
     val feather = 14.dp.toPx()
     line.words.forEachIndexed { i, word ->
-        val box = boxes.getOrNull(i) ?: return@forEachIndexed
-        if (box.isEmpty) return@forEachIndexed
+        val pieces = boxes.getOrNull(i) ?: return@forEachIndexed
+        if (pieces.isEmpty()) return@forEachIndexed
         val span = (word.endMs - word.startMs).coerceAtLeast(1)
         // Even through the word: an eased fill rushed the start and lagged the end, off the singing.
         val t = ((positionMs - word.startMs).toFloat() / span).coerceIn(0f, 1f)
         if (t >= 1f) return@forEachIndexed
-        val litX = box.left + (box.width + feather) * t
-        drawRect(
-            brush = Brush.horizontalGradient(
-                0f to Color.Transparent,
-                1f to Color.Black.copy(alpha = removal),
-                startX = litX - feather,
-                endX = litX,
-            ),
-            topLeft = Offset(box.left, box.top),
-            size = Size(box.width, box.height),
-            blendMode = BlendMode.DstOut,
-        )
+        val total = pieces.sumOf { it.width.toDouble() }.toFloat().coerceAtLeast(1f)
+        var before = 0f
+        pieces.forEach { box ->
+            val pieceT = ((t * total - before) / box.width.coerceAtLeast(1f)).coerceIn(0f, 1f)
+            before += box.width
+            if (pieceT >= 1f || box.isEmpty) return@forEach
+            val litX = box.left + (box.width + feather) * pieceT
+            drawRect(
+                brush = Brush.horizontalGradient(
+                    0f to Color.Transparent,
+                    1f to Color.Black.copy(alpha = removal),
+                    startX = litX - feather,
+                    endX = litX,
+                ),
+                topLeft = Offset(box.left, box.top),
+                size = Size(box.width, box.height),
+                blendMode = BlendMode.DstOut,
+            )
+        }
     }
 }
 
@@ -607,6 +709,8 @@ private fun Credit(source: String) {
 }
 
 private const val RESUME_FOLLOW_MS = 3_000L
+/** Where the current line sits, as a share of the height from the top: room for one line above it. */
+private const val LINE_ANCHOR = 0.16f
 /** How far ahead of its timestamp a line lights up. */
 private const val LINE_LEAD_MS = 150L
 

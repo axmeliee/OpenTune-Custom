@@ -384,8 +384,10 @@ data class InterfaceSettings(
     val lyricsAlign: LyricsAlign = LyricsAlign.LEFT,
     /** A soft glow around the line being sung, whatever the lyrics animation. */
     val lyricsGlow: Boolean = false,
-    /** Ask for the screen's fastest refresh rate while the app is open. */
+    /** High performance mode: ask for a fast refresh rate while the app is open. */
     val highRefreshRate: Boolean = true,
+    /** The rate high performance mode asks for, in Hz; 0 for the screen's fastest. */
+    val refreshRateHz: Int = 0,
     /** How the full player rises over the page and drops away. */
     val playerMotion: PlayerMotion = PlayerMotion.SPRING,
     /** How the player's cover gives way to the next song's. */
