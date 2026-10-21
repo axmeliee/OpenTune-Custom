@@ -31,6 +31,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.rounded.Devices
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.Logout
 import androidx.compose.material.icons.automirrored.rounded.PlaylistPlay
@@ -400,6 +401,7 @@ private fun settingsSections(
     var listenBrainzDialog by remember { mutableStateOf(false) }
     var sponsorBlockDialog by remember { mutableStateOf(false) }
     var update by remember { mutableStateOf<UpdateCheck.Release?>(null) }
+    var showPlatforms by remember { mutableStateOf(false) }
     var showPairing by remember { mutableStateOf(false) }
     var showWhatsNew by remember { mutableStateOf(false) }
     var supportDialog by remember { mutableStateOf(false) }
@@ -436,6 +438,7 @@ private fun settingsSections(
     val metered = remember { AppSettings.onMeteredNetwork() }
     var qualityDialog by remember { mutableStateOf<Boolean?>(null) } // true = Wi-Fi, false = mobile
     var audioAddons by remember { mutableStateOf(false) }
+    if (showPlatforms) PlatformsPage { showPlatforms = false }
     if (showPairing) com.opentune.ui.account.ReceiveSessionSheet { showPairing = false }
     if (audioAddons) AudioAddonsSheet { audioAddons = false }
     var folderDialog by remember { mutableStateOf(false) }
@@ -694,10 +697,10 @@ private fun settingsSections(
                     })
                 },
                 Entry("Lossless streaming", "flac lossless addons") {
-                    ToggleRow("Lossless below Max", pb.losslessStreaming, { v -> AppSettings.updatePlayback { it.copy(losslessStreaming = v) } }, summary = "Also check your audio add-ons after playback starts at other quality levels. Max checks them automatically in your chosen order.", icon = Icons.Rounded.HighQuality)
+                    ToggleRow("Lossless at other quality levels", pb.losslessStreaming, { v -> AppSettings.updatePlayback { it.copy(losslessStreaming = v) } }, summary = "Also check your audio add-ons after playback starts at other quality levels. Lossless checks them automatically in your chosen order.", icon = Icons.Rounded.HighQuality)
                 },
                 Entry("Unmetered networks only", "flac saavn mobile wifi data") {
-                    ToggleRow("Unmetered networks only", pb.losslessUnmeteredOnly, { v -> AppSettings.updatePlayback { it.copy(losslessUnmeteredOnly = v) } }, summary = "When on, mobile data uses YouTube even at Max. Turn off to try FLAC and JioSaavn on mobile data", icon = Icons.Rounded.Wifi)
+                    ToggleRow("Unmetered networks only", pb.losslessUnmeteredOnly, { v -> AppSettings.updatePlayback { it.copy(losslessUnmeteredOnly = v) } }, summary = "When on, mobile data uses YouTube even with Lossless selected. Turn off to try FLAC and JioSaavn on mobile data", icon = Icons.Rounded.Wifi)
                 },
                 Entry("Audio add-ons", "source URL manifest order priority lossless flac high res") {
                     SettingRow("Audio add-ons", icon = Icons.Rounded.HighQuality, summary = "Add service URLs and choose source priority", onClick = { audioAddons = true })
@@ -982,7 +985,7 @@ private fun settingsSections(
                     ToggleRow("Skip to chorus button", ui.skipToChorus, { v -> AppSettings.updateUi { it.copy(skipToChorus = v) } }, summary = "A button under the title that jumps to the next chorus, when the lyrics mark one", icon = Icons.Rounded.FastForward)
                 },
                 Entry("Audio quality label", "audio source quality pill badge codec bitrate jiosaavn youtube") {
-                    ToggleRow("Show the quality label", ui.sourcePill, { v -> AppSettings.updateUi { it.copy(sourcePill = v) } }, summary = "The pill under the title that says where the audio comes from and its quality", icon = Icons.Rounded.HighQuality)
+                    ToggleRow("Show the quality label", ui.sourcePill, { v -> AppSettings.updateUi { it.copy(sourcePill = v) } }, summary = "Shows quality and upgrade progress below the seek bar; tap for the full signal path", icon = Icons.Rounded.HighQuality)
                 },
                 Entry("Album covers", "artwork cover musicbrainz cover art archive video thumbnail") {
                     ToggleRow("Album covers from MusicBrainz", ui.albumCovers, { v -> AppSettings.updateUi { it.copy(albumCovers = v) } }, summary = "Shows the album's cover in the player instead of a video frame, and for local files without one", icon = Icons.Rounded.Album)
@@ -1339,6 +1342,9 @@ private fun settingsSections(
                         summary = "Shares a random installation ID, app version, active dates and daily play totals. No hardware ID, account or song names. Reinstalls get a new ID; updates keep it.",
                         icon = Icons.Rounded.Info,
                     )
+                },
+                Entry("OpenTune on Web & TV", "web browser android tv television platforms qr") {
+                    NavRow("OpenTune on Web & TV", { showPlatforms = true }, summary = "Listen on another screen and pair your TV", icon = Icons.Rounded.Devices)
                 },
                 Entry("OpenTune community", "github discord community addons developer") { CommunityBanner() },
                 Entry("Support OpenTune", "donate upi pay money tip support developer") {

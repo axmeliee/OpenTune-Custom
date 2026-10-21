@@ -28,4 +28,12 @@ class SourceQualityBadgeTest {
         org.junit.Assert.assertFalse(isHighestQuality(NerdStats.Source("Checking highest quality"), null))
         org.junit.Assert.assertFalse(isHighestQuality(null, null))
     }
+
+    @Test fun qualityTextUsesMeasuredFormatAndRealUpgradeState() {
+        val source = NerdStats.Source("Community source",24,192000,320)
+        assertEquals("High quality, upgrading", qualityStatusLabel(source, AudioFormatInfo("AAC",320,44100,2), true))
+        assertEquals("Lossless", qualityStatusLabel(source, AudioFormatInfo("FLAC",null,44100,2,16), false))
+        assertEquals("Hi-Res Lossless", qualityStatusLabel(source, AudioFormatInfo("FLAC",null,96000,2,24), false))
+        assertEquals("Upgrading quality", qualityStatusLabel(null, null, true))
+    }
 }

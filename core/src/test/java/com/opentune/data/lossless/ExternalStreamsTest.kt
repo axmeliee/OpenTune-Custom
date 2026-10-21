@@ -14,7 +14,7 @@ import org.robolectric.annotation.Config
 class ExternalStreamsTest {
     @Test fun startupCacheRejectsExpiredFailedAndDisabledRenditions() {
         AppSettings.init(RuntimeEnvironment.getApplication())
-        AppSettings.updatePlayback { it.copy(wifiQuality = AudioQuality.MAX, mobileQuality = AudioQuality.MAX, losslessUnmeteredOnly = false) }
+        AppSettings.updatePlayback { it.copy(wifiQuality = AudioQuality.MAX, mobileQuality = AudioQuality.MAX, losslessUnmeteredOnly = false, jioSaavnQuality = true) }
         val fresh = ExternalStreams.Rendition("startup-fresh", "https://cdn.example/audio", "FLAC", true, System.nanoTime() / 1_000_000)
         assertNull(ExternalStreams.cached("not-looked-up"))
         ExternalStreams.remember("startup-cache", fresh)
@@ -30,7 +30,7 @@ class ExternalStreamsTest {
 
     @Test fun replacingAResultDoesNotInvalidateBytesThePlayerIsStillReading() {
         AppSettings.init(RuntimeEnvironment.getApplication())
-        AppSettings.updatePlayback { it.copy(wifiQuality = AudioQuality.MAX, mobileQuality = AudioQuality.MAX, losslessUnmeteredOnly = false) }
+        AppSettings.updatePlayback { it.copy(wifiQuality = AudioQuality.MAX, mobileQuality = AudioQuality.MAX, losslessUnmeteredOnly = false, jioSaavnQuality = true) }
         val before = ExternalStreams.Rendition("old", "https://cdn.example/old", "JioSaavn", false, System.nanoTime() / 1_000_000)
         val after = before.copy(key = "new", url = "https://cdn.example/new", lossless = true)
         ExternalStreams.remember("song", before)

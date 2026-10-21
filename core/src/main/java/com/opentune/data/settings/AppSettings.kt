@@ -22,7 +22,7 @@ enum class AudioQuality(val label: String, val summary: String, val maxKbps: Int
     LOW("Low", "About 64 kbps", 64),
     NORMAL("Normal", "About 128 kbps", 128),
     HIGH("High", "Opus up to 160 kbps", 160),
-    MAX("Max", "Fast start, then upgrade to the best available source", Int.MAX_VALUE),
+    MAX("Lossless", "Best available lossless from add-ons, with a lossy fallback", Int.MAX_VALUE),
 }
 
 @Serializable

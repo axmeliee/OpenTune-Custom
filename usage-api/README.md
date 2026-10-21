@@ -110,3 +110,9 @@ to deploy this Worker and access its existing D1 binding. It must not be committ
 Until the Worker update is deployed, the UTC history view can use the existing last-30-day
 summary; IST stays unavailable until the updated API is deployed. Older ranges and period-wide unique counts are explicitly unavailable in
 that mode. Download totals remain all-time because GitHub provides no daily history.
+
+## Community audio sources
+
+The owner dashboard can publish a catalog under `GET /v1/addons`. Only the authenticated owner can POST updates to that endpoint. Run the updated `schema.sql` migration when deploying; it creates `addon_catalog` without changing usage data. Load the current revision, add/edit the draft, and publish it. Concurrent edits use a revision check.
+
+Supported Android previews refresh at launch and when Sources opens. Existing enabled choices and order are preserved, withdrawn community entries disappear, and personal URLs remain untouched. Community sources display “Added by admin” and an alias, with no URL in the app UI. **Endpoints are public network data, not hidden credentials.** Real URL secrecy would require a separately operated proxy; no audio relay is introduced here. Worker deployment is separate from the APK/site build.

@@ -64,4 +64,16 @@ class AddonResolverTest {
         assertEquals("second", resolve()!!.provider)
         assertTrue(calls.all { "second.example" in it })
     }
+
+    @Test fun bestAvailableComparesSourcesAndKeepsPriorityForTies() = runBlocking {
+        add("first"); add("second")
+        val result = AddonResolver.resolve(song, 180000, bestAvailable = true, clientFor = ::client,
+            probe = { _, _, _ -> ByteArray(42).apply {
+                "fLaC".toByteArray().copyInto(this); this[4] = 0x80.toByte(); this[7] = 34
+                val packed = (44100L shl 44) or (1L shl 41) or (15L shl 36) or (44100L * 180)
+                for (i in 0..7) this[18+i] = (packed ushr (56-i*8)).toByte()
+            } })!!
+        assertEquals("first", result.provider)
+        assertTrue(calls.any { "second.example" in it })
+    }
 }

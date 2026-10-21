@@ -43,7 +43,7 @@ object PairingCrypto {
 
 class PairingOffer private constructor(val host: String, val port: Int, val expires: Long, internal val key: ByteArray) {
     val payload: String get() = PairingCrypto.encode("1|$host|$port|$expires|${PairingCrypto.encode(key)}".toByteArray(UTF_8))
-    val link: String get() = "https://justshivv.github.io/Opentune/pair/#$payload"
+    val link: String get() = "opentune://pair/#$payload"
     fun valid(now: Long = System.currentTimeMillis()): Boolean = expires > now && expires - now <= 125_000
     companion object {
         fun create(host: String, port: Int, now: Long = System.currentTimeMillis()): PairingOffer {

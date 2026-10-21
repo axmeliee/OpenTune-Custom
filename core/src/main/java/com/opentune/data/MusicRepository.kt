@@ -109,6 +109,13 @@ object MusicRepository {
         return saved.first
     }
 
+    /** Pull-to-refresh invalidates recommendations, while retaining visible content. */
+    fun refreshHomeRecommendations() {
+        homeMoreJob?.cancel()
+        extrasCache.clear()
+        seedCache = null
+    }
+
     suspend fun home(): List<HomeShelf> = io {
         val response = Innertube.browse("FEmusic_home")
         val first = InnertubeParser.parseHome(response).filter { it.items.isNotEmpty() }

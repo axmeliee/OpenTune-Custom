@@ -27,4 +27,20 @@ class AddonStoreTest {
         AddonStore.outputAllowed = { true }; assertTrue(AddonStore.usable(AddonStore.addons.value.first()))
         AddonStore.remove(second.key); assertEquals(1, AddonStore.addons.value.size)
     }
+
+    @Test fun communityRefreshPreservesPersonalSourcesAndListenerChoices() {
+        val context = ApplicationProvider.getApplicationContext<android.content.Context>()
+        context.getSharedPreferences("audio_addons",0).edit().clear().commit()
+        AddonStore.init(context)
+        AddonStore.add("https://mine.example/", AddonManifest("mine", "Mine", "1"))
+        val admin = AudioAddon("admin:one", "https://community.example/", AddonManifest("remote", "Community source", "1"), admin = true)
+        AddonStore.syncCommunity(listOf(admin)); AddonStore.enable(admin.key, false); AddonStore.move(admin.key, -1)
+        AddonStore.syncCommunity(listOf(admin.copy(base = "https://updated.example/")))
+        assertEquals(admin.key, AddonStore.addons.value.first().key)
+        assertFalse(AddonStore.addons.value.first().enabled)
+        AddonStore.refreshed(admin.key, AddonManifest("remote", "Underlying provider", "2"))
+        assertEquals("Community source", AddonStore.addons.value.first().manifest.name)
+        AddonStore.syncCommunity(emptyList())
+        assertEquals("Mine", AddonStore.addons.value.single().manifest.name)
+    }
 }
