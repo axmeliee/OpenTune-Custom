@@ -89,7 +89,7 @@ jobs:
           path: ${{ steps.ipa.outputs.file }}
 
       - name: Publish for sideloading
-        if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+        if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request' && !contains(github.event.head_commit.message, '[skip deploy]')
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
