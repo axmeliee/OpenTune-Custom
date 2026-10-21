@@ -162,7 +162,11 @@ object PlayerMorph {
  * thread: no recomposition, no new layout, no image asked for at a new size.
  */
 @Composable
-private fun MorphBox(url: String?, smallUrl: String?, from: Rect, to: Rect, p: () -> Float, startCornerDp: Float, endCornerDp: Float) {
+internal fun MorphBox(
+    url: String?, smallUrl: String?, from: Rect, to: Rect, p: () -> Float, startCornerDp: Float, endCornerDp: Float,
+    /** Where the box's parent sits in the root, [from] and [to] being root bounds. */
+    origin: androidx.compose.ui.geometry.Offset = androidx.compose.ui.geometry.Offset.Zero,
+) {
     val big = if (from.width >= to.width) from else to
     val small = if (big === from) to else from
     if (big.width <= 0f || big.height <= 0f) return
@@ -178,8 +182,8 @@ private fun MorphBox(url: String?, smallUrl: String?, from: Rect, to: Rect, p: (
                 fun lerp(a: Float, b: Float) = a + (b - a) * t
                 val w = lerp(from.width, to.width)
                 transformOrigin = TransformOrigin(0f, 0f)
-                translationX = lerp(from.left, to.left)
-                translationY = lerp(from.top, to.top)
+                translationX = lerp(from.left, to.left) - origin.x
+                translationY = lerp(from.top, to.top) - origin.y
                 scaleX = w / big.width
                 scaleY = lerp(from.height, to.height) / big.height
                 // The corner as it should look on screen, undone by the scale.

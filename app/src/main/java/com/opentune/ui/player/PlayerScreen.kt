@@ -425,7 +425,9 @@ fun PlayerLayout(
         val back = returnPane?.let { runCatching { Pane.valueOf(it) }.getOrNull() }?.takeIf { it != Pane.COVER } ?: Pane.QUEUE
         val from = com.opentune.ui.components.PlayerMorph.playerCover?.let(com.opentune.ui.components.PlayerMorph::scaled)
         smallCover = null
-        if (flies && from != null) flight.start(from, toSmall = true)
+        // A swipe already carrying the cover: it goes on from where the finger let go.
+        if (flight.following) flight.finish()
+        else if (flies && from != null) flight.start(from, toSmall = true)
         paneName = back.name
         returnPane = null
     }
@@ -433,17 +435,35 @@ fun PlayerLayout(
     LaunchedEffect(flight.runs) {
         if (flight.runs == 0) return@LaunchedEffect
         try {
-            flight.t.snapTo(0f)
-            var tries = 0
-            while (flight.target(smallCover) == null && tries++ < 30) delay(16)
+            flight.t.snapTo(flight.startAt)
+            flight.following = false
+            var frames = 0
+            while (flight.target(smallCover) == null && frames++ < 30) androidx.compose.runtime.withFrameNanos { }
             if (flight.target(smallCover) == null) return@LaunchedEffect
-            flight.t.animateTo(1f, tween(440, easing = androidx.compose.animation.core.CubicBezierEasing(0.2f, 0f, 0f, 1f)))
+            val left = 1f - flight.t.value
+            flight.t.animateTo(1f, tween((440 * left).toInt().coerceAtLeast(160), easing = androidx.compose.animation.core.CubicBezierEasing(0.2f, 0f, 0f, 1f)))
         } finally {
             flight.end()
         }
     }
     var upPull by remember { androidx.compose.runtime.mutableFloatStateOf(0f) }
     val upPx = with(LocalDensity.current) { 64.dp.toPx() }
+    var coverSettle by remember { mutableStateOf<kotlinx.coroutines.Job?>(null) }
+    // The full cover follows a swipe up toward the header it goes back into,
+    // when it's known where that header's cover sits.
+    val followsSwipe = flies && pane == Pane.COVER && style != PlayerStyle.LYRICS_FIRST
+    fun followUp() {
+        // Not over a tap's flight already on its way.
+        if (!followsSwipe || (flight.active && !flight.following)) return
+        val big = com.opentune.ui.components.PlayerMorph.playerCover?.let(com.opentune.ui.components.PlayerMorph::scaled)
+        val home = flight.lastSmall
+        if (flight.following) {
+            flight.pull = (-upPull / flight.travel).coerceIn(0f, 1f)
+        } else if (upPull < 0f && big != null && home != null) {
+            val travel = (big.top - home.top).coerceAtLeast(1f)
+            flight.follow(big, (-upPull / travel).coerceIn(0f, 1f), travel)
+        }
+    }
 
     PlayerTheme(seed = rememberArtworkSeed(current.thumbnailUrl), settings = theme) {
         Box(
@@ -466,16 +486,37 @@ fun PlayerLayout(
                     orientation = Orientation.Vertical,
                     enabled = !docked,
                     state = rememberDraggableState { delta ->
+                        var d = delta
+                        // Back down after a swipe up: the cover comes back with the finger first.
+                        if (upPull < 0f && d > 0f) {
+                            val back = minOf(d, -upPull)
+                            upPull += back
+                            d -= back
+                        }
                         // Upward, with the card at rest: a swipe up on the cover, counted on its own.
-                        if (delta < 0f && dragOffset == 0f) upPull += delta
-                        dragOffset = (dragOffset + delta).coerceAtLeast(0f)
+                        if (d < 0f && dragOffset == 0f) { upPull += d; d = 0f }
+                        dragOffset = (dragOffset + d).coerceAtLeast(0f)
+                        followUp()
                     },
                     // A finger landing on the card mid-spring takes hold of it where it is.
-                    onDragStarted = { settling?.cancel(); upPull = 0f },
+                    onDragStarted = {
+                        settling?.cancel()
+                        coverSettle?.cancel()
+                        upPull = if (flight.following) -flight.pull * flight.travel else 0f
+                    },
                     onDragStopped = { velocity ->
-                        if (pane == Pane.COVER && style != PlayerStyle.LYRICS_FIRST && dragOffset == 0f && (upPull < -upPx || velocity < -1_500f)) {
+                        if (pane == Pane.COVER && style != PlayerStyle.LYRICS_FIRST && dragOffset == 0f && (upPull < -upPx || velocity < -1_500f || flight.pull > 0.3f)) {
                             // Swiped up on the cover: it goes back up into the lyrics or queue header.
                             collapseCover()
+                        } else if (flight.following) {
+                            // Short of it: the cover settles back into its place.
+                            coverSettle = scope.launch {
+                                androidx.compose.animation.core.animate(flight.pull, 0f, -velocity / flight.travel, spring(dampingRatio = 0.85f, stiffness = 500f)) { v, _ ->
+                                    flight.pull = v.coerceIn(0f, 1f)
+                                }
+                                flight.end()
+                            }
+                            upPull = 0f
                         } else if (dragOffset > dismissPx || velocity > 2_000f) {
                             // Leave the card as it is: the exit slide carries it away from here.
                             actions.collapse()
@@ -719,7 +760,7 @@ fun PlayerLayout(
                                 Artwork(
                                     current.thumbnailUrl.artworkAt(ROW_ART_PX),
                                     Modifier.size(64.dp)
-                                        .onGloballyPositioned { smallCover = it.boundsInRoot() }
+                                        .onGloballyPositioned { smallCover = it.boundsInRoot(); flight.lastSmall = smallCover }
                                         .graphicsLayer { alpha = if (flight.active) 0f else 1f }
                                         .clip(RoundedCornerShape(10.dp))
                                         .clickable(onClickLabel = "Show the cover") { expandCover() },
@@ -871,22 +912,19 @@ fun PlayerLayout(
             // The cover on its way between the header and the full cover, over the rest.
             if (flight.active) {
                 val from = flight.from
-                val to = flight.target(smallCover)
+                // Before the header is back (a swipe still under the finger), where it was last.
+                val to = flight.target(smallCover) ?: flight.lastSmall.takeIf { flight.toSmall }
                 val origin = playerCoords?.takeIf { it.isAttached }?.positionInRoot() ?: androidx.compose.ui.geometry.Offset.Zero
                 if (from != null && to != null) {
-                    val t = flight.t.value
-                    fun lerp(a: Float, b: Float) = a + (b - a) * t
-                    val density = LocalDensity.current
-                    val small = 10f
-                    val big = 28f
-                    val corner = (if (flight.toSmall) lerp(big, small) else lerp(small, big)).dp
-                    Artwork(
+                    // Progress is read in the layer only: the finger or the runner, frame by frame.
+                    com.opentune.ui.components.MorphBox(
                         current.thumbnailUrl.artworkAt(com.opentune.data.model.PLAYER_ART_PX),
-                        Modifier
-                            .offset { androidx.compose.ui.unit.IntOffset((lerp(from.left, to.left) - origin.x).toInt(), (lerp(from.top, to.top) - origin.y).toInt()) }
-                            .size(with(density) { lerp(from.width, to.width).toDp() }, with(density) { lerp(from.height, to.height).toDp() })
-                            .shadow(with(density) { (if (flight.toSmall) 24f * (1f - t) else 24f * t).toDp() }, RoundedCornerShape(corner)),
-                        RoundedCornerShape(corner),
+                        current.thumbnailUrl.artworkAt(ROW_ART_PX),
+                        from, to,
+                        p = { if (flight.following) flight.pull else flight.t.value },
+                        startCornerDp = if (flight.toSmall) 28f else 10f,
+                        endCornerDp = if (flight.toSmall) 10f else 28f,
+                        origin = origin,
                     )
                 }
             }
@@ -1232,12 +1270,45 @@ private class PaneFlight {
     var runs by mutableStateOf(0)
         private set
     val t = androidx.compose.animation.core.Animatable(0f)
+    /** Where the runner picks up: 0 for a tap, wherever the finger let go for a swipe. */
+    var startAt = 0f
+        private set
+
+    /** Where the header's small cover sat when last shown, for a swipe up before it's back. */
+    var lastSmall: androidx.compose.ui.geometry.Rect? = null
+    /** True while a finger moves the cover itself, [pull] (0..1) being how far toward the header. */
+    var following by mutableStateOf(false)
+    var pull by androidx.compose.runtime.mutableFloatStateOf(0f)
+    /** Pixels of swipe from the full cover to the header. */
+    var travel = 1f
+        private set
 
     fun start(from: androidx.compose.ui.geometry.Rect, toSmall: Boolean) {
         this.from = from
         this.toSmall = toSmall
+        startAt = 0f
+        following = false
         active = true
         com.opentune.ui.components.PlayerMorph.flying = true
+        runs++
+    }
+
+    /** The full cover swiped up to [p] of the way, from its place at [from]. */
+    fun follow(from: androidx.compose.ui.geometry.Rect, p: Float, travel: Float) {
+        if (!following) {
+            this.from = from
+            this.toSmall = true
+            this.travel = travel
+            following = true
+            active = true
+            com.opentune.ui.components.PlayerMorph.flying = true
+        }
+        pull = p
+    }
+
+    /** The swipe let go far enough: the flight finishes from where the finger left it. */
+    fun finish() {
+        startAt = pull
         runs++
     }
 
@@ -1246,6 +1317,8 @@ private class PaneFlight {
 
     fun end() {
         active = false
+        following = false
+        pull = 0f
         from = null
         com.opentune.ui.components.PlayerMorph.flying = false
     }
