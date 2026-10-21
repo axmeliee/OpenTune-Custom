@@ -118,6 +118,13 @@ import com.opentune.ui.settings.SettingsScreen
 import dev.chrisbanes.haze.hazeSource
 import dev.chrisbanes.haze.rememberHazeState
 
+/** A tab tapped again while its root page is showing, for the page to scroll back to its top and refresh. */
+object TabEvents {
+    private val _reselected = kotlinx.coroutines.flow.MutableSharedFlow<String>(extraBufferCapacity = 1)
+    val reselected: kotlinx.coroutines.flow.SharedFlow<String> = _reselected
+    fun reselect(route: String) { _reselected.tryEmit(route) }
+}
+
 private enum class Tab(val route: String, val label: String, val icon: ImageVector, val selectedIcon: ImageVector) {
     HOME("home", "Home", Icons.Outlined.Home, Icons.Rounded.Home),
     EXPLORE("explore", "Explore", Icons.Outlined.Explore, Icons.Rounded.Explore),
@@ -232,6 +239,23 @@ fun AppRoot(vm: PlayerViewModel) {
             else -> item.toSong()?.let { vm.play(it, "Home") }
         }
     } }
+    // A long press on an album or playlist card: its songs are fetched when an action needs them.
+    val collectionMenu = remember(nav, vm) {
+        fun withSongs(id: String, use: (List<com.opentune.data.model.Song>) -> Unit) {
+            uiScope.launch {
+                val songs = runCatching { MusicRepository.collection(id).songs }.getOrNull().orEmpty()
+                if (songs.isEmpty()) snackbar.showSnackbar("Couldn't load its songs just now") else use(songs)
+            }
+        }
+        com.opentune.ui.components.CollectionMenuActions(
+            play = { id, title, shuffle -> withSongs(id) { vm.playAll(it, 0, shuffle, title) } },
+            // Last first, so the list plays next in its own order.
+            playNext = { id -> withSongs(id) { songs -> songs.asReversed().forEach(vm::playNext); uiScope.launch { snackbar.showSnackbar("${songs.size} songs play next") } } },
+            addToQueue = { id -> withSongs(id) { songs -> songs.forEach(vm::addToQueue); uiScope.launch { snackbar.showSnackbar("${songs.size} songs added to the queue") } } },
+            downloadAll = { id -> withSongs(id) { songs -> songs.forEach { com.opentune.data.download.Downloads.enqueue(appContext.applicationContext, it) }; uiScope.launch { snackbar.showSnackbar("Downloading ${songs.size} songs") } } },
+            open = { id, type -> playerOpen = false; nav.openBrowse(id, type) },
+        )
+    }
     // `song` is read when a menu action runs, so the menu doesn't need rebuilding as songs change.
     val songMenu = remember(nav, vm) { SongMenuActions(
         playNext = vm::playNext,
@@ -273,6 +297,17 @@ fun AppRoot(vm: PlayerViewModel) {
                 val id = MusicRepository.artistIdFor(s)
                 if (id == null) {
                     snackbar.showSnackbar("Couldn't find ${s.artist}'s page")
+                } else {
+                    playerOpen = false
+                    nav.openBrowse(id, BrowseType.ARTIST)
+                }
+            }
+        },
+        viewArtistNamed = { s, name ->
+            uiScope.launch {
+                val id = MusicRepository.artistIdFor(s, name)
+                if (id == null) {
+                    snackbar.showSnackbar("Couldn't find $name's page")
                 } else {
                     playerOpen = false
                     nav.openBrowse(id, BrowseType.ARTIST)
@@ -399,26 +434,38 @@ fun AppRoot(vm: PlayerViewModel) {
     // the ones that fill the screen still do.
     val pageArea = Modifier.padding(start = startGutter, end = endGutter)
         .then(layout.contentMaxWidthDp?.takeIf { chromeRoute }?.let { Modifier.widthIn(max = it.dp) } ?: Modifier)
+    // The pages each tab had open above its root when it was left, as routes,
+    // so coming back to the tab brings them back (a playlist opened from Home
+    // is still there after a look at the Library).
+    val tabPages = remember { mutableMapOf<Tab, List<String>>() }
+    // The whole back stack is only public as this restricted, long-stable flow.
+    @android.annotation.SuppressLint("RestrictedApi")
+    fun pagesAbove(root: Tab): List<String> {
+        val stack = nav.currentBackStack.value.filter { it.destination.route != null }
+        val at = stack.indexOfLast { it.destination.route == root.route }
+        if (at < 0) return emptyList()
+        return stack.drop(at + 1).mapNotNull { e ->
+            val template = e.destination.route ?: return@mapNotNull null
+            template.replace(Regex("""\{([^}]+)\}""")) { m -> Uri.encode(e.arguments?.get(m.groupValues[1])?.toString().orEmpty()) }
+        }
+    }
     val selectTab: (Int) -> Unit = { i ->
         val t = Tab.entries[i]
         when {
-            // Already in this tab, on its root, a sub-page or Search
-            // opened from it: back to the tab's root.
-            t == tab -> nav.popBackStack(t.route, inclusive = false)
-            // Home is the start, so it's reached by popping. Navigating to
-            // it with restoreState would bring back whatever was popped:
-            // a non-inclusive pop files that state under Home's id too.
-            t == Tab.HOME -> {
-                tab = t
-                nav.popBackStack(Tab.HOME.route, inclusive = false, saveState = true)
-            }
+            // On the tab's root already: Home scrolls to the top and refreshes.
+            t == tab && route == t.route -> TabEvents.reselect(t.route)
+            // A sub-page or Search opened from this tab: back to its root.
+            t == tab -> { tabPages.remove(t); nav.popBackStack(t.route, inclusive = false) }
             else -> {
+                tabPages[tab] = pagesAbove(tab)
                 tab = t
-                nav.navigate(t.route) {
-                    popUpTo(Tab.HOME.route) { saveState = true }
+                if (t == Tab.HOME) nav.popBackStack(Tab.HOME.route, inclusive = false)
+                else nav.navigate(t.route) {
+                    popUpTo(Tab.HOME.route)
                     launchSingleTop = true
-                    restoreState = true
                 }
+                // And the pages that were open in it, as they were left.
+                tabPages.remove(t).orEmpty().forEach { r -> runCatching { nav.navigate(r) } }
             }
         }
     }
@@ -451,6 +498,7 @@ fun AppRoot(vm: PlayerViewModel) {
     CompositionLocalProvider(
         LocalHazeState provides haze,
         LocalSongMenu provides songMenu,
+        com.opentune.ui.components.LocalCollectionMenu provides collectionMenu,
         LocalChromeScroll provides chromeScroll,
         // iOS-style rubber band at the ends of every list.
         LocalOverscrollFactory provides RubberBandOverscrollFactory,

@@ -88,6 +88,11 @@ import androidx.compose.runtime.snapshotFlow
 import androidx.compose.runtime.withFrameMillis
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.layout.boundsInRoot
+import androidx.compose.ui.layout.positionInRoot
+import androidx.compose.foundation.layout.offset
+import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.graphics.drawscope.withTransform
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
@@ -293,6 +298,12 @@ fun PlayerLayout(
     var paneName by rememberSaveable { mutableStateOf(if (initialLyrics) Pane.LYRICS.name else Pane.COVER.name) }
     val pane = Pane.valueOf(paneName)
     fun toggle(p: Pane) { paneName = if (pane == p) Pane.COVER.name else p.name }
+    // The cover between the lyrics or queue header and the full cover: tap the
+    // small one and it grows into the big one (the lyrics make way); swipe up on
+    // the big one and it goes back into the header of the view it came from.
+    var returnPane by rememberSaveable { mutableStateOf<String?>(null) }
+    var smallCover by remember { mutableStateOf<androidx.compose.ui.geometry.Rect?>(null) }
+    val flight = remember { PaneFlight() }
     var showRemix by remember { mutableStateOf(false) }
     var showCast by remember { mutableStateOf(false) }
     var showOutput by remember { mutableStateOf(false) }
@@ -334,6 +345,31 @@ fun PlayerLayout(
         delay(LYRICS_FOCUS_MS)
         controlsAway = true
     }
+    // What came of an "Upgrade quality" from the menu: switched, already the best, or not in time.
+    LaunchedEffect(Unit) {
+        com.opentune.playback.PlaybackRequests.upgradeResult.collect { Toast.makeText(context, it, Toast.LENGTH_SHORT).show() }
+    }
+    // Swiping up through the lyrics slides the controls down out of the way;
+    // swiping back down brings them up again. Only the finger's own scrolling
+    // counts, past a short distance, so the list's glide to the next line doesn't.
+    var scrolledAway by remember { mutableStateOf(false) }
+    LaunchedEffect(pane) { if (pane != Pane.LYRICS) scrolledAway = false }
+    val swipePx = with(LocalDensity.current) { 24.dp.toPx() }
+    val lyricsScroll = remember(swipePx) {
+        object : androidx.compose.ui.input.nestedscroll.NestedScrollConnection {
+            private var run = 0f
+            override fun onPreScroll(available: androidx.compose.ui.geometry.Offset, source: androidx.compose.ui.input.nestedscroll.NestedScrollSource): androidx.compose.ui.geometry.Offset {
+                if (source != androidx.compose.ui.input.nestedscroll.NestedScrollSource.UserInput) return androidx.compose.ui.geometry.Offset.Zero
+                val dy = available.y
+                if ((run > 0f && dy < 0f) || (run < 0f && dy > 0f)) run = 0f
+                run += dy
+                if (run <= -swipePx) { scrolledAway = true; run = 0f }
+                else if (run >= swipePx) { scrolledAway = false; run = 0f }
+                return androidx.compose.ui.geometry.Offset.Zero
+            }
+        }
+    }
+    val controlsHidden = controlsAway || (scrolledAway && pane == Pane.LYRICS)
     val liked by LibraryStore.liked.collectAsState()
     val isLiked = liked.any { it.videoId == current.videoId }
     val device = rememberOutputDeviceName()
@@ -349,6 +385,12 @@ fun PlayerLayout(
     val covering by rememberUpdatedState(onCovering)
     LaunchedEffect(Unit) {
         snapshotFlow { dragOffset == 0f }.distinctUntilChanged().collect { covering(it) }
+    }
+    // The cover leaves the card as it's dragged down and shrinks toward the
+    // mini player with the finger; let go short and it settles back with the card.
+    LaunchedEffect(docked, state.ui.reduceAnimation) {
+        if (docked || state.ui.reduceAnimation) return@LaunchedEffect
+        snapshotFlow { dragOffset }.collect { com.opentune.ui.components.PlayerMorph.dragClose(it) }
     }
     val scope = rememberCoroutineScope()
     val dismissPx = with(LocalDensity.current) { 140.dp.toPx() }
@@ -367,6 +409,61 @@ fun PlayerLayout(
     // full-screen cover can run down to the title on any screen height.
     var playerCoords by remember { mutableStateOf<androidx.compose.ui.layout.LayoutCoordinates?>(null) }
     var coverBottomPx by remember { androidx.compose.runtime.mutableFloatStateOf(0f) }
+
+    // Only the plain square cover flies; the vinyl, cassette and other designs just change view.
+    val flies = !state.ui.reduceAnimation && !docked && !landscape &&
+        style != PlayerStyle.VINYL && style != PlayerStyle.CASSETTE && style != PlayerStyle.HALO &&
+        style != PlayerStyle.POLAROID && style != PlayerStyle.LYRICS_FIRST &&
+        !(state.ui.fullScreenCover && (style == PlayerStyle.CLASSIC || style == PlayerStyle.MINIMAL))
+    fun expandCover() {
+        returnPane = pane.name
+        val from = smallCover
+        if (flies && from != null) flight.start(from, toSmall = false)
+        paneName = Pane.COVER.name
+    }
+    fun collapseCover() {
+        val back = returnPane?.let { runCatching { Pane.valueOf(it) }.getOrNull() }?.takeIf { it != Pane.COVER } ?: Pane.QUEUE
+        val from = com.opentune.ui.components.PlayerMorph.playerCover?.let(com.opentune.ui.components.PlayerMorph::scaled)
+        smallCover = null
+        // A swipe already carrying the cover: it goes on from where the finger let go.
+        if (flight.following) flight.finish()
+        else if (flies && from != null) flight.start(from, toSmall = true)
+        paneName = back.name
+        returnPane = null
+    }
+    // Flies the cover to wherever its new place turns out to be, once that's laid out.
+    LaunchedEffect(flight.runs) {
+        if (flight.runs == 0) return@LaunchedEffect
+        try {
+            flight.t.snapTo(flight.startAt)
+            flight.following = false
+            var frames = 0
+            while (flight.target(smallCover) == null && frames++ < 30) androidx.compose.runtime.withFrameNanos { }
+            if (flight.target(smallCover) == null) return@LaunchedEffect
+            val left = 1f - flight.t.value
+            flight.t.animateTo(1f, tween((440 * left).toInt().coerceAtLeast(160), easing = androidx.compose.animation.core.CubicBezierEasing(0.2f, 0f, 0f, 1f)))
+        } finally {
+            flight.end()
+        }
+    }
+    var upPull by remember { androidx.compose.runtime.mutableFloatStateOf(0f) }
+    val upPx = with(LocalDensity.current) { 64.dp.toPx() }
+    var coverSettle by remember { mutableStateOf<kotlinx.coroutines.Job?>(null) }
+    // The full cover follows a swipe up toward the header it goes back into,
+    // when it's known where that header's cover sits.
+    val followsSwipe = flies && pane == Pane.COVER && style != PlayerStyle.LYRICS_FIRST
+    fun followUp() {
+        // Not over a tap's flight already on its way.
+        if (!followsSwipe || (flight.active && !flight.following)) return
+        val big = com.opentune.ui.components.PlayerMorph.playerCover?.let(com.opentune.ui.components.PlayerMorph::scaled)
+        val home = flight.lastSmall
+        if (flight.following) {
+            flight.pull = (-upPull / flight.travel).coerceIn(0f, 1f)
+        } else if (upPull < 0f && big != null && home != null) {
+            val travel = (big.top - home.top).coerceAtLeast(1f)
+            flight.follow(big, (-upPull / travel).coerceIn(0f, 1f), travel)
+        }
+    }
 
     PlayerTheme(seed = rememberArtworkSeed(current.thumbnailUrl), settings = theme) {
         Box(
@@ -389,12 +486,38 @@ fun PlayerLayout(
                     orientation = Orientation.Vertical,
                     enabled = !docked,
                     state = rememberDraggableState { delta ->
-                        dragOffset = (dragOffset + delta).coerceAtLeast(0f)
+                        var d = delta
+                        // Back down after a swipe up: the cover comes back with the finger first.
+                        if (upPull < 0f && d > 0f) {
+                            val back = minOf(d, -upPull)
+                            upPull += back
+                            d -= back
+                        }
+                        // Upward, with the card at rest: a swipe up on the cover, counted on its own.
+                        if (d < 0f && dragOffset == 0f) { upPull += d; d = 0f }
+                        dragOffset = (dragOffset + d).coerceAtLeast(0f)
+                        followUp()
                     },
                     // A finger landing on the card mid-spring takes hold of it where it is.
-                    onDragStarted = { settling?.cancel() },
+                    onDragStarted = {
+                        settling?.cancel()
+                        coverSettle?.cancel()
+                        upPull = if (flight.following) -flight.pull * flight.travel else 0f
+                    },
                     onDragStopped = { velocity ->
-                        if (dragOffset > dismissPx || velocity > 2_000f) {
+                        if (pane == Pane.COVER && style != PlayerStyle.LYRICS_FIRST && dragOffset == 0f && (upPull < -upPx || velocity < -1_500f || flight.pull > 0.3f)) {
+                            // Swiped up on the cover: it goes back up into the lyrics or queue header.
+                            collapseCover()
+                        } else if (flight.following) {
+                            // Short of it: the cover settles back into its place.
+                            coverSettle = scope.launch {
+                                androidx.compose.animation.core.animate(flight.pull, 0f, -velocity / flight.travel, spring(dampingRatio = 0.85f, stiffness = 500f)) { v, _ ->
+                                    flight.pull = v.coerceIn(0f, 1f)
+                                }
+                                flight.end()
+                            }
+                            upPull = 0f
+                        } else if (dragOffset > dismissPx || velocity > 2_000f) {
                             // Leave the card as it is: the exit slide carries it away from here.
                             actions.collapse()
                         } else {
@@ -469,7 +592,7 @@ fun PlayerLayout(
                                 state.lyrics,
                                 lyricsPosition,
                                 onSeek = { actions.seekTo((it - offsetMs).coerceAtLeast(0)) },
-                                modifier = Modifier.fillMaxSize().focusIn(!state.ui.reduceAnimation),
+                                modifier = Modifier.fillMaxSize().nestedScroll(lyricsScroll).focusIn(!state.ui.reduceAnimation),
                                 synced = state.ui.syncedLyrics,
                                 blur = state.ui.blurLyrics,
                                 shareSong = current,
@@ -550,8 +673,10 @@ fun PlayerLayout(
 
                 // Cover mode: the art fills the space and the title sits below it.
                 // Lyrics and queue: a compact header, then the list.
+                // Lyrics and queue share one layout (the header stays put and only the
+                // list below it changes), so the outer change is cover against list.
                 AnimatedContent(
-                    pane,
+                    if (pane == Pane.COVER) Pane.COVER else Pane.LYRICS,
                     transitionSpec = {
                         when {
                             state.ui.reduceAnimation -> fadeIn(tween(0)) togetherWith fadeOut(tween(0))
@@ -583,7 +708,7 @@ fun PlayerLayout(
                                 state.lyrics,
                                 lyricsPosition,
                                 onSeek = { actions.seekTo((it - offsetMs).coerceAtLeast(0)) },
-                                modifier = Modifier.weight(1f).fillMaxWidth(),
+                                modifier = Modifier.weight(1f).fillMaxWidth().nestedScroll(lyricsScroll),
                                 synced = state.ui.syncedLyrics,
                                 blur = state.ui.blurLyrics,
                                 shareSong = current,
@@ -632,37 +757,60 @@ fun PlayerLayout(
                             TitleRow(current, isLiked, onLike = { LibraryStore.setLiked(current, !isLiked) }, onMore = { showMenu = true })
                         } else {
                             Row(Modifier.fillMaxWidth().padding(vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-                                Artwork(current.thumbnailUrl.artworkAt(ROW_ART_PX), Modifier.size(64.dp), RoundedCornerShape(10.dp))
+                                Artwork(
+                                    current.thumbnailUrl.artworkAt(ROW_ART_PX),
+                                    Modifier.size(64.dp)
+                                        .onGloballyPositioned { smallCover = it.boundsInRoot(); flight.lastSmall = smallCover }
+                                        .graphicsLayer { alpha = if (flight.active) 0f else 1f }
+                                        .clip(RoundedCornerShape(10.dp))
+                                        .clickable(onClickLabel = "Show the cover") { expandCover() },
+                                    RoundedCornerShape(10.dp),
+                                )
                                 Spacer(Modifier.width(14.dp))
                                 TitleRow(current, isLiked, onLike = { LibraryStore.setLiked(current, !isLiked) }, onMore = { showMenu = true }, compact = true)
                             }
-                            if (p == Pane.LYRICS) {
-                                LyricsView(
-                                    state.lyrics,
-                                    lyricsPosition,
-                                    onSeek = { actions.seekTo((it - offsetMs).coerceAtLeast(0)) },
-                                    modifier = Modifier.weight(1f).fillMaxWidth().focusIn(!state.ui.reduceAnimation),
-                                    synced = state.ui.syncedLyrics,
-                                    blur = state.ui.blurLyrics,
-                                shareSong = current,
-                                    onSyncLine = syncLine,
-                                    playing = lyricsPlaying,
-                                    seeks = lyricsSeeks,
-                                )
-                            } else {
-                                Text("Queue", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, modifier = Modifier.padding(vertical = 8.dp))
-                                QueuePane(
-                                    queue = state.queue,
-                                    currentIndex = state.currentIndex,
-                                    upNext = state.upNext,
-                                    isPlaying = state.isPlaying,
-                                    shuffle = state.shuffle,
-                                    smartShuffle = state.shuffleMode == com.opentune.playback.ShuffleMode.SMART,
-                                    onPlayIndex = actions.playIndex,
-                                    onRemoveIndex = actions.removeIndex,
-                                    onMove = actions.moveIndex,
-                                    modifier = Modifier.weight(1f).fillMaxWidth(),
-                                )
+                            // Between lyrics and queue the new list slides up from below on a soft
+                            // spring while the old one lifts a little and fades, under a still header.
+                            AnimatedContent(
+                                pane.takeIf { it != Pane.COVER } ?: Pane.LYRICS,
+                                transitionSpec = {
+                                    if (state.ui.reduceAnimation) fadeIn(tween(0)) togetherWith fadeOut(tween(0))
+                                    else (slideInVertically(spring(dampingRatio = 0.9f, stiffness = 360f)) { it } + fadeIn(tween(260))) togetherWith
+                                        (slideOutVertically(tween(300, easing = FastOutSlowInEasing)) { -it / 6 } + fadeOut(tween(220)))
+                                },
+                                label = "list",
+                                modifier = Modifier.weight(1f).fillMaxWidth(),
+                            ) { list ->
+                                Column(Modifier.fillMaxSize()) {
+                                    if (list == Pane.LYRICS) {
+                                        LyricsView(
+                                            state.lyrics,
+                                            lyricsPosition,
+                                            onSeek = { actions.seekTo((it - offsetMs).coerceAtLeast(0)) },
+                                            modifier = Modifier.weight(1f).fillMaxWidth().nestedScroll(lyricsScroll).focusIn(!state.ui.reduceAnimation),
+                                            synced = state.ui.syncedLyrics,
+                                            blur = state.ui.blurLyrics,
+                                            shareSong = current,
+                                            onSyncLine = syncLine,
+                                            playing = lyricsPlaying,
+                                            seeks = lyricsSeeks,
+                                        )
+                                    } else {
+                                        Text("Queue", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, modifier = Modifier.padding(vertical = 8.dp))
+                                        QueuePane(
+                                            queue = state.queue,
+                                            currentIndex = state.currentIndex,
+                                            upNext = state.upNext,
+                                            isPlaying = state.isPlaying,
+                                            shuffle = state.shuffle,
+                                            smartShuffle = state.shuffleMode == com.opentune.playback.ShuffleMode.SMART,
+                                            onPlayIndex = actions.playIndex,
+                                            onRemoveIndex = actions.removeIndex,
+                                            onMove = actions.moveIndex,
+                                            modifier = Modifier.weight(1f).fillMaxWidth(),
+                                        )
+                                    }
+                                }
                             }
                         }
                     }
@@ -681,7 +829,7 @@ fun PlayerLayout(
                 // Lyrics with nothing in the way: a few seconds untouched while they
                 // play, and the controls slide down out of sight.
                 AnimatedVisibility(
-                    !controlsAway,
+                    !controlsHidden,
                     enter = expandVertically(spring(dampingRatio = 0.9f, stiffness = 380f), expandFrom = Alignment.Top) + slideInVertically(spring(dampingRatio = 0.9f, stiffness = 380f)) { it / 2 } + fadeIn(tween(220)),
                     exit = shrinkVertically(tween(520, easing = FastOutSlowInEasing), shrinkTowards = Alignment.Top) + slideOutVertically(tween(520, easing = FastOutSlowInEasing)) { it / 2 } + fadeOut(tween(360)),
                 ) {
@@ -754,12 +902,31 @@ fun PlayerLayout(
                 }
                 }
                 // Where the controls went: a faint handle, and a swipe or touch brings them back.
-                AnimatedVisibility(controlsAway, enter = fadeIn(tween(400)), exit = fadeOut(tween(150))) {
+                AnimatedVisibility(controlsHidden, enter = fadeIn(tween(400)), exit = fadeOut(tween(150))) {
                     Box(Modifier.fillMaxWidth().padding(top = 10.dp, bottom = 14.dp), contentAlignment = Alignment.Center) {
                         Box(Modifier.size(width = 44.dp, height = 5.dp).clip(CircleShape).background(MaterialTheme.colorScheme.onSurface.copy(alpha = 0.3f)))
                     }
                 }
             }
+            }
+            // The cover on its way between the header and the full cover, over the rest.
+            if (flight.active) {
+                val from = flight.from
+                // Before the header is back (a swipe still under the finger), where it was last.
+                val to = flight.target(smallCover) ?: flight.lastSmall.takeIf { flight.toSmall }
+                val origin = playerCoords?.takeIf { it.isAttached }?.positionInRoot() ?: androidx.compose.ui.geometry.Offset.Zero
+                if (from != null && to != null) {
+                    // Progress is read in the layer only: the finger or the runner, frame by frame.
+                    com.opentune.ui.components.MorphBox(
+                        current.thumbnailUrl.artworkAt(com.opentune.data.model.PLAYER_ART_PX),
+                        current.thumbnailUrl.artworkAt(ROW_ART_PX),
+                        from, to,
+                        p = { if (flight.following) flight.pull else flight.t.value },
+                        startCornerDp = if (flight.toSmall) 28f else 10f,
+                        endCornerDp = if (flight.toSmall) 10f else 28f,
+                        origin = origin,
+                    )
+                }
             }
         }
 
@@ -872,14 +1039,21 @@ private fun LyricsOffsetDialog(videoId: String, autoMs: Long, onDismiss: () -> U
 @Composable
 private fun RowScope.TitleRow(song: Song, liked: Boolean, onLike: () -> Unit, onMore: () -> Unit, compact: Boolean = false) {
     Column(Modifier.weight(1f)) {
-        MarqueeText(song.title, Modifier.fillMaxWidth(), style = if (compact) MaterialTheme.typography.titleLarge else MaterialTheme.typography.headlineSmall)
-        // Tapping the artist opens their page.
-        val viewArtist = LocalSongMenu.current?.viewArtist
-        com.opentune.ui.components.SubtitleLine(
+        // Tapping the title opens its album, and the artist opens their page.
+        val menu = LocalSongMenu.current
+        val album = song.albumId?.takeIf { menu != null && !song.videoId.startsWith("local:") }
+        MarqueeText(
+            song.title,
+            Modifier.fillMaxWidth().then(if (album != null) Modifier.clickable(onClickLabel = "Open album") { menu?.openAlbum?.invoke(album) } else Modifier),
+            style = if (compact) MaterialTheme.typography.titleLarge else MaterialTheme.typography.headlineSmall,
+        )
+        // Each artist's name opens their own page.
+        val named = menu?.viewArtistNamed?.takeIf { !song.videoId.startsWith("local:") }
+        com.opentune.ui.components.ArtistLinks(
             song.artist,
+            onArtist = named?.let { open -> { name: String -> open(song, name) } },
             explicit = song.isExplicit == true,
             style = MaterialTheme.typography.titleMedium,
-            modifier = if (viewArtist != null && !song.videoId.startsWith("local:")) Modifier.clickable { viewArtist(song) } else Modifier,
         )
     }
     Spacer(Modifier.width(10.dp))
@@ -1077,4 +1251,75 @@ private fun Modifier.focusIn(animate: Boolean): Modifier {
     return this
         .graphicsLayer { val s = 0.96f + 0.04f * v.value; scaleX = s; scaleY = s }
         .then(if (blur > 0.2f) Modifier.blur(blur.dp) else Modifier)
+}
+
+
+/**
+ * The cover flying between the small one in the lyrics or queue header and the
+ * full cover. [from] is where it left; it lands on the small cover when
+ * [toSmall], on the full one otherwise, wherever that has been laid out.
+ */
+private class PaneFlight {
+    var from by mutableStateOf<androidx.compose.ui.geometry.Rect?>(null)
+        private set
+    var toSmall by mutableStateOf(false)
+        private set
+    var active by mutableStateOf(false)
+        private set
+    /** Bumped for each flight, so the runner starts again. */
+    var runs by mutableStateOf(0)
+        private set
+    val t = androidx.compose.animation.core.Animatable(0f)
+    /** Where the runner picks up: 0 for a tap, wherever the finger let go for a swipe. */
+    var startAt = 0f
+        private set
+
+    /** Where the header's small cover sat when last shown, for a swipe up before it's back. */
+    var lastSmall: androidx.compose.ui.geometry.Rect? = null
+    /** True while a finger moves the cover itself, [pull] (0..1) being how far toward the header. */
+    var following by mutableStateOf(false)
+    var pull by androidx.compose.runtime.mutableFloatStateOf(0f)
+    /** Pixels of swipe from the full cover to the header. */
+    var travel = 1f
+        private set
+
+    fun start(from: androidx.compose.ui.geometry.Rect, toSmall: Boolean) {
+        this.from = from
+        this.toSmall = toSmall
+        startAt = 0f
+        following = false
+        active = true
+        com.opentune.ui.components.PlayerMorph.flying = true
+        runs++
+    }
+
+    /** The full cover swiped up to [p] of the way, from its place at [from]. */
+    fun follow(from: androidx.compose.ui.geometry.Rect, p: Float, travel: Float) {
+        if (!following) {
+            this.from = from
+            this.toSmall = true
+            this.travel = travel
+            following = true
+            active = true
+            com.opentune.ui.components.PlayerMorph.flying = true
+        }
+        pull = p
+    }
+
+    /** The swipe let go far enough: the flight finishes from where the finger left it. */
+    fun finish() {
+        startAt = pull
+        runs++
+    }
+
+    fun target(small: androidx.compose.ui.geometry.Rect?): androidx.compose.ui.geometry.Rect? =
+        if (toSmall) small else com.opentune.ui.components.PlayerMorph.playerCover?.let(com.opentune.ui.components.PlayerMorph::scaled)
+
+    fun end() {
+        active = false
+        following = false
+        pull = 0f
+        from = null
+        com.opentune.ui.components.PlayerMorph.flying = false
+    }
 }

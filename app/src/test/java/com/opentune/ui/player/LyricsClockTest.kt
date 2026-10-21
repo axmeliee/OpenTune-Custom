@@ -190,4 +190,23 @@ class LyricsClockTest {
         )
         assertTrue("stayed lost: $last", abs(last - (18_000 - 20_000)) < 40)
     }
+
+    /**
+     * Skip silence cuts 1.5 s out of the song at 5 s. Announced as a jump, the
+     * words are on it within a glide, and keep time after it instead of
+     * running fast on a rate learned across the cut.
+     */
+    @Test fun aSkippedSilenceAnnouncedAsAJumpIsTakenAndTimeIsKept() {
+        val clock = LyricClock(10_000)
+        fun reading(at: Double) = 10_000 + at.toLong() + if (at >= 5_000) 1_500 else 0
+        var now = 0.0
+        var worst = 0.0
+        while (now <= 12_000) {
+            val shown = clock.frame(now, reading(now), now, discontinuity = if (now >= 5_000) 1 else 0)
+            // Past the glide, the words keep to the song.
+            if (now >= 5_400) worst = maxOf(worst, abs(shown - reading(now).toDouble()))
+            now += frameMs
+        }
+        assertTrue("off by $worst ms after the skip", worst < 40)
+    }
 }

@@ -25,8 +25,13 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
+import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
+import androidx.compose.ui.input.nestedscroll.NestedScrollSource
+import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
@@ -69,19 +74,34 @@ fun MarkRefreshBox(
             if (past && !loading) haptics.tick()
         }
     }
+    // Scrolling the page while it loads tucks the mark away and lets the page
+    // back up, so the mark doesn't sit over the content scrolling under it.
+    var tucked by remember { mutableStateOf(false) }
+    val tuck by androidx.compose.animation.core.animateFloatAsState(if (tucked) 1f else 0f, tween(220), label = "tuck")
+    LaunchedEffect(isRefreshing) { if (!isRefreshing) tucked = false }
+    val watchScroll = remember {
+        object : NestedScrollConnection {
+            override fun onPreScroll(available: Offset, source: NestedScrollSource): Offset {
+                if (loading && available.y < 0f) tucked = true
+                return Offset.Zero
+            }
+        }
+    }
     PullToRefreshBox(
         isRefreshing = isRefreshing,
         onRefresh = { haptics.press(); onRefresh() },
         state = state,
         modifier = modifier,
-        indicator = { MarkIndicator(state, isRefreshing, still, Modifier.align(Alignment.TopCenter)) },
+        indicator = { MarkIndicator(state, isRefreshing, still, Modifier.align(Alignment.TopCenter).graphicsLayer { alpha = 1f - tuck }) },
     ) {
         // The page follows the pull, slowing as it goes, and holds a little down while loading.
         Box(
-            Modifier.graphicsLayer {
-                val f = state.distanceFraction
-                translationY = PULL_ROOM.toPx() * (if (f <= 1f) f else 1f + (1f - 1f / f) * 0.6f)
-            },
+            Modifier
+                .nestedScroll(watchScroll)
+                .graphicsLayer {
+                    val f = state.distanceFraction
+                    translationY = (1f - tuck) * PULL_ROOM.toPx() * (if (f <= 1f) f else 1f + (1f - 1f / f) * 0.6f)
+                },
         ) { content() }
     }
 }

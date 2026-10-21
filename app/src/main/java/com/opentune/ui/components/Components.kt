@@ -73,6 +73,7 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.text.withLink
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import coil3.compose.AsyncImage
@@ -178,6 +179,47 @@ fun SubtitleLine(
     }
 }
 
+/** Between the names in a line of artists: commas, "&", " x ", "and", "feat.", "ft.", "with". */
+private val ARTIST_JOINS = Regex("""\s*,\s*|\s+&\s+|\s+x\s+|\s+and\s+|\s+(?:feat\.?|ft\.?|featuring|with)\s+""", RegexOption.IGNORE_CASE)
+
+/**
+ * A song's artists on one line, each name its own link: tapping a name opens
+ * that artist's page, not just the first one's. Names cut off at the end of
+ * the line can't be reached, so only the ones shown can be tapped.
+ */
+@Composable
+fun ArtistLinks(
+    artists: String,
+    onArtist: ((String) -> Unit)?,
+    explicit: Boolean,
+    modifier: Modifier = Modifier,
+    style: TextStyle = MaterialTheme.typography.bodyMedium,
+    color: Color = MaterialTheme.colorScheme.onSurfaceVariant,
+) {
+    if (onArtist == null) { SubtitleLine(artists, explicit, modifier, style, color); return }
+    val text = remember(artists, onArtist) {
+        androidx.compose.ui.text.buildAnnotatedString {
+            var at = 0
+            fun name(end: Int) {
+                val n = artists.substring(at, end)
+                val trimmed = n.trim()
+                if (trimmed.isEmpty()) { append(n); return }
+                withLink(androidx.compose.ui.text.LinkAnnotation.Clickable(trimmed) { onArtist(trimmed) }) { append(n) }
+            }
+            ARTIST_JOINS.findAll(artists).forEach { m ->
+                name(m.range.first)
+                append(m.value)
+                at = m.range.last + 1
+            }
+            name(artists.length)
+        }
+    }
+    Row(modifier, verticalAlignment = Alignment.CenterVertically) {
+        if (explicit) { ExplicitBadge(color = color); Spacer(Modifier.width(6.dp)) }
+        Text(text, Modifier.weight(1f, fill = false), maxLines = 1, overflow = TextOverflow.Ellipsis, style = style, color = color)
+    }
+}
+
 /** One track in a list. Shows animated bars instead of the art overlay while it plays. */
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
@@ -199,10 +241,17 @@ fun SongListItem(
     trailing: @Composable RowScope.() -> Unit = {},
 ) {
     var menuOpen by remember { mutableStateOf(false) }
+    // A long press lifts the row out with its menu beside it; the ⋮ opens the full menu.
+    var contextOpen by remember { mutableStateOf(false) }
+    val anchor = remember { MenuAnchor() }
+    val view = androidx.compose.ui.platform.LocalView.current
+    val haptics = rememberHaptics()
     val hasMenu = onPlayNext != null || onAddToQueue != null || LocalSongMenu.current != null
     val download by remember(song.videoId) { Downloads.entry(song.videoId) }
         .collectAsState(Downloads.entryNow(song.videoId))
     if (menuOpen) SongMenuSheet(song, onDismiss = { menuOpen = false })
+    val at = anchor.rect
+    if (contextOpen && at != null) SongContextMenu(song, at, onDismiss = { contextOpen = false }) { SongPreview(song) }
     val playback by AppSettings.playback.collectAsState()
     // Toward the end of the line plays next, toward the start adds to the queue.
     val swipes = swipeToQueue && playback.swipeToQueue
@@ -216,7 +265,13 @@ fun SongListItem(
             modifier = Modifier
                 .fillMaxWidth()
                 .then(swipeActions)
-                .combinedClickable(onClick = onClick, onLongClick = { if (hasMenu) menuOpen = true })
+                .menuAnchor(anchor, view)
+                .combinedClickable(onClick = onClick, onLongClick = {
+                    if (hasMenu) {
+                        haptics.press()
+                        if (anchor.rect != null) contextOpen = true else menuOpen = true
+                    }
+                })
                 .padding(start = 16.dp, end = 4.dp, top = 6.dp, bottom = 6.dp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(14.dp),
@@ -261,6 +316,29 @@ fun SongListItem(
     }
 }
 
+/** The row as it shows lifted out over its long-press menu. */
+@Composable
+internal fun SongPreview(song: Song) {
+    Row(
+        Modifier.fillMaxSize().padding(start = 14.dp, end = 10.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(14.dp),
+    ) {
+        Artwork(song.thumbnailUrl.artworkAt(ROW_ART_PX), Modifier.size(52.dp))
+        Column(Modifier.weight(1f)) {
+            Text(song.title, maxLines = 1, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.SemiBold)
+            SubtitleLine(listOfNotNull(song.artist.takeIf { it.isNotBlank() }, song.durationText).joinToString(" • "), explicit = song.isExplicit == true)
+        }
+        Icon(Icons.Filled.MoreVert, null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
+    }
+}
+
+/** What a card's long press opens: a song's menu or an album's or playlist's. */
+sealed interface CardMenu {
+    class ForSong(val song: Song) : CardMenu
+    class ForList(val list: MenuList) : CardMenu
+}
+
 /** A small mark on a row: a ring while downloading, a tick once saved. */
 @Composable
 fun DownloadBadge(state: DownloadState, progress: Float) {
@@ -274,6 +352,17 @@ fun DownloadBadge(state: DownloadState, progress: Float) {
                 strokeWidth = 2.dp,
             )
         }
+    }
+}
+
+/** A card as it shows lifted out over its long-press menu. */
+@Composable
+private fun CardPreview(title: String, subtitle: String, thumbnailUrl: String?, round: Boolean) {
+    Column(Modifier.fillMaxSize().padding(10.dp)) {
+        Artwork(thumbnailUrl.artworkAt(CARD_ART_PX), Modifier.fillMaxWidth().aspectRatio(1f), shape = if (round) CircleShape else MaterialTheme.shapes.medium)
+        Spacer(Modifier.height(6.dp))
+        Text(title, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        if (subtitle.isNotBlank()) Text(subtitle, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
     }
 }
 
@@ -292,13 +381,31 @@ fun ItemCard(
     imageModifier: Modifier = Modifier,
     /** Hears whether the cover has loaded (see [Artwork]). */
     onArtLoaded: ((Boolean) -> Unit)? = null,
+    /** What a long press opens; nothing when null. */
+    menu: CardMenu? = null,
 ) {
     val round = type == BrowseType.ARTIST
+    val anchor = remember { MenuAnchor() }
+    val view = androidx.compose.ui.platform.LocalView.current
+    val haptics = rememberHaptics()
+    var contextOpen by remember { mutableStateOf(false) }
+    val at = anchor.rect
+    if (contextOpen && at != null && menu != null) {
+        val preview: @Composable () -> Unit = { CardPreview(title, subtitle, thumbnailUrl, round) }
+        when (menu) {
+            is CardMenu.ForSong -> SongContextMenu(menu.song, at, onDismiss = { contextOpen = false }, preview = preview)
+            is CardMenu.ForList -> CollectionContextMenu(menu.list, at, onDismiss = { contextOpen = false }, preview = preview)
+        }
+    }
     Column(
         modifier = modifier
             .width(width)
+            .menuAnchor(anchor, view)
             .clip(MaterialTheme.shapes.medium)
-            .clickable(onClick = onClick)
+            .then(
+                if (menu == null) Modifier.clickable(onClick = onClick)
+                else Modifier.combinedClickable(onClick = onClick, onLongClick = { haptics.press(); contextOpen = true }),
+            )
             .padding(6.dp),
     ) {
         Artwork(

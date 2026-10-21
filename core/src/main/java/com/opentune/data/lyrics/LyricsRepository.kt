@@ -166,16 +166,29 @@ object LyricsRepository {
         }
         val all = inHand()
         val best = LyricsQuality.choose(all, target)
-        var result = best?.lyrics
+        fun references(of: LyricsQuality.Candidate) = all.filter { it !== of }.mapNotNull { it.lyrics as? Lyrics.Synced }
         // Steady early or late timing, as the other sources see it; the
         // per-song offset, once set, is used instead (see [lyricsOffset]).
-        if (result is Lyrics.Synced && durationMs > 0) {
-            val references = all.filter { it !== best }.mapNotNull { it.lyrics as? Lyrics.Synced }
-            val shift = LyricsQuality.autoOffset(result, references, durationMs)
-            if (shift != 0L) {
-                Log.d(TAG, "${result.source} lyrics for $videoId moved ${-shift} ms to match the other sources")
-                result = result.copy(autoOffsetMs = shift)
-            }
+        fun shifted(c: LyricsQuality.Candidate): Lyrics? {
+            val synced = c.lyrics as? Lyrics.Synced ?: return c.lyrics
+            if (durationMs <= 0) return synced
+            val shift = LyricsQuality.autoOffset(synced, references(c), durationMs)
+            if (shift == 0L) return synced
+            Log.d(TAG, "${synced.source} lyrics for $videoId moved ${-shift} ms to match the other sources")
+            return synced.copy(autoOffsetMs = shift)
+        }
+        var result = best?.let(::shifted)
+        // Word timing that can't be trusted on this track shows wrong words lit:
+        // another source's that can be, or these same lyrics a line at a time.
+        if (best != null && result is Lyrics.Synced && rank(result) == WORD_SYNCED &&
+            !LyricsQuality.wordsTrusted(result, references(best), durationMs)
+        ) {
+            val other = all.asSequence()
+                .filter { it !== best && rank(it.lyrics) == WORD_SYNCED && !LyricsQuality.outlier(it, all) }
+                .sortedBy { it.order }
+                .firstOrNull { LyricsQuality.wordsTrusted(it.lyrics as Lyrics.Synced, references(it), durationMs) }
+            Log.d(TAG, "${result.source} word timing for $videoId not trusted; ${other?.source?.label ?: "showing lines"}")
+            result = other?.let(::shifted) ?: LyricsQuality.asLines(result)
         }
         // Only remember answers matched on the song's length (without it any
         // version's lyrics can match, timed for another cut), and only ones
@@ -247,6 +260,7 @@ object LyricsRepository {
 
     private suspend fun ask(source: LyricsSource, videoId: String, title: String, artist: String, durationMs: Long): Result<Lyrics?> = runCatching {
         when (source) {
+            LyricsSource.LRC_RED -> LrcRed.lookup(title, artist, durationMs)
             LyricsSource.LRCLIB -> lookup(title, artist, durationMs)
             LyricsSource.LYRICSPLUS -> LyricsPlus.lookup(title, artist, durationMs)
             LyricsSource.BETTERLYRICS -> BetterLyrics.lookup(title, artist, durationMs)

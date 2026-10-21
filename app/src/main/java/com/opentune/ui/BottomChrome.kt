@@ -111,7 +111,9 @@ internal val DOCK_INSET = 6.dp
  * Tucks the dock away while content scrolls down and brings it back when it
  * scrolls up. Direction has to hold for [thresholdPx] before anything
  * changes, so a small wobble mid-scroll doesn't flicker it. Nothing is
- * consumed: the list keeps every pixel of its scroll.
+ * consumed: the list keeps every pixel of its scroll. Only what the content
+ * really scrolled counts, so a swipe on a page with nothing to scroll (or one
+ * already at its end) leaves the dock as it is.
  */
 class ChromeScrollConnection(private val thresholdPx: Float) : NestedScrollConnection {
     var inline by mutableStateOf(false)
@@ -126,9 +128,10 @@ class ChromeScrollConnection(private val thresholdPx: Float) : NestedScrollConne
         accumulated = 0f
     }
 
-    override fun onPreScroll(available: Offset, source: NestedScrollSource): Offset {
+    override fun onPostScroll(consumed: Offset, available: Offset, source: NestedScrollSource): Offset {
         if (holds > 0) return Offset.Zero
-        val dy = available.y
+        val dy = consumed.y
+        if (dy == 0f) return Offset.Zero
         if ((accumulated > 0 && dy < 0) || (accumulated < 0 && dy > 0)) accumulated = 0f
         accumulated += dy
         if (accumulated <= -thresholdPx && !inline) {

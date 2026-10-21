@@ -56,6 +56,10 @@ import androidx.compose.material.icons.rounded.Lyrics
 import androidx.compose.material.icons.rounded.FormatQuote
 import androidx.compose.material.icons.rounded.Translate
 import androidx.compose.material.icons.rounded.Sync
+import androidx.compose.material.icons.rounded.Close
+import androidx.compose.material.icons.rounded.IosShare
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.layout.width
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.AssistChipDefaults
 import androidx.compose.material3.Icon
@@ -78,16 +82,17 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.unit.dp
+import com.opentune.data.lyrics.LyricGap
 import com.opentune.data.lyrics.LyricLine
 import com.opentune.data.lyrics.LyricWord
 import com.opentune.data.lyrics.Romanizer
+import com.opentune.data.lyrics.instrumentalGaps
 import com.opentune.data.lyrics.VOICE_SECOND
 import com.opentune.data.lyrics.VOICE_TOGETHER
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.withStyle
 import com.opentune.data.lyrics.Lyrics
-import com.opentune.data.lyrics.activeIndex
 import com.opentune.ui.LyricsState
 import com.opentune.ui.components.MessageState
 import com.opentune.ui.components.Placeholder
@@ -126,6 +131,12 @@ fun LyricsView(
     // The song and its lines as they were when sharing began, so a song
     // change while the sheet is open can't mix one song's words with another's.
     var sharing by remember { mutableStateOf<Pair<com.opentune.data.model.Song, List<String>>?>(null) }
+    // Synced lines picked for a lyric card, by index; picking starts with a
+    // long press on a line (or the share button) and ends with Cancel or Share.
+    val syncedLines = ((state as? LyricsState.Found)?.lyrics as? Lyrics.Synced)?.lines
+    val selection = remember(syncedLines) { androidx.compose.runtime.mutableStateListOf<Int>() }
+    // The picked lines handed to the card sheet, frozen when Share was pressed.
+    var sharingPicked by remember { mutableStateOf<Pair<com.opentune.data.model.Song, List<String>>?>(null) }
     Box(modifier) {
         when (state) {
             is LyricsState.Loading -> Column(Modifier.padding(top = 20.dp), verticalArrangement = Arrangement.spacedBy(18.dp)) {
@@ -139,7 +150,17 @@ fun LyricsView(
             }
             is LyricsState.Found -> when (val lyrics = state.lyrics) {
                 is Lyrics.Synced ->
-                    if (synced) SyncedLyrics(lyrics.lines, position, onSeek, blur, lyrics.source, onSyncLine, playing, seeks)
+                    if (synced) SyncedLyrics(
+                        lyrics.lines, position, onSeek, blur, lyrics.source, onSyncLine, playing, seeks,
+                        selection = selection.takeIf { shareSong != null },
+                        onShareSelection = shareSong?.let { song ->
+                            {
+                                val picked = selection.sorted().mapNotNull { lyrics.lines.getOrNull(it)?.text?.trim()?.takeIf(String::isNotEmpty) }
+                                if (picked.isNotEmpty()) sharingPicked = song to picked
+                                selection.clear()
+                            }
+                        },
+                    )
                     else PlainLyrics(lyrics.lines.joinToString("\n") { it.text }, lyrics.source, note = null)
                 is Lyrics.Plain -> PlainLyrics(lyrics.text, lyrics.source)
             }
@@ -173,12 +194,63 @@ fun LyricsView(
                     LyricActionButton(Icons.Rounded.FormatQuote, "Share lyrics") {
                         haptics.tick()
                         val now = position()
-                        startAt = if (found is Lyrics.Synced) timed.indexOfLast { it.second <= now } else -1
-                        sharing = shareSong to lines
+                        if (found is Lyrics.Synced && synced) {
+                            // Start picking on the page itself, from the line being sung.
+                            selection.clear()
+                            selection.add(found.lines.indexOfLast { it.startMs <= now }.coerceAtLeast(0))
+                        } else {
+                            startAt = if (found is Lyrics.Synced) timed.indexOfLast { it.second <= now } else -1
+                            sharing = shareSong to lines
+                        }
                     }
                     sharing?.let { (song, shared) -> com.opentune.ui.share.LyricCardSheet(song, shared, startAt = startAt, onDismiss = { sharing = null }) }
                 }
             }
+        }
+        sharingPicked?.let { (song, picked) ->
+            com.opentune.ui.share.LyricCardSheet(song, picked, startAt = 0, onDismiss = { sharingPicked = null }, pickable = false)
+        }
+    }
+}
+
+/**
+ * The bar floating over the lyrics while lines are being picked for a card:
+ * Cancel and Share, and with one line picked a way to line the lyrics up
+ * with it (what a long press used to do).
+ */
+@Composable
+private fun SelectionBar(count: Int, onCancel: () -> Unit, onShare: () -> Unit, onSync: (() -> Unit)?, modifier: Modifier = Modifier) {
+    Row(
+        modifier
+            .clip(RoundedCornerShape(30.dp))
+            .background(Color(0xF0141416))
+            .padding(8.dp),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        if (onSync != null) {
+            Box(
+                Modifier.size(52.dp).clip(CircleShape).background(Color.White.copy(alpha = 0.10f)).clickable(onClick = onSync),
+                contentAlignment = Alignment.Center,
+            ) { Icon(Icons.Rounded.Sync, "Line the lyrics up with this line", tint = Color.White) }
+        }
+        Row(
+            Modifier.height(52.dp).width(130.dp).clip(RoundedCornerShape(24.dp)).background(Color.White.copy(alpha = 0.12f)).clickable(onClick = onCancel),
+            horizontalArrangement = Arrangement.Center,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Icon(Icons.Rounded.Close, null, tint = Color.White, modifier = Modifier.size(20.dp))
+            Spacer(Modifier.width(8.dp))
+            Text("Cancel", color = Color.White, style = MaterialTheme.typography.titleMedium)
+        }
+        Row(
+            Modifier.height(52.dp).width(130.dp).clip(RoundedCornerShape(24.dp)).background(Color.White).clickable(enabled = count > 0, onClick = onShare),
+            horizontalArrangement = Arrangement.Center,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Icon(Icons.Rounded.IosShare, null, tint = Color.Black, modifier = Modifier.size(20.dp))
+            Spacer(Modifier.width(8.dp))
+            Text("Share", color = Color.Black, style = MaterialTheme.typography.titleMedium, fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold)
         }
     }
 }
@@ -247,11 +319,17 @@ private fun SyncedLyrics(
     onSyncLine: ((Long) -> Unit)? = null,
     playing: () -> Boolean = { true },
     seeks: () -> Long = { 0L },
+    /** Lines picked for a lyric card, by index; null where there's no song to share. */
+    selection: androidx.compose.runtime.snapshots.SnapshotStateList<Int>? = null,
+    onShareSelection: (() -> Unit)? = null,
 ) {
     val ui by AppSettings.ui.collectAsState()
     val reduced = ui.reduceAnimation || !android.animation.ValueAnimator.areAnimatorsEnabled()
     val animation = if (reduced) LyricsAnimation.MINIMAL else ui.lyricsAnimation
     val listState = rememberLazyListState()
+    val selecting = selection?.isNotEmpty() == true
+    val haptics = com.opentune.ui.components.rememberHaptics()
+    androidx.activity.compose.BackHandler(enabled = selecting) { selection?.clear() }
     val romanize = AppSettings.lyrics.collectAsState().value.romanize
     val romanized by androidx.compose.runtime.produceState<List<String?>>(emptyList(), lines, romanize) {
         value = if (!romanize) emptyList() else kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Default) { Romanizer.lines(lines.map { it.text }) }
@@ -264,8 +342,22 @@ private fun SyncedLyrics(
     // snapping back. Restarts for each new set of lines (a new song).
     val clock = rememberLyricsClock(position, playing, seeks, trackKey = lines)
     val pos by rememberUpdatedState(clock)
-    // A line lights a moment before its timestamp, so it's there as the singer starts it.
-    val active by remember(lines) { derivedStateOf { lines.activeIndex(pos() + LINE_LEAD_MS) } }
+    // The lines with instrumental breaks folded in: a long stretch with no
+    // singing becomes a row of breathing dots, so the last sung line doesn't
+    // sit lit through a passage with no vocals.
+    val rows = remember(lines) { buildLyricRows(lines) }
+    // A line lights a moment before its timestamp, so it's there as the singer
+    // starts it; a gap's dots take over the moment the singing stops.
+    val activeRow by remember(rows) {
+        derivedStateOf {
+            val p = pos() + LINE_LEAD_MS
+            var found = -1
+            rows.forEachIndexed { i, row -> if (row.startMs <= p) found = i }
+            found
+        }
+    }
+    // The line the view is centred on, whether a line or the gap after it is lit.
+    val activeLine by remember(rows) { derivedStateOf { (rows.getOrNull(activeRow) as? LyricRow.Line)?.index ?: (rows.getOrNull(activeRow) as? LyricRow.Gap)?.gap?.afterIndex ?: -1 } }
     var following by remember { mutableStateOf(true) }
     val glide = remember { GlideSpeed() }
 
@@ -275,22 +367,25 @@ private fun SyncedLyrics(
     LaunchedEffect(listState) {
         listState.interactionSource.interactions.collect { if (it is DragInteraction.Start) following = false }
     }
-    LaunchedEffect(following, listState.isScrollInProgress) {
-        if (!following && !listState.isScrollInProgress) {
+    // While lines are being picked the list holds still under the finger.
+    LaunchedEffect(selecting) { if (selecting) following = false }
+    LaunchedEffect(following, listState.isScrollInProgress, selecting) {
+        if (!following && !listState.isScrollInProgress && !selecting) {
             delay(RESUME_FOLLOW_MS)
             following = true
         }
     }
 
     BoxWithConstraints(Modifier.fillMaxSize()) {
-        val anchor = maxHeight * 0.3f
-        LaunchedEffect(active, following, reduced) {
+        // The current line sits near the top, leaving room for just the line before it.
+        val anchor = maxHeight * LINE_ANCHOR
+        LaunchedEffect(activeRow, following, reduced) {
             if (!following) {
                 glide.pxPerS = 0f
                 return@LaunchedEffect
             }
             // +1 for the intro item ahead of the first line.
-            glideTo(listState, (active + 1).coerceAtLeast(0), reduced, glide)
+            glideTo(listState, (activeRow + 1).coerceAtLeast(0), reduced, glide)
         }
 
         LazyColumn(
@@ -303,28 +398,56 @@ private fun SyncedLyrics(
                 val waiting by remember(firstStart) { derivedStateOf { firstStart > 2_500 && pos() < firstStart - 300 } }
                 IntroDots(visible = waiting)
             }
-            itemsIndexed(lines, key = { i, line -> "$i:${line.startMs}" }) { i, line ->
-                LyricLineView(
-                    line = line,
-                    distance = i - active,
-                    isActive = i == active,
-                    animation = animation,
-                    blurEnabled = blur && following,
-                    position = clock,
-                    romanized = romanized.getOrNull(i),
-                    duet = duet,
-                    onClick = {
-                        onSeek(line.startMs)
-                        following = true
-                    },
-                    onLongClick = onSyncLine?.let { sync -> { sync(line.startMs); following = true } },
-                )
+            itemsIndexed(rows, key = { _, row -> row.key }) { r, row ->
+                when (row) {
+                    is LyricRow.Line -> {
+                        val i = row.index
+                        val line = row.line
+                        val picked = selection?.contains(i)
+                        LyricLineView(
+                            line = line,
+                            distance = i - activeLine,
+                            isActive = r == activeRow && !selecting,
+                            animation = animation,
+                            blurEnabled = blur && following,
+                            position = clock,
+                            romanized = romanized.getOrNull(i),
+                            duet = duet,
+                            selected = if (selecting) picked == true else null,
+                            onClick = {
+                                if (selecting && selection != null) {
+                                    // Tap to add or drop a line, up to the card's limit.
+                                    when {
+                                        i in selection -> selection.remove(i)
+                                        selection.size < com.opentune.ui.share.LyricCard.MAX_LINES -> selection.add(i)
+                                        else -> { haptics.pattern(com.opentune.ui.components.Haptics.Pattern.OFF); return@LyricLineView }
+                                    }
+                                    haptics.tick()
+                                } else {
+                                    onSeek(line.startMs)
+                                    following = true
+                                }
+                            },
+                            // A long press starts picking lines to share; without a song to
+                            // share, it lines the lyrics up with this line as before.
+                            onLongClick = when {
+                                selection != null -> { { if (!selecting) { haptics.press(); selection.add(i) } } }
+                                onSyncLine != null -> { { onSyncLine(line.startMs); following = true } }
+                                else -> null
+                            },
+                        )
+                    }
+                    is LyricRow.Gap -> GapDots(
+                        visible = r == activeRow,
+                        progress = { ((clock() - row.gap.startMs).toFloat() / (row.gap.endMs - row.gap.startMs)).coerceIn(0f, 1f) },
+                    )
+                }
             }
             item(key = "credit") { Credit(source) }
         }
 
         AnimatedVisibility(
-            visible = !following,
+            visible = !following && !selecting,
             enter = fadeIn(),
             exit = fadeOut(),
             modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 8.dp),
@@ -336,11 +459,84 @@ private fun SyncedLyrics(
                 colors = AssistChipDefaults.assistChipColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHighest),
             )
         }
+        AnimatedVisibility(
+            visible = selecting,
+            enter = fadeIn() + androidx.compose.animation.slideInVertically { it },
+            exit = fadeOut() + androidx.compose.animation.slideOutVertically { it },
+            modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 12.dp),
+        ) {
+            val only = selection?.singleOrNull()
+            SelectionBar(
+                count = selection?.size ?: 0,
+                onCancel = { haptics.tick(); selection?.clear(); following = true },
+                onShare = { haptics.press(); onShareSelection?.invoke(); following = true },
+                onSync = if (only != null && onSyncLine != null) {
+                    { lines.getOrNull(only)?.let { onSyncLine(it.startMs) }; selection.clear(); following = true }
+                } else null,
+            )
+        }
     }
 }
 
 /** How fast the list was gliding, kept from one line to the next. */
 private class GlideSpeed { var pxPerS = 0f }
+
+/** One row of the synced list: a sung line, or the instrumental break after one. */
+private sealed interface LyricRow {
+    val startMs: Long
+    val key: String
+
+    class Line(val index: Int, val line: LyricLine) : LyricRow {
+        override val startMs get() = line.startMs
+        override val key get() = "$index:${line.startMs}"
+    }
+
+    class Gap(val gap: LyricGap) : LyricRow {
+        override val startMs get() = gap.startMs
+        override val key get() = "gap:${gap.afterIndex}:${gap.startMs}"
+    }
+}
+
+private fun buildLyricRows(lines: List<LyricLine>): List<LyricRow> {
+    val gaps = lines.instrumentalGaps().associateBy { it.afterIndex }
+    return buildList {
+        lines.forEachIndexed { i, line ->
+            add(LyricRow.Line(i, line))
+            gaps[i]?.let { add(LyricRow.Gap(it)) }
+        }
+    }
+}
+
+/**
+ * Three dots for an instrumental break. They fill in one after another as the
+ * break runs out, so you can see the next line coming, and breathe while they wait.
+ */
+@Composable
+private fun GapDots(visible: Boolean, progress: () -> Float) {
+    AnimatedVisibility(visible, enter = fadeIn() + expandVertically(), exit = fadeOut() + shrinkVertically()) {
+        val transition = rememberInfiniteTransition(label = "gap")
+        val breath by transition.animateFloat(0.92f, 1.08f, infiniteRepeatable(tween(1_200), RepeatMode.Reverse), label = "breath")
+        val ink = MaterialTheme.colorScheme.onSurface
+        Row(
+            Modifier
+                .padding(vertical = 18.dp)
+                .graphicsLayer { scaleX = breath; scaleY = breath; transformOrigin = TransformOrigin(0f, 0.5f) },
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
+            repeat(3) { i ->
+                Box(
+                    Modifier
+                        .size(14.dp)
+                        .drawWithContent {
+                            // Each dot takes a third of the break to light, from dim to full.
+                            val lit = (progress() * 3f - i).coerceIn(0f, 1f)
+                            drawCircle(ink.copy(alpha = 0.3f + 0.7f * lit))
+                        },
+                )
+            }
+        }
+    }
+}
 
 /**
  * Scroll [index] to the top of the content area (the anchor), smoothly when
@@ -410,25 +606,42 @@ private fun LyricLineView(
     onLongClick: (() -> Unit)? = null,
     romanized: String? = null,
     duet: Boolean = false,
+    /** While lines are being picked to share: whether this one is. Null otherwise. */
+    selected: Boolean? = null,
 ) {
     val motion = motionOf(animation)
     val bright = MaterialTheme.colorScheme.onSurface
     val dim = bright.copy(alpha = 0.45f)
+    val picking = selected != null
     val scale by animateFloatAsState(
-        if (isActive) motion.activeScale else motion.inactiveScale,
+        if (isActive || picking) motion.activeScale else motion.inactiveScale,
         // Critically damped: the line settles into size without overshooting, which read as a bounce.
         spring(dampingRatio = 1f, stiffness = Spring.StiffnessMediumLow),
         label = "lineScale",
     )
     val alpha by animateFloatAsState(
-        if (isActive) 1f else (motion.inactiveAlpha - 0.06f * (minOf(abs(distance), 5) - 1) - if (distance < 0) 0.1f else 0f).coerceAtLeast(0.18f),
+        when {
+            picking -> if (selected == true) 1f else 0.6f
+            isActive -> 1f
+            else -> (motion.inactiveAlpha - 0.06f * (minOf(abs(distance), 5) - 1) - if (distance < 0) 0.1f else 0f).coerceAtLeast(0.18f)
+        },
         tween(if (animation == LyricsAnimation.MINIMAL) 200 else 400),
         label = "lineAlpha",
     )
     val blur by animateDpAsState(
-        if (!blurEnabled || isActive) 0.dp else (minOf(abs(distance), 6) * motion.blurPerLine).dp,
+        if (!blurEnabled || isActive || picking) 0.dp else (minOf(abs(distance), 6) * motion.blurPerLine).dp,
         tween(500),
         label = "lineBlur",
+    )
+    // Picking lines, each sits on its own card, the picked ones a shade lighter.
+    val card by androidx.compose.animation.animateColorAsState(
+        when (selected) {
+            null -> Color.Transparent
+            true -> bright.copy(alpha = 0.16f)
+            false -> bright.copy(alpha = 0.06f)
+        },
+        tween(220),
+        label = "lineCard",
     )
     val ui by AppSettings.ui.collectAsState()
     val centred = ui.lyricsAlign == LyricsAlign.CENTER
@@ -445,23 +658,22 @@ private fun LyricLineView(
     val text = remember(line) { if (line.words.isEmpty()) line.text else line.words.joinToString("") { it.text } }
     var layout by remember { mutableStateOf<TextLayoutResult?>(null) }
     // Where each word sits, worked out once per layout rather than every frame.
-    val wordBoxes = remember(layout, line) {
-        val l = layout ?: return@remember emptyList()
-        var start = 0
-        line.words.map { w ->
-            val end = (start + w.text.length).coerceAtMost(text.length)
-            val box = if (end > start) l.getPathForRange(start, end).getBounds() else Rect.Zero
-            start = end
-            box
-        }
-    }
-    val sweep = isActive && line.words.isNotEmpty()
+    // A word's trailing space is left out, and a word that still runs across a
+    // wrap gets one box per row: a single box for the word that ends the first
+    // row would span both rows edge to edge and dim the whole line until sung.
+    val wordBoxes = remember(layout, line) { wordBoxesOf(layout, line, text) }
+    // Words light one by one only where the source timed them. A line timed as a
+    // whole lights all at once, on time, rather than sweeping on guessed word times.
+    val sweep = isActive && line.wordSynced && line.words.isNotEmpty()
+    val cardPad by animateDpAsState(if (picking) 14.dp else 0.dp, tween(220), label = "cardPad")
     Column(
         Modifier
             .fillMaxWidth()
+            .padding(vertical = cardPad / 5)
             .clip(MaterialTheme.shapes.medium)
+            .background(card)
             .combinedClickable(remember { MutableInteractionSource() }, indication = com.opentune.ui.components.FocusRing(MaterialTheme.shapes.medium), onLongClick = onLongClick, onClick = onClick)
-            .padding(vertical = 10.dp)
+            .padding(vertical = 10.dp, horizontal = cardPad)
             .graphicsLayer {
                 scaleX = scale
                 scaleY = scale
@@ -483,7 +695,7 @@ private fun LyricLineView(
                     .fillMaxWidth()
                     // Its own layer, so dimming the unsung words doesn't punch through what's behind.
                     .graphicsLayer { compositingStrategy = CompositingStrategy.Offscreen }
-                    .drawWithContent { drawContent(); sweepDim(line, wordBoxes, position(), 0.3f) },
+                    .drawWithContent { drawContent(); sweepDim(line, wordBoxes, position(), 0.4f) },
             )
         } else {
             Text(
@@ -514,35 +726,94 @@ private fun LyricLineView(
     }
 }
 
+/** Where each of [line]'s words sits in [layout] of [text]: one box per row a word covers, trailing space left out. */
+private fun wordBoxesOf(layout: TextLayoutResult?, line: LyricLine, text: String): List<List<Rect>> {
+    val l = layout ?: return emptyList()
+    var start = 0
+    return line.words.map { w ->
+        val end = (start + w.text.length).coerceAtMost(text.length)
+        var visibleEnd = end
+        while (visibleEnd > start && text[visibleEnd - 1].isWhitespace()) visibleEnd--
+        // Past the last row shown (an ellipsized preview), there's nothing to light.
+        val shown = if (l.lineCount > 0) l.getLineEnd(l.lineCount - 1, visibleEnd = true) else 0
+        visibleEnd = minOf(visibleEnd, shown)
+        val boxes = if (visibleEnd <= start) emptyList() else {
+            val first = l.getLineForOffset(start)
+            val last = l.getLineForOffset(visibleEnd - 1)
+            (first..last).mapNotNull { row ->
+                val from = maxOf(start, l.getLineStart(row))
+                val to = minOf(visibleEnd, l.getLineEnd(row, visibleEnd = true))
+                if (to > from) l.getPathForRange(from, to).getBounds() else null
+            }
+        }
+        start = end
+        boxes
+    }
+}
+
+/**
+ * One line lit as it's sung, for the player's one-line preview: word by word
+ * where the source timed the words, the whole line at once where it only timed
+ * lines, and dimmed through an instrumental break after it.
+ */
+@Composable
+internal fun SungLine(line: LyricLine, position: () -> Long, style: androidx.compose.ui.text.TextStyle, modifier: Modifier = Modifier) {
+    val bright = MaterialTheme.colorScheme.onSurface
+    val text = remember(line) { if (line.words.isEmpty()) line.text else line.words.joinToString("") { it.text }.trim() }
+    var layout by remember { mutableStateOf<TextLayoutResult?>(null) }
+    val boxes = remember(layout, line) { wordBoxesOf(layout, line, text) }
+    Text(
+        text,
+        style = style,
+        color = bright,
+        maxLines = 1,
+        overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+        onTextLayout = { layout = it },
+        modifier = modifier
+            .graphicsLayer { compositingStrategy = CompositingStrategy.Offscreen }
+            .drawWithContent {
+                drawContent()
+                if (line.wordSynced) sweepDim(line, boxes, position(), 0.55f)
+            },
+    )
+}
+
 /**
  * Sweeps word by word along the line as it's sung, cutting the alpha of the
- * part not reached yet by [removal] (a fraction of 0..1, fully removed at 1).
- * The crisp copy passes a small value, so the whole active line stays
- * readable and only lifts a little as each word lands; the bloom copy passes
- * 1, so its halo shows over the sung words alone. Done at draw time, so the
- * line isn't measured again every frame.
+ * part not reached yet by [removal] (a fraction of 0..1, fully removed at 1),
+ * so the whole active line stays readable and lifts a little as each word
+ * lands. A word split over two rows fills its first piece, then its second.
+ * Done at draw time, so the line isn't measured again every frame.
  */
-private fun DrawScope.sweepDim(line: LyricLine, boxes: List<Rect>, positionMs: Long, removal: Float) {
-    val feather = 14.dp.toPx()
+private fun DrawScope.sweepDim(line: LyricLine, boxes: List<List<Rect>>, positionMs: Long, removal: Float) {
+    // A wide soft edge, as BitChord's: the light eases across each word rather than wiping it.
+    val feather = 26.dp.toPx()
     line.words.forEachIndexed { i, word ->
-        val box = boxes.getOrNull(i) ?: return@forEachIndexed
-        if (box.isEmpty) return@forEachIndexed
+        val pieces = boxes.getOrNull(i) ?: return@forEachIndexed
+        if (pieces.isEmpty()) return@forEachIndexed
         val span = (word.endMs - word.startMs).coerceAtLeast(1)
         // Even through the word: an eased fill rushed the start and lagged the end, off the singing.
         val t = ((positionMs - word.startMs).toFloat() / span).coerceIn(0f, 1f)
         if (t >= 1f) return@forEachIndexed
-        val litX = box.left + (box.width + feather) * t
-        drawRect(
-            brush = Brush.horizontalGradient(
-                0f to Color.Transparent,
-                1f to Color.Black.copy(alpha = removal),
-                startX = litX - feather,
-                endX = litX,
-            ),
-            topLeft = Offset(box.left, box.top),
-            size = Size(box.width, box.height),
-            blendMode = BlendMode.DstOut,
-        )
+        val total = pieces.sumOf { it.width.toDouble() }.toFloat().coerceAtLeast(1f)
+        var before = 0f
+        pieces.forEach { box ->
+            val pieceT = ((t * total - before) / box.width.coerceAtLeast(1f)).coerceIn(0f, 1f)
+            before += box.width
+            if (pieceT >= 1f || box.isEmpty) return@forEach
+            val litX = box.left + (box.width + feather) * pieceT
+            drawRect(
+                brush = Brush.horizontalGradient(
+                    0f to Color.Transparent,
+                    1f to Color.Black.copy(alpha = removal),
+                    startX = litX - feather,
+                    endX = litX,
+                ),
+                topLeft = Offset(box.left, box.top),
+                size = Size(box.width, box.height),
+                blendMode = BlendMode.DstOut,
+            )
+        }
     }
 }
 
@@ -599,7 +870,7 @@ private fun Credit(source: String) {
         color = MaterialTheme.colorScheme.onSurfaceVariant,
     )
     Text(
-        "Out of time? Long-press the line being sung to line them up.",
+        "Long-press a line to share it on a card. Out of time? Pick the line being sung and tap sync.",
         style = MaterialTheme.typography.labelSmall,
         color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
         modifier = Modifier.padding(top = 4.dp),
@@ -607,6 +878,8 @@ private fun Credit(source: String) {
 }
 
 private const val RESUME_FOLLOW_MS = 3_000L
+/** Where the current line sits, as a share of the height from the top: room for one line above it. */
+private const val LINE_ANCHOR = 0.16f
 /** How far ahead of its timestamp a line lights up. */
 private const val LINE_LEAD_MS = 150L
 

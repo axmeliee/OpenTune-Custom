@@ -1,23 +1,12 @@
 package com.opentune.ui.player
 
 import android.media.AudioManager
-import androidx.compose.animation.core.LinearEasing
-import androidx.compose.animation.core.RepeatMode
-import androidx.compose.animation.core.animateFloat
-import androidx.compose.animation.core.infiniteRepeatable
-import androidx.compose.animation.core.rememberInfiniteTransition
-import androidx.compose.animation.core.tween
-import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.fillMaxHeight
-import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -25,59 +14,62 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.rounded.VolumeUp
 import androidx.compose.material.icons.rounded.Cast
-import androidx.compose.material.icons.rounded.Equalizer
-import androidx.compose.material.icons.rounded.Grain
+import androidx.compose.material.icons.rounded.Description
 import androidx.compose.material.icons.rounded.GraphicEq
 import androidx.compose.material.icons.rounded.Headphones
-import androidx.compose.material.icons.rounded.HighQuality
-import androidx.compose.material.icons.rounded.Layers
-import androidx.compose.material.icons.rounded.MusicNote
+import androidx.compose.material.icons.rounded.Memory
 import androidx.compose.material.icons.rounded.Speaker
-import androidx.compose.material.icons.rounded.Speed
 import androidx.compose.material.icons.rounded.Tune
-import androidx.compose.material.icons.rounded.Verified
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableLongStateOf
+import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.withFrameMillis
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.runtime.mutableFloatStateOf
-import androidx.compose.runtime.mutableStateMapOf
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawWithContent
-import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.ui.graphics.lerp
-import androidx.compose.ui.layout.onGloballyPositioned
-import androidx.compose.ui.layout.positionInWindow
-import androidx.compose.ui.platform.LocalDensity
-import kotlin.math.abs
 import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.BlendMode
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.drawscope.DrawScope
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.layout.LayoutCoordinates
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.onPlaced
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import com.opentune.data.NerdStats
 import com.opentune.data.settings.AppSettings
 import com.opentune.playback.AudioFormatInfo
 import com.opentune.playback.BitPerfectUsb
 import com.opentune.ui.components.FloatingDialog
 import com.opentune.ui.components.SheetButton
+import java.util.Locale
+import kotlin.math.PI
+import kotlin.math.cos
+import kotlin.math.sin
 
 /**
- * Every stage the sound passes through, from the stream to the speaker, drawn
- * as one timeline with a light running down it. Each node's colour says what
- * it's doing: green untouched, amber changing the sound on purpose, grey
- * information.
+ * Every stage the sound passes through, from the stream to the speaker, as
+ * BitChord lays it out: track info, decoder, resampler, DSP and output, each
+ * a node on one rail with what the player reports about it. A light runs down
+ * the rail, goes once and a half round each node's ring, and moves on.
  */
 @Composable
 fun SignalPathDialog(format: AudioFormatInfo?, onDismiss: () -> Unit) {
@@ -90,6 +82,7 @@ fun SignalPathDialog(format: AudioFormatInfo?, onDismiss: () -> Unit) {
     val lossless by NerdStats.externalSource.collectAsState()
     val gain by NerdStats.loudnessGainDb.collectAsState()
     val speakerHold by NerdStats.loudnessOffOnSpeaker.collectAsState()
+    val pipe by NerdStats.pipeline.collectAsState()
     val device = rememberOutputDeviceName()
     val route = rememberOutputRoute()
     val bitPerfect by BitPerfectUsb.status.collectAsState()
@@ -97,109 +90,101 @@ fun SignalPathDialog(format: AudioFormatInfo?, onDismiss: () -> Unit) {
     val volume = am?.getStreamVolume(AudioManager.STREAM_MUSIC)
     val maxVolume = am?.getStreamMaxVolume(AudioManager.STREAM_MUSIC)
 
+    val codec = format?.codec
+    val isLossless = isHighestQuality(source, format)
+    val bits = format?.bitDepth ?: source?.bits
+    val rate = format?.sampleRateHz ?: source?.sampleRate
+    val channels = format?.channels
+    val kbps = format?.bitrateKbps ?: source?.kbps
+    val pcmKbps = if (isLossless && bits != null && rate != null && channels != null) bits.toLong() * rate * channels / 1000 else null
+    val trackRate = pipe.outputSampleRateHz ?: rate
+    val resampled = trackRate != null && mixerRate != null && trackRate != mixerRate
+
     val dspStages = buildList {
-        if (eq.enabled) add("equalizer")
-        if (sound.bassBoost > 0) add("bass boost")
-        if (pb.spatialAudio) add("stereo widening")
+        if (eq.enabled) add("Equalizer")
+        if (sound.bassBoost > 0) add("Bass boost")
+        if (pb.spatialAudio) add("Stereo widening")
         if (sound.space != com.opentune.data.settings.Space3DSpeed.OFF) add("3D sound")
         else if (sound.eightD != com.opentune.data.settings.EightD.OFF) add("8D")
-        if (pb.clarity) add("clarity")
-        if (eq.balance != 0f) add("balance")
+        if (pb.clarity) add("Clarity")
+        if (eq.balance != 0f) add("Balance")
     }
-    val rate = format?.sampleRateHz ?: source?.sampleRate
 
-    val stages = buildList {
-        add(Stage(Icons.Rounded.MusicNote, Tone.INFO, "Source", source?.provider ?: "Waiting for the stream"))
-        add(Stage(Icons.Rounded.HighQuality, Tone.INFO, "Audio quality", signalQuality(format, source)))
-        source?.selectionDetail?.let { add(Stage(Icons.Rounded.Tune, Tone.INFO, "Source selection", it)) }
-        add(
-            Stage(
-                Icons.Rounded.GraphicEq,
-                if (dspStages.isEmpty()) Tone.CLEAN else Tone.CHANGED,
-                "App DSP",
-                if (dspStages.isEmpty()) "Bypassed: samples pass through unchanged" else dspStages.joinToString(", ") + ", with headroom so boosts don't clip",
+    val stages = listOf(
+        Stage(
+            Icons.Rounded.Description, "Track info",
+            listOfNotNull(
+                "Source" to (source?.provider?.removePrefix("YouTube · ") ?: "Waiting for the stream"),
+                codec?.let { "Format" to it },
+                if (isLossless) bits?.let { "Bit Depth" to "$it-bit" } else null,
+                rate?.let { "Sample Rate" to khz(it) },
+                kbps?.takeIf { it > 0 }?.let { "Bitrate" to "$it kbps" },
+                pcmKbps?.let { "PCM Data Rate" to "$it kbps" },
+                channels?.let { "Channels" to channelLabel(it) },
+                source?.selectionDetail?.let { "Picked" to it },
             ),
-        )
-        add(
-            Stage(
-                Icons.Rounded.Speed,
-                if (sound.speed == 1f && sound.pitch == 1f) Tone.CLEAN else Tone.CHANGED,
-                "Tempo",
-                if (sound.speed == 1f && sound.pitch == 1f) "1.00x, no time-stretching" else "%.2fx speed, %.2fx pitch".format(sound.speed, sound.pitch),
+        ),
+        Stage(
+            Icons.Rounded.Memory, "Decoder",
+            listOfNotNull(
+                "Decoder Name" to (pipe.decoderName ?: if (pipe.offload) "Hardware offload" else "Starting…"),
+                pipe.decoderOutput?.let { "Format" to it },
             ),
-        )
-        add(
-            Stage(
-                Icons.AutoMirrored.Rounded.VolumeUp,
-                if (gain == null) Tone.CLEAN else Tone.CHANGED,
-                "Loudness",
-                when {
-                    !pb.loudnessNormalization -> "Off: every song at its own level"
-                    lossless != null -> "No loudness measurement for this external master"
-                    speakerHold && (gain ?: 0f) > 0.05f -> "%+.1f dB on the phone speaker: a quiet song lifted, never turned down".format(gain)
-                    speakerHold -> "Full level on the phone speaker: songs aren't turned down there"
-                    gain == null -> "No figure for this song yet"
-                    else -> "%+.1f dB to YouTube's reference level".format(gain)
+        ),
+        Stage(
+            Icons.Rounded.Tune, "Resampler",
+            listOf(
+                "I/O Rate" to (if (trackRate != null) "${khz(trackRate)} → ${khz(mixerRate ?: trackRate)}" else "Unknown"),
+                "Type" to if (resampled) "Android mixer resampler" else "None",
+                "Cutoff" to "—",
+                "Quality" to if (resampled) "Resampled" else "Passthrough",
+            ),
+        ),
+        Stage(
+            Icons.Rounded.GraphicEq, "DSP",
+            listOfNotNull(
+                "PCM Format" to if (pb.floatOutput) "Float32" else "16-bit PCM",
+                "Effects" to (if (dspStages.isEmpty()) "Bypassed" else dspStages.joinToString(", ")),
+                "Tempo" to (if (sound.speed == 1f && sound.pitch == 1f) "1.00x" else "%.2fx speed, %.2fx pitch".format(Locale.ROOT, sound.speed, sound.pitch)),
+                "Loudness" to when {
+                    !pb.loudnessNormalization -> "Off"
+                    lossless != null -> "Not measured for this master"
+                    speakerHold && (gain ?: 0f) > 0.05f -> "%+.1f dB, phone speaker".format(Locale.ROOT, gain)
+                    speakerHold -> "Full level on the phone speaker"
+                    gain == null -> "Measuring"
+                    else -> "%+.1f dB".format(Locale.ROOT, gain)
                 },
+                "Dither" to if (pb.floatOutput) "Bypassed (float)" else "TPDF, noise shaped",
+                "System effects" to if (pb.systemEffects) "Open" else "Closed",
+                pipe.bufferMs?.let { ms -> "Buffer" to "$ms ms" + (pipe.bufferFrames?.let { " ($it frames)" } ?: "") },
             ),
-        )
-        add(
-            Stage(
-                Icons.Rounded.Equalizer,
-                if (pb.systemEffects) Tone.CHANGED else Tone.CLEAN,
-                "System effects",
-                if (pb.systemEffects) "Open: the phone's effects may process the sound" else "Closed: no device effects",
+        ),
+        Stage(
+            when {
+                route == OutputRoute.CAST -> Icons.Rounded.Cast
+                route.isHeadset -> Icons.Rounded.Headphones
+                else -> Icons.Rounded.Speaker
+            },
+            "Output",
+            listOfNotNull(
+                "Device" to device,
+                "AudioTrack" to listOfNotNull(pipe.outputEncoding ?: if (pb.floatOutput) "Float32" else "16-bit PCM", trackRate?.let(::khz)).joinToString(" / "),
+                mixerRate?.let { "System" to "AudioFlinger mixer, ${khz(it)}" },
+                when (val bp = bitPerfect) {
+                    is BitPerfectUsb.Status.Active -> "Bit-perfect" to "${bp.device}, ${khz(bp.sampleRate)} ${bp.bits}-bit"
+                    is BitPerfectUsb.Status.NoMatch -> "Bit-perfect" to "DAC lacks ${khz(bp.sampleRate)}"
+                    BitPerfectUsb.Status.NoDac -> "Bit-perfect" to "Waiting for a USB DAC"
+                    BitPerfectUsb.Status.Unsupported -> "Bit-perfect" to "Needs Android 14"
+                    BitPerfectUsb.Status.Off -> null
+                },
+                if (volume != null && maxVolume != null) "Volume" to "$volume of $maxVolume" else null,
             ),
-        )
-        add(
-            Stage(
-                Icons.Rounded.Layers,
-                if (rate != null && mixerRate != null && rate != mixerRate) Tone.CHANGED else Tone.CLEAN,
-                "Android mixer",
-                when {
-                    mixerRate == null -> "Rate unknown"
-                    rate != null && rate != mixerRate -> "$mixerRate Hz: Android resamples from $rate Hz"
-                    else -> "$mixerRate Hz, no resampling"
-                } + if (pb.floatOutput) " · 32-bit float" else " · 16-bit",
-            ),
-        )
-        add(
-            Stage(
-                Icons.Rounded.Grain,
-                Tone.CLEAN,
-                "Dither",
-                if (pb.floatOutput) "Bypassed: 32-bit float keeps full precision to the mixer"
-                else "TPDF dither, shaped above hearing, on the 16-bit step so quiet tails stay clean",
-            ),
-        )
-        when (val bp = bitPerfect) {
-            is BitPerfectUsb.Status.Active -> add(Stage(Icons.Rounded.Verified, Tone.CLEAN, "Bit-perfect", "On: ${bp.device} gets ${bp.sampleRate} Hz ${bp.bits}-bit untouched by Android"))
-            is BitPerfectUsb.Status.NoMatch -> add(Stage(Icons.Rounded.Verified, Tone.CHANGED, "Bit-perfect", "The DAC doesn't offer ${bp.sampleRate} Hz bit-perfect; using the normal mixer"))
-            BitPerfectUsb.Status.NoDac -> add(Stage(Icons.Rounded.Verified, Tone.INFO, "Bit-perfect", "Waiting for a USB DAC"))
-            BitPerfectUsb.Status.Unsupported -> add(Stage(Icons.Rounded.Verified, Tone.INFO, "Bit-perfect", "Needs Android 14 or newer"))
-            BitPerfectUsb.Status.Off -> Unit
-        }
-        add(
-            Stage(
-                Icons.Rounded.Tune,
-                if (bitPerfect is BitPerfectUsb.Status.Active && volume != maxVolume) Tone.CHANGED else Tone.INFO,
-                "System volume",
-                (if (volume != null && maxVolume != null) "$volume of $maxVolume" else "Unknown") +
-                    if (bitPerfect is BitPerfectUsb.Status.Active) " · applied by the app; full volume is bit-exact" else "",
-            ),
-        )
-        val outIcon = when {
-            route == OutputRoute.CAST -> Icons.Rounded.Cast
-            route.isHeadset -> Icons.Rounded.Headphones
-            else -> Icons.Rounded.Speaker
-        }
-        add(Stage(outIcon, Tone.INFO, "Output", device))
-    }
+        ),
+    )
 
     FloatingDialog(
         onDismissRequest = onDismiss,
-        icon = { androidx.compose.material3.Icon(Icons.Rounded.GraphicEq, null) },
-        title = { Text("Audio pipeline") },
+        title = { Text("Audio Pipeline") },
         text = {
             Column(Modifier.verticalScroll(rememberScrollState())) {
                 Text(
@@ -208,127 +193,215 @@ fun SignalPathDialog(format: AudioFormatInfo?, onDismiss: () -> Unit) {
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.padding(bottom = 14.dp),
                 )
+                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
                 Timeline(stages)
             }
         },
-        confirmButton = { SheetButton("Close", onClick = onDismiss, closes = true) },
+        confirmButton = { SheetButton("Done", onClick = onDismiss, closes = true) },
     )
 }
 
-/** One node on the pipeline: an icon, a tone colour, and what it's doing. */
-private data class Stage(val icon: ImageVector, val tone: Tone, val title: String, val detail: String)
+/** One node on the pipeline: an icon, its name, and what the player says about it. */
+private data class Stage(val icon: ImageVector, val title: String, val rows: List<Pair<String, String>>)
 
-private enum class Tone(val color: Color) {
-    CLEAN(Color(0xFF4CAF50)),
-    CHANGED(Color(0xFFFFB300)),
-    INFO(Color(0xFF9E9E9E)),
+private fun khz(hz: Int): String = "${String.format(Locale.ROOT, "%.1f", hz / 1000.0).removeSuffix(".0")} kHz"
+
+private fun channelLabel(n: Int) = when (n) {
+    1 -> "Mono"
+    2 -> "Stereo"
+    else -> "$n (Surround)"
 }
 
+private val RAIL_WIDTH = 44.dp
+private val NODE_SIZE = 32.dp
+
+/** The node's centre down from the top of its row. */
+private val NODE_CENTER = 30.dp
+
+/** How fast the light travels along the rail and round the rings. */
+private const val BEAM_DP_PER_S = 260f
+
+/** A rest between runs, with the rail dark. */
+private const val BEAM_REST_MS = 700L
+
 /**
- * The nodes down a single rail, with a bead of light running down the line: as
- * it reaches each node the icon turns once and lights up, then it moves on.
+ * The nodes down one rail. The rail, the rings' glow and the light are all
+ * drawn here, over the rows, from a clock read only while drawing, so a frame
+ * of the animation redraws without recomposing the page.
  */
 @Composable
 private fun Timeline(stages: List<Stage>) {
     val still = AppSettings.ui.collectAsState().value.reduceAnimation
-    val phase = if (still) null else rememberInfiniteTransition(label = "pipeline")
-        .animateFloat(0f, 1f, infiniteRepeatable(tween(stages.size * 480, easing = LinearEasing), RepeatMode.Restart), label = "beam")
-    val beamColor = MaterialTheme.colorScheme.primary
-    var boxTop by remember { mutableFloatStateOf(0f) }
-    var totalH by remember { mutableFloatStateOf(0f) }
+    val clock = remember { mutableLongStateOf(-1L) }
+    if (!still) LaunchedEffect(Unit) {
+        val start = withFrameMillis { it }
+        while (true) withFrameMillis { clock.longValue = it - start }
+    }
     val nodeY = remember { mutableStateMapOf<Int, Float>() }
-    // The bead's y within this box, or -1 when the motion is off.
-    val beamY = phase?.value?.let { it * totalH } ?: -1f
+    // The box's own live coordinates, to place each node relative to it.
+    val box = remember { arrayOfNulls<LayoutCoordinates>(1) }
+    val ink = MaterialTheme.colorScheme.onSurface
+    val rail = MaterialTheme.colorScheme.onSurfaceVariant
     Box(
         Modifier
             .fillMaxWidth()
-            .onGloballyPositioned { boxTop = it.positionInWindow().y; totalH = it.size.height.toFloat() }
+            .onPlaced { box[0] = it }
             .drawWithContent {
-                drawContent()
-                if (beamY < 0f) return@drawWithContent
+                val centres = stages.indices.map { nodeY[it] ?: return@drawWithContent drawContent() }
                 val cx = RAIL_WIDTH.toPx() / 2f
-                // A comet: a short bright tail up the line to a glowing head.
-                val tail = 52.dp.toPx()
-                drawRect(
-                    brush = Brush.verticalGradient(
-                        0f to Color.Transparent,
-                        1f to beamColor.copy(alpha = 0.9f),
-                        startY = beamY - tail,
-                        endY = beamY,
-                    ),
-                    topLeft = Offset(cx - 1.4.dp.toPx(), beamY - tail),
-                    size = Size(2.8.dp.toPx(), tail),
-                    blendMode = BlendMode.Plus,
-                )
-                drawCircle(beamColor.copy(alpha = 0.5f), 9.dp.toPx(), Offset(cx, beamY), blendMode = BlendMode.Plus)
-                drawCircle(Color.White, 2.6.dp.toPx(), Offset(cx, beamY))
+                val r = NODE_SIZE.toPx() / 2f
+                // The rail, stopping at each ring.
+                for (i in 0 until centres.lastIndex) {
+                    drawLine(rail.copy(alpha = 0.26f), Offset(cx, centres[i] + r), Offset(cx, centres[i + 1] - r), 2.dp.toPx())
+                }
+                drawContent()
+                val t = clock.longValue
+                val path = BeamPath(centres, cx, r, lead = 26.dp.toPx())
+                val head = if (t < 0) -1f else {
+                    val runMs = (path.length / (BEAM_DP_PER_S * density) * 1000f).toLong().coerceAtLeast(1L)
+                    val inRun = t % (runMs + BEAM_REST_MS)
+                    if (inRun > runMs) -1f else inRun / runMs.toFloat() * path.length
+                }
+                // Each ring glows while the light is on it and fades as it leaves.
+                val falloff = 30.dp.toPx()
+                centres.forEachIndexed { i, cy ->
+                    val (from, to) = path.orbit(i)
+                    val off = when {
+                        head < 0f -> Float.MAX_VALUE
+                        head < from -> from - head
+                        head > to -> head - to
+                        else -> 0f
+                    }
+                    val act = (1f - off / falloff).coerceIn(0f, 1f).let { it * it * (3f - 2f * it) }
+                    drawRing(ink, Offset(cx, cy), r, act)
+                }
+                if (head >= 0f) drawBeam(path, head, ink)
             },
     ) {
         Column {
             stages.forEachIndexed { i, stage ->
-                StageRow(
-                    stage,
-                    first = i == 0,
-                    last = i == stages.lastIndex,
-                    reportNodeY = { winY -> nodeY[i] = winY - boxTop },
-                    beamY = beamY,
-                    nodeY = nodeY[i] ?: -1f,
-                )
+                StageRow(stage, last = i == stages.lastIndex, reportNodeY = { node ->
+                    val parent = box[0]
+                    if (parent != null && parent.isAttached && node.isAttached) {
+                        nodeY[i] = parent.localPositionOf(node, Offset(node.size.width / 2f, node.size.height / 2f)).y
+                    }
+                })
             }
         }
     }
 }
 
-private val RAIL_WIDTH = 44.dp
-private val NODE_SIZE = 34.dp
+/**
+ * The light's route: down the rail into each ring at its top, one and a half
+ * turns round it, out at the bottom, and on to the next. Distances are in px.
+ */
+private class BeamPath(private val centres: List<Float>, private val cx: Float, private val r: Float, lead: Float) {
+    private val orbitLen = 3f * PI.toFloat() * r
+    /** Where each ring's orbit starts along the route. */
+    private val orbitStart = FloatArray(centres.size)
+    private val startY = (centres.first() - r - lead).coerceAtLeast(0f)
+    private val endY = centres.last() + r + lead
+    val length: Float
 
-/** The node's centre down from the top of its row, where the connector line meets it. */
-private val NODE_CENTER = 23.dp
+    init {
+        var d = 0f
+        var y = startY
+        centres.forEachIndexed { i, cy ->
+            d += (cy - r) - y
+            orbitStart[i] = d
+            d += orbitLen
+            y = cy + r
+        }
+        length = d + (endY - y)
+    }
+
+    fun orbit(i: Int) = orbitStart[i] to orbitStart[i] + orbitLen
+
+    fun at(d: Float): Offset {
+        var y = startY
+        centres.forEachIndexed { i, cy ->
+            val s = orbitStart[i]
+            if (d < s) return Offset(cx, (cy - r) - (s - d))
+            if (d <= s + orbitLen) {
+                // From the top, clockwise on screen, ending at the bottom.
+                val a = (-PI / 2 + (d - s) / orbitLen * 3 * PI).toFloat()
+                return Offset(cx + r * cos(a), cy + r * sin(a))
+            }
+            y = cy + r
+        }
+        return Offset(cx, y + (d - (orbitStart.last() + orbitLen)))
+    }
+}
+
+/** A dark node with its ring: a faint outline at rest, a bright one with a halo when lit by [act]. */
+private fun DrawScope.drawRing(ink: Color, c: Offset, r: Float, act: Float) {
+    if (act > 0f) {
+        drawCircle(
+            Brush.radialGradient(listOf(ink.copy(alpha = 0.30f * act), Color.Transparent), center = c, radius = r + 10.dp.toPx()),
+            radius = r + 10.dp.toPx(), center = c, blendMode = BlendMode.Plus,
+        )
+        drawCircle(ink.copy(alpha = 0.22f * act), r + 1.2.dp.toPx(), c, style = Stroke(2.dp.toPx()))
+    }
+    drawCircle(ink.copy(alpha = 0.35f + 0.6f * act), r, c, style = Stroke(1.2.dp.toPx()))
+}
+
+/** The light: a bright head with a tail that follows the route back, round a ring as well as down the rail. */
+private fun DrawScope.drawBeam(path: BeamPath, head: Float, ink: Color) {
+    val tail = 40.dp.toPx()
+    val steps = 22
+    for (k in steps downTo 0) {
+        val d = head - tail * k / steps
+        if (d < 0f) continue
+        val fade = 1f - k / steps.toFloat()
+        val p = path.at(d)
+        drawCircle(ink.copy(alpha = 0.10f * fade * fade), 5.dp.toPx(), p, blendMode = BlendMode.Plus)
+        drawCircle(ink.copy(alpha = 0.95f * fade * fade), 1.3.dp.toPx(), p)
+    }
+    val h = path.at(head)
+    drawCircle(Brush.radialGradient(listOf(ink.copy(alpha = 0.55f), Color.Transparent), center = h, radius = 8.dp.toPx()), 8.dp.toPx(), h, blendMode = BlendMode.Plus)
+    drawCircle(Color.White, 2.dp.toPx(), h)
+}
 
 @Composable
-private fun StageRow(stage: Stage, first: Boolean, last: Boolean, reportNodeY: (Float) -> Unit, beamY: Float, nodeY: Float) {
-    val lineColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.3f)
-    val window = with(LocalDensity.current) { 40.dp.toPx() }
-    val onNode = beamY >= 0f && nodeY >= 0f
-    // How strongly the bead is on this node (1 at its centre, 0 a window away).
-    val near = if (onNode) (1f - abs(beamY - nodeY) / window).coerceIn(0f, 1f) else 0f
-    // As the bead sweeps through, the icon turns once.
-    val spin = if (onNode && abs(beamY - nodeY) < window) ((beamY - nodeY) / window * 0.5f + 0.5f) * 360f else 0f
-    val lit = lerp(stage.tone.color, Color.White, 0.6f * near)
-    Row(Modifier.fillMaxWidth().height(IntrinsicSize.Min)) {
-        Box(Modifier.width(RAIL_WIDTH).fillMaxHeight()) {
-            Canvas(Modifier.fillMaxSize()) {
-                val cx = size.width / 2f
-                val cy = NODE_CENTER.toPx()
-                // Stop the line at the node's rim, so it meets the circle instead of crossing it.
-                val gap = NODE_SIZE.toPx() / 2f + 2.dp.toPx()
-                val w = 2.dp.toPx()
-                if (!first) drawLine(lineColor, Offset(cx, 0f), Offset(cx, cy - gap), w)
-                if (!last) drawLine(lineColor, Offset(cx, cy + gap), Offset(cx, size.height), w)
+private fun StageRow(stage: Stage, last: Boolean, reportNodeY: (LayoutCoordinates) -> Unit) {
+    val colors = MaterialTheme.colorScheme
+    Column {
+        Row(Modifier.fillMaxWidth()) {
+            Box(Modifier.width(RAIL_WIDTH)) {
+                Box(
+                    Modifier
+                        .padding(top = NODE_CENTER - NODE_SIZE / 2)
+                        .align(Alignment.TopCenter)
+                        .onGloballyPositioned { reportNodeY(it) }
+                        .size(NODE_SIZE)
+                        .clip(CircleShape)
+                        .background(Color(0xFF131315)),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Icon(stage.icon, null, tint = colors.onSurface.copy(alpha = 0.9f), modifier = Modifier.size(17.dp))
+                }
             }
-            Box(
-                Modifier
-                    .padding(top = NODE_CENTER - NODE_SIZE / 2)
-                    .align(Alignment.TopCenter)
-                    .onGloballyPositioned { reportNodeY(it.positionInWindow().y + it.size.height / 2f) }
-                    .size(NODE_SIZE)
-                    .clip(CircleShape)
-                    .background(stage.tone.color.copy(alpha = 0.16f + 0.5f * near))
-                    .border(1.5.dp, lit.copy(alpha = 0.6f + 0.4f * near), CircleShape),
-                contentAlignment = Alignment.Center,
-            ) {
-                androidx.compose.material3.Icon(
-                    stage.icon,
-                    null,
-                    tint = lit,
-                    modifier = Modifier.size(17.dp).graphicsLayer { rotationZ = spin },
+            Column(Modifier.padding(start = 10.dp, top = 20.dp, bottom = 16.dp)) {
+                Text(
+                    stage.title.uppercase(Locale.ROOT),
+                    style = MaterialTheme.typography.labelLarge.copy(letterSpacing = 1.sp),
+                    fontWeight = FontWeight.SemiBold,
+                    color = colors.onSurfaceVariant,
+                    modifier = Modifier.padding(bottom = 8.dp),
                 )
+                stage.rows.forEach { (label, value) ->
+                    Text(
+                        buildAnnotatedString {
+                            withStyle(SpanStyle(fontWeight = FontWeight.Bold, color = colors.onSurface)) { append("$label: ") }
+                            withStyle(SpanStyle(color = colors.onSurface.copy(alpha = 0.92f))) { append(value) }
+                        },
+                        style = MaterialTheme.typography.bodyMedium,
+                        modifier = Modifier.padding(vertical = 2.dp),
+                    )
+                }
             }
         }
-        Column(Modifier.padding(start = 6.dp, top = 12.dp, bottom = if (last) 4.dp else 18.dp)) {
-            Text(stage.title, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
-            Text(stage.detail, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        }
+        if (!last) HorizontalDivider(Modifier.padding(start = RAIL_WIDTH + 10.dp), color = colors.outlineVariant.copy(alpha = 0.5f))
     }
 }
 

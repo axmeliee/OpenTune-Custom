@@ -166,6 +166,51 @@ class LyricsQualityTest {
         assertEquals(-2_050L, LyricsQuality.autoOffset(chosen, listOf(one, timedVerse(shift = 2_100, recordingMs = 199_800)), duration))
     }
 
+    /** The verse word by word, a word every 600 ms, each given the next of [lengths]. */
+    private fun wordVerse(shift: Long = 0, recordingMs: Long = 0, lengths: List<Long> = listOf(300, 520, 410)) = synced(
+        *verse.mapIndexed { i, t ->
+            val start = 10_000L + i * 4_000L + shift
+            val parts = t.split(' ')
+            var at = start
+            val words = parts.mapIndexed { j, w -> LyricWord(if (j < parts.lastIndex) "$w " else w, at, at + lengths[j % lengths.size]).also { at += 600 } }
+            LyricLine(start, at + 400, words.joinToString("") { it.text }, words, wordSynced = true)
+        }.toTypedArray(),
+        recordingMs = recordingMs,
+    )
+
+    @Test fun wordTimingThatHoldsUpIsTrusted() {
+        val duration = 200_000L
+        assertTrue(LyricsQuality.wordsTrusted(wordVerse(recordingMs = 200_000), emptyList(), duration))
+        // Another source a steady 1.2 s later still agrees on how the lines fall.
+        assertTrue(LyricsQuality.wordsTrusted(wordVerse(recordingMs = 200_000), listOf(timedVerse(shift = 1_200, recordingMs = 200_300)), duration))
+    }
+
+    @Test fun wordTimingIsNotTrustedForANearlyMatchingCut() {
+        // Five seconds longer: close enough to pass as this recording, too far for the words.
+        assertFalse(LyricsQuality.wordsTrusted(wordVerse(recordingMs = 205_000), emptyList(), 200_000))
+    }
+
+    @Test fun wordsSpreadEvenlyAreNotReallyTimed() {
+        assertFalse(LyricsQuality.wordsTrusted(wordVerse(lengths = listOf(400)), emptyList(), 200_000))
+    }
+
+    @Test fun wordTimingIsNotTrustedWhenTheOtherSourcesPlaceTheLinesUnevenly() {
+        val scattered = synced(
+            *verse.mapIndexed { i, t -> line(10_000L + i * 4_000L + (if (i % 2 == 0) 1_400 else -900), t) }.toTypedArray(),
+            recordingMs = 200_200,
+        )
+        assertFalse(LyricsQuality.wordsTrusted(wordVerse(recordingMs = 200_000), listOf(scattered), 200_000))
+        // One source agreeing is enough.
+        assertTrue(LyricsQuality.wordsTrusted(wordVerse(recordingMs = 200_000), listOf(scattered, timedVerse(recordingMs = 200_100)), 200_000))
+    }
+
+    @Test fun untrustedWordTimingIsLitALineAtATime() {
+        val lines = LyricsQuality.asLines(wordVerse()).lines
+        assertTrue(lines.none { it.wordSynced })
+        assertEquals(10_000L, lines.first().startMs)
+        assertEquals(LyricsRepository.LINE_SYNCED, LyricsRepository.rank(LyricsQuality.asLines(wordVerse())))
+    }
+
     @Test fun theListenersOwnOffsetWinsOverTheAutomaticOne() {
         val moved = timedVerse().copy(autoOffsetMs = -2_000)
         assertEquals(-2_000L, lyricsOffset(null, moved))

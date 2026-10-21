@@ -12,7 +12,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.FastForward
 import androidx.compose.material.icons.rounded.GraphicEq
-import androidx.compose.material.icons.rounded.Headphones
+import androidx.compose.material.icons.rounded.HighQuality
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.PaddingValues
@@ -55,13 +55,16 @@ internal fun SourceQualityBadge(mediaId: String, format: AudioFormatInfo?, onCli
     val label = qualityStatusLabel(source, if (source != null) format else null, upgrading == mediaId)
     val colors = MaterialTheme.colorScheme
     val ui by com.opentune.data.settings.AppSettings.ui.collectAsState()
-    // A thin light line runs across the label whatever the quality; it just reads the signal path.
-    val phase = if (ui.reduceAnimation) null else rememberInfiniteTransition(label = "quality light")
+    // A thin light line runs across the label, but only for lossless and Hi-Res
+    // lossless: lossy streams keep a plain grey label.
+    val lossless = isHighestQuality(source, format)
+    val phase = if (ui.reduceAnimation || !lossless) null else rememberInfiniteTransition(label = "quality light")
         .animateFloat(-0.15f, 1.15f, infiniteRepeatable(tween(2800, easing = LinearEasing)), label = "quality sweep")
     TextButton(onClick = onClick, modifier = modifier.widthIn(max = 280.dp).fillMaxWidth().heightIn(min = 40.dp).semantics { contentDescription = "$label. Open signal path" },
         colors = ButtonDefaults.textButtonColors(contentColor = colors.onSurfaceVariant),
         contentPadding = PaddingValues(horizontal = 6.dp, vertical = 4.dp)) {
-        Icon(if (isHighestQuality(source, format)) androidx.compose.material.icons.Icons.Rounded.GraphicEq else androidx.compose.material.icons.Icons.Rounded.Headphones,
+        // Lossless gets the waveform; a lossy stream the plain HQ mark (a headphone read as the output, not the quality).
+        Icon(if (lossless) androidx.compose.material.icons.Icons.Rounded.GraphicEq else androidx.compose.material.icons.Icons.Rounded.HighQuality,
             null, Modifier.size(16.dp))
         Spacer(Modifier.width(5.dp))
         Text(label, style = MaterialTheme.typography.labelMedium,
@@ -116,9 +119,11 @@ private fun khzLabel(hz: Int): String =
 /** Whether [source] is the best there is: lossless, rather than a lossy stream at any bitrate. */
 internal fun isHighestQuality(source: NerdStats.Source?, format: AudioFormatInfo?): Boolean {
     if (source == null || source.provider.startsWith("Checking highest")) return false
-    val codec = format?.codec
-    return codec?.contains("FLAC", ignoreCase = true) == true || codec?.contains("ALAC", ignoreCase = true) == true
+    val codec = format?.codec ?: return false
+    return LOSSLESS_CODECS.any { codec.contains(it, ignoreCase = true) }
 }
+
+private val LOSSLESS_CODECS = listOf("FLAC", "ALAC", "WAV", "AIFF", "DSD", "WavPack", "APE")
 
 /**
  * A glowing beam that runs round a pill's border at an even pace: a soft

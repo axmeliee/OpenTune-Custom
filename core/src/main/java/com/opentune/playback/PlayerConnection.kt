@@ -109,6 +109,14 @@ class PlayerConnection(private val context: Context) {
     private val _seeks = MutableSharedFlow<Unit>(extraBufferCapacity = 8)
     val seeks = _seeks.asSharedFlow()
 
+    /**
+     * Every jump of the position the lyrics have to take at once: the seeks
+     * above, and the gaps Skip silence cuts out. Without the second, a skipped
+     * silence reads as the song speeding up, and the words run ahead after it.
+     */
+    private val _jumps = MutableSharedFlow<Unit>(extraBufferCapacity = 8)
+    val jumps = _jumps.asSharedFlow()
+
     private val listener = object : Player.Listener {
         override fun onMediaItemTransition(mediaItem: androidx.media3.common.MediaItem?, reason: Int) {
             _audioFormat.value = null
@@ -121,6 +129,7 @@ class PlayerConnection(private val context: Context) {
 
         override fun onPositionDiscontinuity(oldPosition: Player.PositionInfo, newPosition: Player.PositionInfo, reason: Int) {
             if (reason == Player.DISCONTINUITY_REASON_SEEK) _seeks.tryEmit(Unit)
+            if (reason == Player.DISCONTINUITY_REASON_SEEK || reason == Player.DISCONTINUITY_REASON_SILENCE_SKIP) _jumps.tryEmit(Unit)
         }
 
         override fun onPlayerError(error: PlaybackException) {

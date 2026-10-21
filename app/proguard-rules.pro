@@ -1,14 +1,16 @@
-# R8 for release builds: shrinking only.
+# R8 for release builds: shrinking, and optimizing what isn't kept.
 #
-# Nothing is renamed or optimized. Much of stream resolution is reached by
-# reflection or by name (Rhino running YouTube's player JavaScript, NewPipe,
-# InnerTubeX's Ktor client, protobuf, QuickJS's JNI callbacks, the PoToken
-# WebView's JavaScript interface), and readable class names keep the stack
-# traces in "Copy log" useful. What shrinking removes is library code
-# nothing calls, the bulk of it unused Material icons, which is where the
-# size goes.
+# Nothing is renamed: much of stream resolution is reached by reflection or
+# by name (Rhino running YouTube's player JavaScript, NewPipe, InnerTubeX's
+# Ktor client, protobuf, QuickJS's JNI callbacks, the PoToken WebView's
+# JavaScript interface), and readable class names keep the stack traces in
+# "Copy log" useful. Those packages and the app itself are kept whole below,
+# which also leaves their code as written. Everything else (Compose, AndroidX,
+# OkHttp, coroutines) is optimized, as BitChord does: Compose run unoptimized
+# is markedly slower, the stutter on the first scrolls and the opening.
+# Shrinking removes library code nothing calls, the bulk of it unused
+# Material icons, which is where the size goes.
 -dontobfuscate
--dontoptimize
 -keepattributes *Annotation*,Signature,InnerClasses,EnclosingMethod,SourceFile,LineNumberTable,Exceptions
 
 # The app itself is small next to its libraries; keeping all of it means no

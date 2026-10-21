@@ -513,6 +513,23 @@ object MusicRepository {
             }.getOrNull()
     }
 
+    /**
+     * The page of one of [song]'s artists by [name], when a song has several:
+     * the row's own artist id for the first name, else YouTube Music's artist
+     * search, taking the result whose name matches before the top one.
+     */
+    suspend fun artistIdFor(song: Song, name: String): String? {
+        val first = song.artist.split(", ", " & ").first().trim()
+        if (name.equals(first, ignoreCase = true)) song.artistId?.let { return it }
+        return io {
+            runCatching {
+                val found = InnertubeParser.parseSearchPage(Innertube.search(name, SearchFilter.ARTISTS.params)).rows
+                    .mapNotNull { (it as? SearchResult.Browse)?.item?.takeIf { b -> b.type == BrowseType.ARTIST } }
+                (found.firstOrNull { it.title.equals(name, ignoreCase = true) } ?: found.firstOrNull())?.browseId
+            }.getOrNull()
+        }
+    }
+
     /** What a browse id opens, read off its prefix. */
     fun typeOf(browseId: String): BrowseType = when {
         browseId.startsWith("UC") -> BrowseType.ARTIST

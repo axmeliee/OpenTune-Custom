@@ -63,4 +63,12 @@ object PlaybackRequests {
     fun upgradeQuality() {
         _upgrade.tryEmit(Unit)
     }
+
+    private val _upgradeResult = kotlinx.coroutines.flow.MutableSharedFlow<String>(extraBufferCapacity = 4)
+    /** How an [upgradeQuality] request went, in a sentence for the listener. */
+    val upgradeResult: kotlinx.coroutines.flow.SharedFlow<String> = _upgradeResult
+
+    fun report(message: String) {
+        _upgradeResult.tryEmit(message)
+    }
 }

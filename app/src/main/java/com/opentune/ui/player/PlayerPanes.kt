@@ -61,6 +61,11 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.togetherWith
+import androidx.compose.animation.core.tween
+import com.opentune.data.lyrics.sungUntilMs
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
@@ -253,12 +258,36 @@ fun LyricPreview(lyrics: LyricsState, position: () -> Long, onOpen: () -> Unit, 
     val line by remember(synced) {
         derivedStateOf {
             val p = pos()
-            synced.lines.lastOrNull { it.startMs <= p && it.text.isNotBlank() }?.text ?: synced.lines.firstOrNull { it.text.isNotBlank() }?.text
+            synced.lines.lastOrNull { it.startMs <= p && it.text.isNotBlank() } ?: synced.lines.firstOrNull { it.text.isNotBlank() }
         }
     }
-    val text = line ?: return
+    val current = line ?: return
+    // Like the lyrics page: the words light as they're sung (the whole line at
+    // once where only lines are timed), and the line dims once it's been sung
+    // through an instrumental break before the next.
+    val next = remember(synced, current) { synced.lines.getOrNull(synced.lines.indexOf(current) + 1) }
+    val resting by remember(current, next) {
+        derivedStateOf {
+            val p = pos()
+            val sungTo = current.sungUntilMs()
+            p < current.startMs || (next != null && next.startMs - sungTo >= 5_000 && p > sungTo + 600)
+        }
+    }
+    val alpha by androidx.compose.animation.core.animateFloatAsState(if (resting) 0.5f else 1f, label = "previewRest")
     Row(modifier.clip(RoundedCornerShape(10.dp)).clickable(onClick = onOpen).padding(vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
-        Text(text, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false))
+        // Each new line flips in: up from below while the last one goes up and out.
+        androidx.compose.animation.AnimatedContent(
+            current,
+            transitionSpec = {
+                (androidx.compose.animation.slideInVertically(androidx.compose.animation.core.spring(dampingRatio = 0.9f, stiffness = 420f)) { it } + fadeIn(tween(240))) togetherWith
+                    (androidx.compose.animation.slideOutVertically(tween(260)) { -it } + fadeOut(tween(200))) using
+                    androidx.compose.animation.SizeTransform(clip = true)
+            },
+            label = "previewLine",
+            modifier = Modifier.weight(1f, fill = false),
+        ) { l ->
+            SungLine(l, pos, MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold), Modifier.graphicsLayer { this.alpha = alpha })
+        }
         Icon(Icons.AutoMirrored.Rounded.KeyboardArrowRight, "Open lyrics", Modifier.size(22.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
     }
 }

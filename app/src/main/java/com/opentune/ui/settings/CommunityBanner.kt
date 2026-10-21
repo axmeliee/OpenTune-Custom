@@ -2,38 +2,59 @@ package com.opentune.ui.settings
 
 import android.content.Intent
 import androidx.core.net.toUri
-import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowRight
 import androidx.compose.material3.Icon
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.graphics.vector.PathParser
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 
-/** Discord's channel invite: one button in the brand's blurple, with its logo. */
+/**
+ * Discord's channel invite. The whole row is the button: it fills its slot in
+ * the settings card edge to edge in the brand's blurple, so the card's own
+ * rounded corners shape it. Pass a clip in [modifier] where it stands alone.
+ */
 @Composable
-internal fun CommunityBanner() {
+internal fun CommunityBanner(modifier: Modifier = Modifier) {
     val context = LocalContext.current
-    Button(
-        onClick = { runCatching { context.startActivity(Intent(Intent.ACTION_VIEW, "https://discord.gg/6udrCVh5n".toUri())) } },
-        modifier = Modifier.fillMaxWidth().padding(horizontal = 4.dp, vertical = 8.dp),
-        shape = RoundedCornerShape(16.dp),
-        colors = ButtonDefaults.buttonColors(containerColor = DISCORD_BLURPLE, contentColor = Color.White),
+    Row(
+        modifier
+            .fillMaxWidth()
+            .background(DISCORD_BLURPLE)
+            .clickable { runCatching { context.startActivity(Intent(Intent.ACTION_VIEW, "https://discord.gg/6udrCVh5n".toUri())) } }
+            .padding(horizontal = 20.dp, vertical = 16.dp),
+        verticalAlignment = Alignment.CenterVertically,
     ) {
-        Icon(discordLogo, null, Modifier.size(20.dp))
-        Spacer(Modifier.width(10.dp))
-        Text("Join the Discord")
+        Icon(discordLogo, null, Modifier.size(26.dp), tint = Color.White)
+        Box(Modifier.width(26.dp))
+        Column(Modifier.weight(1f)) {
+            Text("Join the Discord", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold, color = Color.White)
+            Text(
+                "Talk to other listeners and help shape what's next",
+                style = MaterialTheme.typography.bodyMedium,
+                color = Color.White.copy(alpha = 0.8f),
+                modifier = Modifier.padding(top = 2.dp),
+            )
+        }
+        Icon(Icons.AutoMirrored.Rounded.KeyboardArrowRight, null, tint = Color.White, modifier = Modifier.padding(start = 12.dp))
     }
 }
 

@@ -1,0 +1,13 @@
+# Compile the app's own code ahead of time, so the first launches and the first
+# scrolls don't wait on the JIT to warm up. The libraries below ship no
+# profile of their own; Compose, Media3 and the rest bring theirs.
+HSPLcom/opentune/**->**(**)**
+Lcom/opentune/**;
+HSPLdev/chrisbanes/haze/**->**(**)**
+Ldev/chrisbanes/haze/**;
+HSPLcom/kyant/**->**(**)**
+Lcom/kyant/**;
+HSPLcoil3/**->**(**)**
+Lcoil3/**;
+HSPLcom/materialkolor/**->**(**)**
+Lcom/materialkolor/**;

@@ -90,6 +90,8 @@ class SongMenuActions(
     val playVideoVersion: ((Song) -> Unit)? = null,
     /** Opens the song's artist, finding the page when the row didn't say which. */
     val viewArtist: ((Song) -> Unit)? = null,
+    /** Opens one of the song's artists by name, when it has several. */
+    val viewArtistNamed: ((Song, String) -> Unit)? = null,
     /** Where the song is and how long it runs, when it's the one playing; for the share picture. */
     val progressOf: (Song) -> Pair<Long, Long>? = { null },
     /** "Not interested": keeps the song out of suggestions; the shell offers Undo. */

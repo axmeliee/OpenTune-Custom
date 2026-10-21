@@ -14,6 +14,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
@@ -53,7 +54,7 @@ internal fun PlatformsPage(onDismiss: () -> Unit) {
                         TextButton(onClick = { open("https://github.com/justshivv/Opentune/releases") }) { Text("Get the Android app") }
                     }
                 }
-                CommunityBanner()
+                CommunityBanner(Modifier.clip(RoundedCornerShape(28.dp)))
             }
         }
     }
