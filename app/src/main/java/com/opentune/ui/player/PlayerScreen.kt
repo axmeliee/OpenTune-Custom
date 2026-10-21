@@ -42,12 +42,14 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.systemBars
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowRight
 import androidx.compose.material.icons.automirrored.rounded.QueueMusic
+import androidx.compose.material.icons.automirrored.rounded.FormatListBulleted
 import androidx.compose.material.icons.rounded.Bedtime
 import androidx.compose.material.icons.rounded.Cast
 import androidx.compose.material.icons.rounded.Headphones
@@ -906,7 +908,7 @@ fun PlayerLayout(
                 if (!state.ui.hideVolumeBar && !minimal && roomy) VolumeBar(Modifier.padding(vertical = 4.dp))
                 Spacer(Modifier.height(10.dp))
                 Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                    GlassToggle(Icons.Rounded.Lyrics, "Lyrics", pane == Pane.LYRICS, { toggle(Pane.LYRICS) })
+                    GlassToggle(PlayerIcons.Lyrics, "Lyrics", pane == Pane.LYRICS, { toggle(Pane.LYRICS) })
                     Box(Modifier.weight(1f), contentAlignment = Alignment.Center) {
                         // A crossfade at the final size: no width animated a frame at a time under the controls.
                         AnimatedContent(
@@ -917,27 +919,34 @@ fun PlayerLayout(
                             if (inQueue) {
                                 ModesPill(state.shuffleMode, state.smartShuffleAvailable, state.repeatMode, actions.toggleShuffle, actions.cycleRepeat)
                             } else {
+                                // One translucent pill, its two halves split by a hairline.
                                 Row(
-                                    Modifier.height(52.dp).clip(RoundedCornerShape(30.dp)).background(MaterialTheme.colorScheme.surfaceContainerHigh),
+                                    Modifier.height(52.dp).clip(RoundedCornerShape(30.dp)).background(Color.White.copy(alpha = 0.14f)),
                                     verticalAlignment = Alignment.CenterVertically,
                                 ) {
-                                    GlassToggle(Icons.Rounded.Bedtime, "Sleep timer", sleepLabel != null, { showSleep = true })
-                                    GlassToggle(
-                                        when {
-                                            outputRoute == OutputRoute.CAST -> Icons.Rounded.Cast
-                                            outputRoute.isHeadset -> Icons.Rounded.Headphones
-                                            else -> Icons.Rounded.Smartphone
-                                        },
-                                        "Audio output",
-                                        // Headphones only change the icon; lit up is for casting, a session to notice.
-                                        outputRoute == OutputRoute.CAST,
-                                        { showOutput = true },
-                                    )
+                                    Box(Modifier.width(76.dp), contentAlignment = Alignment.Center) {
+                                        GlassToggle(Icons.Rounded.Bedtime, "Sleep timer", sleepLabel != null, { showSleep = true })
+                                    }
+                                    Box(Modifier.width(1.dp).fillMaxHeight().background(Color.White.copy(alpha = 0.16f)))
+                                    Box(Modifier.width(76.dp), contentAlignment = Alignment.Center) {
+                                        GlassToggle(
+                                            when (outputRoute) {
+                                                OutputRoute.CAST -> Icons.Rounded.Cast
+                                                OutputRoute.BLUETOOTH -> PlayerIcons.Earbuds
+                                                OutputRoute.HEADPHONES, OutputRoute.USB -> Icons.Rounded.Headphones
+                                                OutputRoute.PHONE -> Icons.Rounded.Smartphone
+                                            },
+                                            "Audio output",
+                                            // Headphones only change the icon; lit up is for casting, a session to notice.
+                                            outputRoute == OutputRoute.CAST,
+                                            { showOutput = true },
+                                        )
+                                    }
                                 }
                             }
                         }
                     }
-                    GlassToggle(Icons.AutoMirrored.Rounded.QueueMusic, "Queue", pane == Pane.QUEUE, { toggle(Pane.QUEUE) })
+                    GlassToggle(Icons.AutoMirrored.Rounded.FormatListBulleted, "Queue", pane == Pane.QUEUE, { toggle(Pane.QUEUE) })
                 }
                 if (!minimal && roomy) Text(
                     sleepLabel ?: device,

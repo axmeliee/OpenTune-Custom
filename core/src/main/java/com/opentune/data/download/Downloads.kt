@@ -79,6 +79,8 @@ data class DownloadEntry(
     val source: String? = null,
     val bits: Int? = null,
     val sampleRate: Int? = null,
+    /** The copy in the Music folder, when Export compatible downloads made one. */
+    val exportUri: String? = null,
 )
 
 /**
@@ -183,6 +185,7 @@ object Downloads {
         if (workId != null) manager.cancelWorkById(workId) else manager.cancelUniqueWork(workName(videoId))
         val directory = dir
         scope.launch {
+            entry.exportUri?.let { DownloadExport.unpublish(context, it) }
             entry.path?.let { File(it).delete() }
             entry.artPath?.let { File(it).delete() }
             directory?.let { d ->
@@ -191,6 +194,25 @@ object Downloads {
                 if (entry.workId == null) File(d, "$videoId.lyrics.json").delete()
             }
         }
+    }
+
+    /**
+     * Copies every finished download not yet in the Music folder there, for
+     * Export compatible downloads being turned on. The number copied, and the
+     * number left out because their format can't go there (older Opus downloads).
+     */
+    suspend fun exportExisting(context: Context): Pair<Int, Int> {
+        var copied = 0
+        var skipped = 0
+        for (entry in doneNow()) {
+            if (entry.exportUri != null) continue
+            val file = entry.path?.let(::File)?.takeIf { it.exists() } ?: continue
+            if (!DownloadExport.compatible(file)) { skipped++; continue }
+            val uri = DownloadExport.publish(context, entry.song, file) ?: continue
+            put(entry.song.videoId) { (it ?: entry).copy(exportUri = uri.toString()) }
+            copied++
+        }
+        return copied to skipped
     }
 
     /** Cancel only queued/in-flight songs, preserving completed offline copies. */
@@ -254,6 +276,7 @@ class DownloadWorker(context: Context, params: WorkerParameters) : CoroutineWork
         var addon: com.opentune.data.addons.AddonStream? = null
         return try {
             val maxKbps = AppSettings.library.value.downloadQuality.maxKbps
+            val exporting = AppSettings.library.value.exportDownloads && DownloadExport.supported
             val dir = jobDir.apply { mkdirs() }
             // A playlist queues every song at once; a few at a time each get the
             // bandwidth, and YouTube isn't asked for dozens of streams together.
@@ -265,7 +288,8 @@ class DownloadWorker(context: Context, params: WorkerParameters) : CoroutineWork
                         fetch(chosen.url, File(dir, "$id.part"), target, entry.song.title, chosen) { p -> publish { it.copy(progress = p) } }
                     }
                 } else {
-                val stream = StreamResolver.resolveForDownload(id, maxKbps)
+                // Exported copies have to be AAC in MP4: the Music folder refuses WebM.
+                val stream = StreamResolver.resolveForDownload(id, maxKbps, requireM4a = exporting)
                 File(dir, "$id.${stream.downloadExtension}").also { target ->
                     fetch(stream.url, File(dir, "$id.part"), target, entry.song.title) { p ->
                         publish { it.copy(progress = p) }
@@ -280,6 +304,12 @@ class DownloadWorker(context: Context, params: WorkerParameters) : CoroutineWork
                     bytes = target.length(), loudnessDb = if (addon == null) StreamResolver.loudnessDbFor(id) else null,
                     source = addon?.provider, bits = addon?.bits, sampleRate = addon?.sampleRate,
                 )
+            }
+            // A copy in the Music folder for other apps, when asked for and the format allows.
+            if (exporting && DownloadExport.compatible(target)) {
+                DownloadExport.publish(applicationContext, entry.song, target)?.let { uri ->
+                    runCatching { publish { it.copy(exportUri = uri.toString()) } }
+                }
             }
             // Lyrics too, so they show offline; a miss doesn't fail the download.
             runCatching {

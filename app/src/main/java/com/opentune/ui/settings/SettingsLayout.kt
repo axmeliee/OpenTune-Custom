@@ -91,7 +91,7 @@ internal val SETTINGS_CATEGORIES = listOf(
     SettingsCategory(
         "library", "Library", "Downloads, local files and new releases", Icons.Rounded.LibraryMusic,
         listOf(
-            "Downloads" to listOf("Downloaded songs", "Download quality", "Download on Wi-Fi only"),
+            "Downloads" to listOf("Downloaded songs", "Download quality", "Download on Wi-Fi only", "Export compatible downloads"),
             "Local music" to listOf("Local music folder", "Filter non-music audio"),
             "New releases" to listOf("New-release alerts", "Followed artists"),
             "Songs and lists" to listOf("Swipe songs to queue them", "Hide explicit content", "Import a playlist"),

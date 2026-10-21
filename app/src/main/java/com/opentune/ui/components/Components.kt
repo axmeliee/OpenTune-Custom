@@ -238,6 +238,8 @@ fun SongListItem(
      * scroll the swipe would otherwise take.
      */
     swipeToQueue: Boolean = true,
+    /** Inside one of your own playlists: the long-press menu can take the song out of it. */
+    onRemoveFromPlaylist: (() -> Unit)? = null,
     trailing: @Composable RowScope.() -> Unit = {},
 ) {
     var menuOpen by remember { mutableStateOf(false) }
@@ -251,7 +253,7 @@ fun SongListItem(
         .collectAsState(Downloads.entryNow(song.videoId))
     if (menuOpen) SongMenuSheet(song, onDismiss = { menuOpen = false })
     val at = anchor.rect
-    if (contextOpen && at != null) SongContextMenu(song, at, onDismiss = { contextOpen = false }) { SongPreview(song) }
+    if (contextOpen && at != null) SongContextMenu(song, at, onDismiss = { contextOpen = false }, onRemoveFromPlaylist = onRemoveFromPlaylist) { SongPreview(song) }
     val playback by AppSettings.playback.collectAsState()
     // Toward the end of the line plays next, toward the start adds to the queue.
     val swipes = swipeToQueue && playback.swipeToQueue

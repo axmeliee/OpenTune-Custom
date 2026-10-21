@@ -1167,6 +1167,30 @@ private fun settingsSections(
                 Entry("Download on Wi-Fi only", "mobile data metered") {
                     ToggleRow("Download on Wi-Fi only", lib.downloadWifiOnly, { v -> AppSettings.updateLibrary { it.copy(downloadWifiOnly = v) } }, summary = "Waits for Wi-Fi before saving songs", icon = Icons.Rounded.Wifi)
                 },
+                Entry("Export compatible downloads", "music folder other apps files save export mp4 aac copy") {
+                    ToggleRow(
+                        "Export compatible downloads",
+                        lib.exportDownloads && com.opentune.data.download.DownloadExport.supported,
+                        { v ->
+                            AppSettings.updateLibrary { it.copy(exportDownloads = v) }
+                            // Turned on: the songs already downloaded go into the Music folder too.
+                            if (v) scope.launch {
+                                val (copied, skipped) = com.opentune.data.download.Downloads.exportExisting(context.applicationContext)
+                                val note = buildString {
+                                    append(if (copied == 1) "1 song" else "$copied songs")
+                                    append(" copied to Music/OpenTune")
+                                    if (skipped > 0) append("; $skipped in a format other apps can't play, download them again to export")
+                                }
+                                if (copied > 0 || skipped > 0) android.widget.Toast.makeText(context, note, android.widget.Toast.LENGTH_LONG).show()
+                            }
+                        },
+                        summary = if (com.opentune.data.download.DownloadExport.supported)
+                            "Also saves each download to Music/OpenTune as AAC (M4A) or FLAC, so other music apps can play it"
+                        else "Needs Android 10 or newer",
+                        icon = Icons.Rounded.DownloadDone,
+                        enabled = com.opentune.data.download.DownloadExport.supported,
+                    )
+                },
             ),
         ),
         Section(
