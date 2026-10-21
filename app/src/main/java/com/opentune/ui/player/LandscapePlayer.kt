@@ -135,6 +135,14 @@ internal fun LandscapePlayer(
             val roomy = maxHeight >= 300.dp
             Column(Modifier.fillMaxSize(), verticalArrangement = Arrangement.SpaceBetween) {
                 Row(verticalAlignment = Alignment.Top) {
+                    // Lyrics or the queue in the cover's place: the cover stays in sight, small, before the title.
+                    if (side != null) {
+                        Artwork(
+                            song.thumbnailUrl.artworkAt(com.opentune.data.model.ROW_ART_PX),
+                            Modifier.padding(top = 4.dp, end = 14.dp).size(64.dp),
+                            RoundedCornerShape(10.dp),
+                        )
+                    }
                     Column(Modifier.weight(1f)) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Text(device, style = MaterialTheme.typography.labelLarge, color = scheme.primary, maxLines = 1, overflow = TextOverflow.Ellipsis)
