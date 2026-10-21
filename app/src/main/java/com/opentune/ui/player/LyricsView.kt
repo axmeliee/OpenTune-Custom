@@ -2,6 +2,7 @@ package com.opentune.ui.player
 
 import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.graphics.drawscope.DrawScope
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.graphics.CompositingStrategy
 import androidx.compose.ui.graphics.BlendMode
 import androidx.compose.ui.graphics.Brush
@@ -53,10 +54,12 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Lyrics
 import androidx.compose.material.icons.rounded.FormatQuote
+import androidx.compose.material.icons.rounded.Translate
 import androidx.compose.material.icons.rounded.Sync
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.AssistChipDefaults
 import androidx.compose.material3.Icon
+import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -70,6 +73,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.blur
+import androidx.compose.ui.draw.BlurredEdgeTreatment
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.TransformOrigin
@@ -142,37 +146,54 @@ fun LyricsView(
             }
         }
         val found = (state as? LyricsState.Found)?.lyrics
-        if (shareSong != null && found != null) {
-            // Lines with words in them (synced lyrics carry empty ones for the gaps), with
-            // their start times so the sheet can open on the line being sung.
-            val timed = remember(found) {
-                when (found) {
-                    is Lyrics.Synced -> found.lines.filter { it.text.isNotBlank() }.map { it.text.trim() to it.startMs }
-                    is Lyrics.Plain -> found.text.lines().map { it.trim() }.filter { it.isNotEmpty() }.map { it to -1L }
-                }
-            }
-            val lines = remember(timed) { timed.map { it.first } }
-            var startAt by remember { mutableStateOf(-1) }
+        if (found != null) {
             val haptics = com.opentune.ui.components.rememberHaptics()
-            Box(
-                Modifier
-                    .align(Alignment.TopEnd)
-                    .padding(top = 4.dp)
-                    .size(40.dp)
-                    .clip(CircleShape)
-                    .background(MaterialTheme.colorScheme.onSurface.copy(alpha = 0.10f))
-                    .clickable {
+            Row(
+                Modifier.align(Alignment.TopEnd).padding(top = 4.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                // Turn romanized lines (Latin letters under another script) on or off from the page.
+                if (found is Lyrics.Synced && Romanizer.available) {
+                    val romanizeOn = AppSettings.lyrics.collectAsState().value.romanize
+                    LyricActionButton(Icons.Rounded.Translate, if (romanizeOn) "Turn off romanization" else "Show romanized lyrics", active = romanizeOn) {
+                        haptics.tick()
+                        AppSettings.updateLyrics { it.copy(romanize = !it.romanize) }
+                    }
+                }
+                if (shareSong != null) {
+                    // Lines with words in them (synced lyrics carry empty ones for the gaps), with
+                    // their start times so the sheet can open on the line being sung.
+                    val timed = remember(found) {
+                        when (found) {
+                            is Lyrics.Synced -> found.lines.filter { it.text.isNotBlank() }.map { it.text.trim() to it.startMs }
+                            is Lyrics.Plain -> found.text.lines().map { it.trim() }.filter { it.isNotEmpty() }.map { it to -1L }
+                        }
+                    }
+                    val lines = remember(timed) { timed.map { it.first } }
+                    var startAt by remember { mutableStateOf(-1) }
+                    LyricActionButton(Icons.Rounded.FormatQuote, "Share lyrics") {
                         haptics.tick()
                         val now = position()
                         startAt = if (found is Lyrics.Synced) timed.indexOfLast { it.second <= now } else -1
                         sharing = shareSong to lines
-                    },
-                contentAlignment = Alignment.Center,
-            ) {
-                Icon(Icons.Rounded.FormatQuote, "Share lyrics", Modifier.size(20.dp))
+                    }
+                    sharing?.let { (song, shared) -> com.opentune.ui.share.LyricCardSheet(song, shared, startAt = startAt, onDismiss = { sharing = null }) }
+                }
             }
-            sharing?.let { (song, shared) -> com.opentune.ui.share.LyricCardSheet(song, shared, startAt = startAt, onDismiss = { sharing = null }) }
         }
+    }
+}
+
+/** A round translucent button on the lyrics page (romanize, share). Tinted when its state is on. */
+@Composable
+private fun LyricActionButton(icon: ImageVector, description: String, active: Boolean = false, onClick: () -> Unit) {
+    Box(
+        Modifier.size(40.dp).clip(CircleShape)
+            .background(if (active) MaterialTheme.colorScheme.primary.copy(alpha = 0.22f) else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.10f))
+            .clickable(onClick = onClick),
+        contentAlignment = Alignment.Center,
+    ) {
+        Icon(icon, description, Modifier.size(20.dp), tint = if (active) MaterialTheme.colorScheme.primary else LocalContentColor.current)
     }
 }
 
@@ -372,7 +393,9 @@ private class LineMotion(
 private fun motionOf(animation: LyricsAnimation) = when (animation) {
     LyricsAnimation.FLUID -> LineMotion(1f, 0.97f, 1.8f, glow = false, inactiveAlpha = 0.8f)
     LyricsAnimation.KARAOKE -> LineMotion(1f, 1f, 0f, glow = true, inactiveAlpha = 0.55f)
-    LyricsAnimation.ZOOM -> LineMotion(1.08f, 0.86f, 1.9f, glow = false, inactiveAlpha = 0.6f)
+    // The active line stays at 1.0; the others shrink more, so it still reads as zoomed
+    // without scaling the current line past its box, which chopped long lines.
+    LyricsAnimation.ZOOM -> LineMotion(1f, 0.84f, 1.9f, glow = false, inactiveAlpha = 0.6f)
     LyricsAnimation.MINIMAL -> LineMotion(1f, 1f, 0f, glow = false, inactiveAlpha = 0.6f)
 }
 
@@ -434,6 +457,12 @@ private fun LyricLineView(
         }
     }
     val sweep = isActive && line.words.isNotEmpty()
+    // The Apple-style bloom: a grown, blurred copy of the line behind the crisp
+    // text, shown only over the words sung so far. Needs real blur, so it waits
+    // for Android 12+ and sits out the minimal animation.
+    val bloom = sweep && animation != LyricsAnimation.MINIMAL && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S
+    // With the bloom carrying the glow, the text shadow would only double it.
+    val lineStyle = if (bloom) base else style
     Column(
         Modifier
             .fillMaxWidth()
@@ -445,25 +474,46 @@ private fun LyricLineView(
                 scaleY = scale
                 this.alpha = alpha
                 transformOrigin = TransformOrigin(origin, 0.5f)
-                // The sweep below cuts into the text's own pixels, so it needs a layer of its own.
-                if (sweep) compositingStrategy = CompositingStrategy.Offscreen
             }
             .then(if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && blur > 0.dp) Modifier.blur(blur) else Modifier),
     ) {
-        Text(
-            text = text,
-            style = style,
-            color = if (isActive) bright else dim,
-            onTextLayout = { layout = it },
-            modifier = Modifier
-                .fillMaxWidth()
-                .then(
-                    when {
-                        sweep -> Modifier.drawWithContent { drawContent(); sweepWords(line, wordBoxes, position()) }
-                        else -> Modifier
-                    },
-                ),
-        )
+        if (sweep) {
+            Box(Modifier.fillMaxWidth()) {
+                if (bloom) {
+                    Text(
+                        text = text,
+                        style = base,
+                        color = bright,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .graphicsLayer { scaleX = 1.03f; scaleY = 1.03f; transformOrigin = TransformOrigin(origin, 0.5f) }
+                            .blur(BLOOM_RADIUS, BlurredEdgeTreatment.Unbounded)
+                            // Keep only the sung part of the halo; nothing until the line has been measured.
+                            .drawWithContent { if (wordBoxes.isNotEmpty()) { drawContent(); sweepDim(line, wordBoxes, position(), 1f) } },
+                    )
+                }
+                Text(
+                    text = text,
+                    style = lineStyle,
+                    color = bright,
+                    onTextLayout = { layout = it },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        // Its own layer, so dimming the unsung words doesn't punch through what's behind.
+                        .graphicsLayer { compositingStrategy = CompositingStrategy.Offscreen }
+                        // The whole active line stays readable; sung words lift to full, unsung sit a touch below.
+                        .drawWithContent { drawContent(); sweepDim(line, wordBoxes, position(), if (bloom) 0.2f else 0.4f) },
+                )
+            }
+        } else {
+            Text(
+                text = text,
+                style = lineStyle,
+                color = if (isActive) bright else dim,
+                onTextLayout = { layout = it },
+                modifier = Modifier.fillMaxWidth(),
+            )
+        }
         // Backing vocals, smaller and softer, under the line they're sung with.
         line.background?.let {
             Text(
@@ -485,12 +535,14 @@ private fun LyricLineView(
 }
 
 /**
- * Lights the active line word by word, the highlight sweeping along each
- * word as it's sung. The text is drawn bright; what isn't reached yet is
- * faded back to the dim lyric colour. This happens at draw time, so the
- * line isn't rebuilt and measured again every frame.
+ * Sweeps word by word along the line as it's sung, cutting the alpha of the
+ * part not reached yet by [removal] (a fraction of 0..1, fully removed at 1).
+ * The crisp copy passes a small value, so the whole active line stays
+ * readable and only lifts a little as each word lands; the bloom copy passes
+ * 1, so its halo shows over the sung words alone. Done at draw time, so the
+ * line isn't measured again every frame.
  */
-private fun DrawScope.sweepWords(line: LyricLine, boxes: List<Rect>, positionMs: Long) {
+private fun DrawScope.sweepDim(line: LyricLine, boxes: List<Rect>, positionMs: Long, removal: Float) {
     val feather = 14.dp.toPx()
     line.words.forEachIndexed { i, word ->
         val box = boxes.getOrNull(i) ?: return@forEachIndexed
@@ -503,7 +555,7 @@ private fun DrawScope.sweepWords(line: LyricLine, boxes: List<Rect>, positionMs:
         drawRect(
             brush = Brush.horizontalGradient(
                 0f to Color.Transparent,
-                1f to UNLIT,
+                1f to Color.Black.copy(alpha = removal),
                 startX = litX - feather,
                 endX = litX,
             ),
@@ -514,8 +566,8 @@ private fun DrawScope.sweepWords(line: LyricLine, boxes: List<Rect>, positionMs:
     }
 }
 
-/** Cuts bright text down to the dim lyric colour's 0.45 alpha. */
-private val UNLIT = Color.Black.copy(alpha = 0.55f)
+/** How far the bloom halo spreads around the sung words. */
+private val BLOOM_RADIUS = 11.dp
 
 
 /** While the sources are asked: a small pill saying the lyrics are on their way, with a turning mark. */

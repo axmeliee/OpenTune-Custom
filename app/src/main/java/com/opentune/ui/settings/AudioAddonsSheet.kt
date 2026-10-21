@@ -45,6 +45,7 @@ internal fun AudioAddonsSheet(onDismiss: () -> Unit) {
     var draggingKey by remember { mutableStateOf<String?>(null) }
     var draggedTop by remember { mutableFloatStateOf(0f) }
     val scope = rememberCoroutineScope()
+    val haptics = com.opentune.ui.components.rememberHaptics()
     var input by remember { mutableStateOf("") }
     var adding by remember { mutableStateOf(false) }
     var working by remember { mutableStateOf(false) }
@@ -112,6 +113,7 @@ internal fun AudioAddonsSheet(onDismiss: () -> Unit) {
                                                 val current = AddonStore.addons.value
                                                 draggedTop = current.takeWhile { it.key != addon.key }.sumOf { rowHeights[it.key] ?: 100 }.toFloat()
                                                 draggingKey = addon.key
+                                                haptics.press()
                                             },
                                             onDragEnd = { draggingKey = null },
                                             onDragCancel = { draggingKey = null },
@@ -133,15 +135,13 @@ internal fun AudioAddonsSheet(onDismiss: () -> Unit) {
                                                 if (position > from && center > middle) target = maxOf(target, position)
                                                 cursor += itemHeight
                                             }
-                                            if (target != from) AddonStore.move(addon.key, target - from)
+                                            if (target != from) { AddonStore.move(addon.key, target - from); haptics.tick() }
                                         }
                                     }.padding(12.dp))
                             }
                             if (expanded == addon.key) Column(Modifier.padding(horizontal = 20.dp, vertical = 8.dp)) {
                                 if (!addon.admin) Text(AddonProtocol.url(addon.base).host, style = MaterialTheme.typography.bodySmall)
                                 FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                                    TextButton(enabled = index > 0, onClick = { AddonStore.move(addon.key, -1) }) { Text("Move up") }
-                                    TextButton(enabled = index < addons.lastIndex, onClick = { AddonStore.move(addon.key, 1) }) { Text("Move down") }
                                     TextButton(onClick = { scope.launch {
                                         if (!AddonStore.usable(addon)) { checks = checks + (addon.key to "Disabled or waiting for a supported output"); return@launch }
                                         checks = checks + (addon.key to "Checking…")

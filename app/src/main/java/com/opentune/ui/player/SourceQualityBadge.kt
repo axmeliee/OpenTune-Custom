@@ -85,14 +85,28 @@ internal fun SourceQualityBadge(mediaId: String, format: AudioFormatInfo?, onCli
 internal fun qualityStatusLabel(source: NerdStats.Source?, format: AudioFormatInfo?, upgrading: Boolean): String {
     if (source == null || source.provider.startsWith("Checking highest")) return if (upgrading) "Upgrading quality" else "Preparing audio"
     val lossless = isHighestQuality(source, format)
-    val label = when {
+    val tier = when {
         lossless && ((format?.bitDepth ?: 0) > 16 || (format?.sampleRateHz ?: 0) > 48000) -> "Hi-Res Lossless"
         lossless -> "Lossless"
         (format?.bitrateKbps ?: source.kbps ?: 0) >= 128 -> "High quality"
         else -> "Standard quality"
     }
-    return if (upgrading) "$label, upgrading" else label
+    // The concrete signal behind the tier: bit depth and rate for lossless,
+    // the stream's bitrate otherwise. So "Lossless" reads "Lossless · 24-bit/96 kHz".
+    val detail = if (lossless) {
+        val bits = format?.bitDepth ?: source.bits
+        val rate = format?.sampleRateHz ?: source.sampleRate
+        listOfNotNull(bits?.let { "$it-bit" }, rate?.let { khzLabel(it) }).joinToString("/").ifEmpty { null }
+    } else {
+        (format?.bitrateKbps ?: source.kbps)?.takeIf { it > 0 }?.let { "$it kbps" }
+    }
+    val label = listOfNotNull(tier, detail).joinToString(" · ")
+    return if (upgrading) "$label · upgrading" else label
 }
+
+/** A sample rate in Hz as "44.1 kHz" or "96 kHz", trimming a trailing ".0". */
+private fun khzLabel(hz: Int): String =
+    "${String.format(Locale.ROOT, "%.1f", hz / 1000.0).removeSuffix(".0")} kHz"
 
 /** Whether [source] is the best there is: lossless, rather than a lossy stream at any bitrate. */
 internal fun isHighestQuality(source: NerdStats.Source?, format: AudioFormatInfo?): Boolean {
@@ -176,7 +190,7 @@ internal fun sourceQualityLabel(source: NerdStats.Source?, format: AudioFormatIn
     val bits = format?.bitDepth ?: source.bits
     val rate = format?.sampleRateHz ?: source.sampleRate
     val quality = if (codec?.contains("FLAC", ignoreCase = true) == true) {
-        listOfNotNull("FLAC", bits?.let { "$it-bit" }, rate?.let { "${String.format(Locale.ROOT, "%.1f", it / 1000.0).removeSuffix(".0")} kHz" }).joinToString(" · ")
+        listOfNotNull("FLAC", bits?.let { "$it-bit" }, rate?.let { khzLabel(it) }).joinToString(" · ")
     } else listOfNotNull(codec, (format?.bitrateKbps ?: source.kbps)?.let { "$it kbps" }).joinToString(" · ")
     return "$provider · ${quality.ifEmpty { "quality pending" }}"
 }
