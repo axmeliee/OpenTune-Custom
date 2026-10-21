@@ -286,12 +286,13 @@ fun FloatingCard(
                             scaleY = s
                             alpha = shown.coerceIn(0f, 1f)
                         }
-                        // No drop shadow under glass: Android draws it under the whole card, a
-                        // little lower and inset, and through thin glass its edges read as
-                        // straight lines inside the card. The veil behind sets the card apart.
+                        // No drop shadow under glass, whichever blur is behind it: Android
+                        // draws the shadow under the whole card, a little lower and inset,
+                        // and through the glass its edges read as a box inside the card.
+                        // Only the solid card, with no blur at all, gets one.
                         .then(
-                            if (frost == Frost.READY) Modifier
-                            else Modifier.shadow(if (frosted) 12.dp else 32.dp, shape, ambientColor = MaterialTheme.colorScheme.scrim, spotColor = MaterialTheme.colorScheme.scrim),
+                            if (frost != Frost.FAILED || frosted) Modifier
+                            else Modifier.shadow(32.dp, shape, ambientColor = MaterialTheme.colorScheme.scrim, spotColor = MaterialTheme.colorScheme.scrim),
                         )
                         .clip(shape)
                         .then(
@@ -311,7 +312,8 @@ fun FloatingCard(
                                     .border(1.dp, Brush.verticalGradient(listOf(Color.White.copy(alpha = if (dark) 0.22f else 0.6f), Color.White.copy(alpha = 0.04f))), shape)
                             } else {
                                 Modifier
-                                    .background(MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.95f))
+                                    // Solid, so its shadow never shows through.
+                                    .background(MaterialTheme.colorScheme.surfaceContainerHigh)
                                     .border(1.dp, MaterialTheme.colorScheme.onSurface.copy(alpha = 0.08f), shape)
                             },
                         )
