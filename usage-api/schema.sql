@@ -33,3 +33,8 @@ CREATE TABLE IF NOT EXISTS downloads (
   PRIMARY KEY (browser, release)
 );
 
+
+-- Public community addon catalog; only the authenticated owner can modify it.
+CREATE TABLE IF NOT EXISTS addon_catalog (
+  id INTEGER PRIMARY KEY CHECK(id=1), revision INTEGER NOT NULL, payload TEXT NOT NULL
+);

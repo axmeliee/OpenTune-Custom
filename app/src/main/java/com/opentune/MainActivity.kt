@@ -17,6 +17,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.ui.Modifier
 import androidx.lifecycle.viewmodel.compose.viewModel
+import androidx.lifecycle.lifecycleScope
 import com.opentune.data.account.AccountStore
 import androidx.compose.animation.togetherWith
 import com.opentune.data.settings.AppSettings
@@ -71,6 +72,7 @@ class MainActivity : ComponentActivity() {
                     ) { welcome ->
                         if (welcome) WelcomeScreen(onDone = {}) else AppRoot(vm)
                     }
+                    com.opentune.ui.account.ConfirmPairing()
                     }
                 }
             }
@@ -81,6 +83,9 @@ class MainActivity : ComponentActivity() {
         super.onStart()
         // The process may have started in the background, offline (after an update, say).
         AccountStore.ensureProfile()
+        lifecycleScope.launchWhenStarted {
+            com.opentune.data.addons.CommunityAddons.refresh()
+        }
         // Playlist changes that couldn't reach YouTube Music last time try again.
         if (com.opentune.data.library.PlaylistSync.pending.value.isNotEmpty()) com.opentune.data.library.PlaylistSync.flush()
     }
@@ -90,7 +95,9 @@ class MainActivity : ComponentActivity() {
         receive(intent)
     }
 
-    private fun receive(intent: Intent?) = Links.receive(intent)
+    private fun receive(intent: Intent?) {
+        if (!com.opentune.ui.account.PairingLinks.receive(intent)) Links.receive(intent)
+    }
 
     /**
      * With [fastest], asks for the screen's quickest refresh rate at its

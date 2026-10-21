@@ -1,3 +1,4 @@
+import { catalog, publishCatalog, readCatalogBody } from './addons.mjs';
 import { authorized, locked, privateHeaders, authRoute } from './auth.mjs';
 const UUID = /^[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/i;
 const VERSION = /^\d+\.\d+\.\d+(?:-[a-zA-Z0-9.-]{1,32})?$/;
@@ -117,7 +118,7 @@ export async function analytics(db, range, now = new Date(), timeZone = 'UTC') {
 export default {
   async fetch(request, env) {
     const url = new URL(request.url);
-    const path = url.pathname.replace(/^\/usage\/v1\/(summary|analytics)$/, '/v1/$1');
+    const path = url.pathname.replace(/^\/usage\/v1\/(summary|analytics|addons)$/, '/v1/$1');
     const origin = request.headers.get('Origin');
     const allowed = (env.ALLOWED_ORIGINS || 'https://justshivv.github.io').split(',');
     const headers = { ...privateHeaders, 'Content-Type':'application/json' };
@@ -131,13 +132,22 @@ export default {
       return result;
     };
     const json = (body,status=200) => new Response(JSON.stringify(body),{status,headers});
-    if(request.method==='OPTIONS' && ['/auth/login','/auth/logout','/v1/activity','/v1/download','/v1/summary','/v1/analytics'].includes(path)) return new Response(null,{status:204,headers});
+    if(request.method==='OPTIONS' && ['/auth/login','/auth/logout','/v1/activity','/v1/download','/v1/summary','/v1/analytics','/v1/addons'].includes(path)) return new Response(null,{status:204,headers});
+    // Only this catalog is public. Usage analytics and catalog writes remain owner-only.
+    if (request.method === 'GET' && path === '/v1/addons') {
+      try { const result = json(await catalog(env.DB)); result.headers.set('Cache-Control','public, max-age=300'); return result; }
+      catch { return json({error:'Catalog unavailable'},503); }
+    }
     const authentication = await authRoute(request, env);
     if (authentication) return cors(authentication);
     const reporting = ['/v1/activity', '/v1/download'].includes(path) && request.method==='POST';
     // Static Pages contains no private data; every read is authorized here.
     if (!reporting && !(await authorized(request, env))) return cors(locked(request));
     try {
+      if (request.method === 'POST' && path === '/v1/addons') {
+        try { return json(await publishCatalog(env.DB, await readCatalogBody(request))); }
+        catch (e) { return json({error:e.message},400); }
+      }
       if (['GET', 'HEAD'].includes(request.method) && !path.startsWith('/v1/')) {
         if (path === '/') return new Response(null, {status:302, headers:{...privateHeaders, Location:'/usage/'}});
         if (!env.ASSETS) return json({error:'Dashboard unavailable'},503);

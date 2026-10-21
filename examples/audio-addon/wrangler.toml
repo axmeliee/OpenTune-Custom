@@ -1,0 +1,5 @@
+name = "opentune-audio-addon"
+main = "worker.mjs"
+compatibility_date = "2026-10-01"
+[vars]
+CATALOG = "[]"

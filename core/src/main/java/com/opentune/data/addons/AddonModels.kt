@@ -96,6 +96,10 @@ object AddonProtocol {
 /** Same tier negotiation as BitChord: exact option first, then a semantic match. */
 fun matchTier(tier: String, options: List<String>): String {
     options.firstOrNull { it.equals(tier, true) }?.let { return it }
+    if (tier == "HI_RES_LOSSLESS") {
+        return options.firstOrNull { option -> listOf("hi_res", "hi-res", "hires", "master", "max", "best").any { it in option.lowercase() } }
+            ?: matchTier("LOSSLESS", options)
+    }
     val words = when (tier.uppercase()) { "LOSSLESS" -> listOf("lossless", "flac", "hi_res", "hi-res", "hires", "master"); "LOW" -> listOf("low", "128", "96", "64"); else -> listOf("high", "320", "256") }
     return options.firstOrNull { option -> words.any { it in option.lowercase() } } ?: options.firstOrNull() ?: tier
 }

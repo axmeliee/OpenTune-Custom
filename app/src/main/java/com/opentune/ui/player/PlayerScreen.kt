@@ -661,7 +661,6 @@ fun PlayerLayout(
                 ) {
                 Column {
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
-                    if (state.ui.sourcePill) SourceQualityBadge(current.videoId, state.audioFormat, onClick = { showSignal = true }, modifier = Modifier.weight(1f, fill = false))
                     AnimatedVisibility(state.ui.skipToChorus && nextChorus != null, enter = fadeIn() + expandHorizontally(), exit = fadeOut() + shrinkHorizontally()) {
                         SkipToChorus { nextChorus?.let { actions.seekTo((it - 250).coerceAtLeast(0)) } }
                     }
@@ -674,7 +673,7 @@ fun PlayerLayout(
                 val lyricAt: ((Long) -> String?)? = if (state.ui.lyricScrubPreview && synced != null) {
                     { ms -> synced.lines.lastOrNull { it.startMs <= ms + offsetMs }?.text?.takeIf { it.isNotBlank() } }
                 } else null
-                SeekBar(position, buffered, state.durationMs, onSeek = actions.seekTo, wavy = state.ui.wavySeekbar && !state.ui.reduceAnimation, playing = state.isPlaying, lyricAt = lyricAt, marks = marks)
+                SeekBar(position, buffered, state.durationMs, onSeek = actions.seekTo, wavy = state.ui.wavySeekbar && !state.ui.reduceAnimation, playing = state.isPlaying, lyricAt = lyricAt, marks = marks, quality = { if (state.ui.sourcePill) SourceQualityBadge(current.videoId, state.audioFormat, onClick = { showSignal = true }) })
                 if (state.ui.statsForNerds) {
                     Box(Modifier.clickable { showSignal = true }) { NerdStatsLine(state.audioFormat) }
                 }
@@ -699,7 +698,7 @@ fun PlayerLayout(
                                 ModesPill(state.shuffleMode, state.smartShuffleAvailable, state.repeatMode, actions.toggleShuffle, actions.cycleRepeat)
                             } else {
                                 Row(
-                                    Modifier.height(52.dp).glass(RoundedCornerShape(30.dp), Color.White.copy(alpha = 0.10f)),
+                                    Modifier.height(52.dp).clip(RoundedCornerShape(30.dp)).background(MaterialTheme.colorScheme.surfaceContainerHigh),
                                     verticalAlignment = Alignment.CenterVertically,
                                 ) {
                                     GlassToggle(Icons.Rounded.Bedtime, "Sleep timer", sleepLabel != null, { showSleep = true })
@@ -846,7 +845,7 @@ private fun RowScope.TitleRow(song: Song, liked: Boolean, onLike: () -> Unit, on
     Spacer(Modifier.width(10.dp))
     HeartButton(liked, onLike)
     Spacer(Modifier.width(10.dp))
-    Box(Modifier.size(46.dp).glass(CircleShape, Color.White.copy(alpha = 0.16f)).clickable(onClick = onMore), contentAlignment = Alignment.Center) {
+    Box(Modifier.size(46.dp).clip(CircleShape).background(MaterialTheme.colorScheme.surfaceContainerHigh).clickable(onClick = onMore), contentAlignment = Alignment.Center) {
         Icon(Icons.Rounded.MoreHoriz, "More", Modifier.size(26.dp))
     }
 }
@@ -883,7 +882,7 @@ private fun HeartButton(liked: Boolean, onClick: () -> Unit) {
     Box(Modifier.size(46.dp), contentAlignment = Alignment.Center) {
         Box(
             Modifier.size(46.dp).graphicsLayer { scaleX = scale; scaleY = scale }
-                .glass(CircleShape, Color.White.copy(alpha = 0.16f))
+                .clip(CircleShape).background(MaterialTheme.colorScheme.surfaceContainerHigh)
                 .clickable(interactionSource = interactions, indication = com.opentune.ui.components.FocusRing(CircleShape)) {
                     haptics.pattern(if (liked) com.opentune.ui.components.Haptics.Pattern.OFF else com.opentune.ui.components.Haptics.Pattern.LIKE)
                     if (!liked && !still) bursts++

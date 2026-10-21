@@ -28,3 +28,12 @@ website-reports/
 
 # Python wheels (desktop test deps belong in a venv, not the repo).
 *.whl
+
+# Browser player generated dependencies and bundles
+/web/**/node_modules/
+/web/**/dist/
+/web/extension/.wxt/
+/web/extension/.output/
+/web/app/public/downloads/
+/web/extension/public/icon/
+/web/fixtures/

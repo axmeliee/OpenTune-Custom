@@ -6,7 +6,7 @@ This branch replaces the fixed SpotiFLAC sources, verification grants and regist
 
 Open **Settings → Audio → Audio add-ons**, paste a service root or its `manifest.json` URL, and select **Add URL**. Enable sources and use **Move up / Move down** to set the lookup order. Private path/query parameters are preserved locally and excluded from Android backup. Remove deletes the configuration, not saved music.
 
-Use **Max** playback quality, or enable **Lossless below Max**, to check add-ons in the background. Normal playback starts first. The first matching, eligible lossless source in your order wins; priority is not a comparison of every provider's advertised sample rate. Signal path shows lookup failures and the format reported by the decoder.
+Use **Max** playback quality, or enable **Lossless below Max**, to check add-ons in the background. Normal playback starts first. Max quality compares eligible matching lossless copies and selects the highest bit-depth/sample-rate score; equal quality preserves source order. Direct FLAC and HLS initialization headers provide measured metadata where available. Signal path shows lookup failures and the format reported by the decoder.
 
 For downloads, choose **Max** in Download quality. The same priority order is used. A source must permit downloads and provide a direct audio file; segmented HLS/DASH sources are skipped for file downloads. If no eligible file is available, normal download sources remain available. A FLAC label cannot guarantee a lossless Bluetooth output.
 
@@ -26,4 +26,4 @@ The client is integrated with the shared Android playback/download engine and ph
 
 `AddonProtocolTest`, `AddonStoreTest`, and `AddonResolverTest` cover URL handling, quality negotiation, cache/cooldown behavior, persistence, priority/fallback, strict matching and provider restrictions. `scripts/probe-audio-addons.py` performs optional live compatibility checks of the three public example services and redacts URLs. Endpoint success does not establish availability for all recordings or verify playback on a physical device.
 
-Protocol reference: [BitChord](https://github.com/kushagrasinghx/BitChord), GPL-3.0. OpenTune's HTTP adapter is implemented here using that documented contract; no BitChord UI or executable extension is bundled.
+Protocol reference: [BitChord](https://github.com/kushagrasinghx/BitChord), GPL-3.0. OpenTune's HTTP adapter is implemented here using that documented contract; the browser preview adapts the GPL-3.0 BitChord web player; Android does not run downloaded addon code.

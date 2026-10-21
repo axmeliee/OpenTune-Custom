@@ -11,7 +11,7 @@ object LosslessSource {
         val addonId: String, val mimeType: String? = null)
     internal data class FlacInfo(val bits: Int, val sampleRate: Int, val durationMs: Long)
     suspend fun resolve(song: Song, durationMs: Long, preferHiRes: Boolean = false, bestAvailable: Boolean = false,
-        report: (String) -> Unit = {}): Track? = AddonResolver.resolve(song, durationMs, report = report)?.let {
+        report: (String) -> Unit = {}): Track? = AddonResolver.resolve(song, durationMs, bestAvailable = preferHiRes || bestAvailable, report = report)?.let {
             Track(it.url, it.provider, it.bits, it.sampleRate, it.addonId, it.mimeType)
         }
     internal fun flacInfo(bytes: ByteArray): FlacInfo? {

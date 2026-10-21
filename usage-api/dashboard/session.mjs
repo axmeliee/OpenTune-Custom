@@ -38,3 +38,11 @@ export function start(load) {
   addEventListener('pagehide',()=>{dashboard.hidden=true;});
   addEventListener('pageshow',event=>{if(event.persisted) location.reload();});
 }
+
+/** Owner-only catalog writes use the same authentication as private reads. */
+export async function publishSources(body) {
+  const result=await fetch(apiBase+'/v1/addons',{method:'POST',cache:'no-store',credentials:pages?'omit':'same-origin',redirect:'error',
+    headers:{'Content-Type':'application/json',...(pages?{Authorization:'Bearer '+token}:{})},body:JSON.stringify(body),signal:AbortSignal.timeout(12000)});
+  if(result.status===401){if(pages)signOut();else location.replace('/login');throw new Error('Sign in again');}
+  const data=await result.json();if(!result.ok)throw new Error(data.error || 'Could not publish sources');return data;
+}

@@ -514,6 +514,7 @@ fun SeekBar(
     lyricAt: ((Long) -> String?)? = null,
     /** Where the song's parts (verse, chorus) begin, in ms, marked as small gaps in the track. */
     marks: List<Long> = emptyList(),
+    quality: (@Composable () -> Unit)? = null,
 ) {
     var dragFraction by remember { mutableStateOf<Float?>(null) }
     var scrubStartY by remember { mutableStateOf(0f) }
@@ -675,8 +676,9 @@ fun SeekBar(
         val elapsedSeconds by remember(durationMs) {
             derivedStateOf { ((dragFraction?.times(durationMs)?.toLong() ?: position()) / 1000) }
         }
-        if (look.seekbarTime != com.opentune.data.settings.SeekbarTime.HIDDEN) Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+        if (look.seekbarTime != com.opentune.data.settings.SeekbarTime.HIDDEN) Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
             Text(if (loading) "--:--" else formatTime(elapsedSeconds * 1000), style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            quality?.let { Box(Modifier.weight(1f), contentAlignment = Alignment.Center) { it() } }
             // Time left, as Apple Music shows it, or the song's length.
             Text(
                 when {
@@ -688,6 +690,7 @@ fun SeekBar(
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
+        if (look.seekbarTime == com.opentune.data.settings.SeekbarTime.HIDDEN) quality?.let { Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) { it() } }
     }
 }
 
@@ -730,7 +733,7 @@ fun MiniPlayer(
     if (inline) {
         Box(
             modifier
-                .glass(CircleShape, tint)
+                .clip(CircleShape).background(MaterialTheme.colorScheme.surfaceContainerHigh)
                 .clickable(onClick = onClick)
                 .padding(4.dp),
             contentAlignment = Alignment.Center,
@@ -749,7 +752,7 @@ fun MiniPlayer(
         color = Color.Transparent,
         modifier = modifier
             .graphicsLayer { translationX = offsetX.value }
-            .glass(shape, tint)
+            .clip(shape).background(MaterialTheme.colorScheme.surfaceContainerHigh)
             .pointerInput(Unit) {
                 detectHorizontalDragGestures(
                     onDragEnd = {

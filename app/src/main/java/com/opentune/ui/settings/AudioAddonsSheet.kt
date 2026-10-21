@@ -1,14 +1,22 @@
 package com.opentune.ui.settings
 
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.rounded.ArrowBack
+import androidx.compose.material.icons.rounded.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
 import com.opentune.data.addons.*
+import com.opentune.data.settings.AppSettings
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
 
@@ -16,71 +24,89 @@ import kotlinx.coroutines.launch
 @Composable
 internal fun AudioAddonsSheet(onDismiss: () -> Unit) {
     val addons by AddonStore.addons.collectAsState()
+    val playback by AppSettings.playback.collectAsState()
     val scope = rememberCoroutineScope()
     var input by remember { mutableStateOf("") }
+    var adding by remember { mutableStateOf(false) }
     var working by remember { mutableStateOf(false) }
     var notice by remember { mutableStateOf<String?>(null) }
-    var deleting by remember { mutableStateOf<AudioAddon?>(null) }
+    var expanded by remember { mutableStateOf<String?>(null) }
     var checks by remember { mutableStateOf<Map<String, String>>(emptyMap()) }
-    ModalBottomSheet(onDismissRequest = onDismiss, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
-        Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).padding(24.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
-            Text("Audio add-ons", style = MaterialTheme.typography.headlineSmall)
-            Text("Add a service URL to find lossless audio. Enabled add-ons are checked from top to bottom; the first matching source is used.")
-            OutlinedTextField(input, { input = it.take(2048) }, Modifier.fillMaxWidth(), label = { Text("Add-on or manifest URL") }, singleLine = true)
-            Button(enabled = input.isNotBlank() && !working, onClick = { scope.launch {
-                working = true; notice = null
-                try {
-                    val base = AddonProtocol.normalize(input)
-                    val existing = addons.firstOrNull { it.base == base }
-                    require(existing == null || !existing.manifest.outputRequired || AddonStore.outputAllowed()) { "Connect a wired, USB or HDMI output before checking this add-on." }
-                    val manifest = AddonClient.forBase(base).manifest()
-                    AddonStore.add(base, manifest)
-                    input = ""; notice = "${manifest.name} added. Use the arrows to set its priority."
-                } catch (e: CancellationException) { throw e }
-                catch (e: AddonHttp.Failure) { notice = "The service returned HTTP ${e.status}. Check the URL or try later." }
-                catch (_: Exception) { notice = "Could not add this service. Check the HTTPS manifest URL and your connection." }
-                finally { working = false }
-            } }) { Text(if (working) "Checking manifest…" else "Add URL") }
-            notice?.let { Text(it, style = MaterialTheme.typography.bodyMedium) }
-            if (working) LinearProgressIndicator(Modifier.fillMaxWidth())
-            Text("Source priority", style = MaterialTheme.typography.titleLarge)
-            if (addons.isEmpty()) Text("No add-ons yet. Your usual audio sources keep working.")
-            addons.forEachIndexed { index, addon ->
-                OutlinedCard(Modifier.fillMaxWidth()) {
-                    Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Column(Modifier.weight(1f)) {
-                                Text("${index + 1}. ${addon.manifest.name}", style = MaterialTheme.typography.titleMedium)
-                                Text(AddonProtocol.url(addon.base).host, style = MaterialTheme.typography.bodySmall)
+    LaunchedEffect(Unit) { CommunityAddons.refresh() }
+    Dialog(onDismissRequest = onDismiss, properties = DialogProperties(usePlatformDefaultWidth = false)) {
+        Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
+            Column(Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.safeDrawing).verticalScroll(rememberScrollState()).padding(20.dp), verticalArrangement = Arrangement.spacedBy(20.dp)) {
+                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                    IconButton(onClick = onDismiss) { Icon(Icons.AutoMirrored.Rounded.ArrowBack, "Back") }
+                    Text("Audio sources", style = MaterialTheme.typography.headlineLarge, modifier = Modifier.weight(1f))
+                    IconButton(onClick = { scope.launch { notice = if (CommunityAddons.refresh(force = true)) "Community sources refreshed" else "Couldn't refresh. Your saved sources are still available." } }) { Icon(Icons.Rounded.Refresh, "Refresh community sources") }
+                }
+                Text("YOUR SOUND, YOUR ORDER", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
+                Text("OpenTune starts music quickly, then looks for better audio. Max quality checks your enabled sources for the best available lossless copy. Equal quality follows this order.", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Card(shape = RoundedCornerShape(24.dp), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer)) {
+                    Column {
+                        addons.forEachIndexed { index, addon ->
+                            val blocked = addon.manifest.outputRequired && !AddonStore.outputAllowed()
+                            Row(Modifier.fillMaxWidth().clickable { expanded = if (expanded == addon.key) null else addon.key }.padding(horizontal = 16.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                                Text("${index + 1}", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                Icon(Icons.Rounded.Extension, null, tint = if (addon.enabled && !blocked) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant)
+                                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                                    Text(addon.manifest.name, style = MaterialTheme.typography.titleMedium)
+                                    Text(if (addon.admin) "Added by admin" else "Your source", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
+                                    Text(checks[addon.key] ?: if (blocked) "Needs a supported wired, USB or HDMI output" else if (!addon.enabled) "Disabled" else "Lossless · ${if (addon.manifest.downloads) "Streaming & downloads" else "Streaming only"}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                }
+                                Switch(addon.enabled, { AddonStore.enable(addon.key, it) })
+                                Icon(Icons.Rounded.ExpandMore, "Source options")
                             }
-                            Switch(addon.enabled, { AddonStore.enable(addon.key, it) })
+                            if (expanded == addon.key) Column(Modifier.padding(horizontal = 20.dp, vertical = 8.dp)) {
+                                if (!addon.admin) Text(AddonProtocol.url(addon.base).host, style = MaterialTheme.typography.bodySmall)
+                                FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                    TextButton(enabled = index > 0, onClick = { AddonStore.move(addon.key, -1) }) { Text("Move up") }
+                                    TextButton(enabled = index < addons.lastIndex, onClick = { AddonStore.move(addon.key, 1) }) { Text("Move down") }
+                                    TextButton(onClick = { scope.launch {
+                                        if (!AddonStore.usable(addon)) { checks = checks + (addon.key to "Disabled or waiting for a supported output"); return@launch }
+                                        checks = checks + (addon.key to "Checking…")
+                                        try { AddonStore.refreshed(addon.key, AddonClient.forBase(addon.base).manifest()); checks = checks + (addon.key to "Available · recording support varies") }
+                                        catch (e: CancellationException) { throw e }
+                                        catch (e: AddonHttp.Failure) { checks = checks + (addon.key to "HTTP ${e.status}") }
+                                        catch (_: Exception) { checks = checks + (addon.key to "Service unavailable") }
+                                    } }) { Text("Check") }
+                                    if (!addon.admin) TextButton(onClick = { AddonStore.remove(addon.key) }) { Text("Remove") }
+                                }
+                            }
+                            HorizontalDivider(Modifier.padding(horizontal = 20.dp), color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = .4f))
                         }
-                        Text("Version ${addon.manifest.version.ifBlank { "not stated" }} · ${if (addon.manifest.downloads) "Streaming and downloads" else "Streaming only"}", style = MaterialTheme.typography.bodySmall)
-                        if (addon.manifest.outputRequired) Text("Requires a wired, USB or HDMI output. Bluetooth capability is not verified.", style = MaterialTheme.typography.bodySmall)
-                        if (addon.manifest.qualities.isNotEmpty()) Text("Qualities: ${addon.manifest.qualities.joinToString()}", style = MaterialTheme.typography.bodySmall)
-                        checks[addon.key]?.let { Text(it, style = MaterialTheme.typography.bodySmall) }
-                        FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            OutlinedButton(enabled = index > 0, onClick = { AddonStore.move(addon.key, -1) }) { Text("Move up") }
-                            OutlinedButton(enabled = index < addons.lastIndex, onClick = { AddonStore.move(addon.key, 1) }) { Text("Move down") }
-                            TextButton(onClick = { scope.launch {
-                                if (!AddonStore.usable(addon)) { checks = checks + (addon.key to "Disabled or waiting for a supported output"); return@launch }
-                                checks = checks + (addon.key to "Checking…")
-                                try { val manifest = AddonClient.forBase(addon.base).manifest(); AddonStore.refreshed(addon.key, manifest); checks = checks + (addon.key to "Manifest available · playback availability depends on the recording") }
-                                catch (e: CancellationException) { throw e }
-                                catch (e: AddonHttp.Failure) { checks = checks + (addon.key to "HTTP ${e.status}") }
-                                catch (_: Exception) { checks = checks + (addon.key to "Service unavailable") }
-                            } }) { Text("Check") }
-                            TextButton(onClick = { deleting = addon }) { Text("Remove") }
+                        Row(Modifier.padding(20.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                            Icon(Icons.Rounded.GraphicEq, null)
+                            Column(Modifier.weight(1f)) { Text("JioSaavn", style = MaterialTheme.typography.titleMedium); Text("Fast 320 kbps fallback · lossy", style = MaterialTheme.typography.bodySmall) }
+                            Switch(playback.jioSaavnQuality, { AppSettings.updatePlayback { p -> p.copy(jioSaavnQuality = it) } })
                         }
+                        Row(Modifier.padding(20.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                            Icon(Icons.Rounded.PlayCircle, null)
+                            Column(Modifier.weight(1f)) { Text("YouTube Music", style = MaterialTheme.typography.titleMedium); Text("Catalog, radio & fallback", style = MaterialTheme.typography.bodySmall) }
+                            Text("Always on", style = MaterialTheme.typography.labelMedium)
+                        }
+                        TextButton(onClick = { adding = true }, modifier = Modifier.fillMaxWidth().padding(8.dp)) { Icon(Icons.Rounded.Add, null); Spacer(Modifier.width(8.dp)); Text("Add your own source") }
                     }
                 }
+                notice?.let { Text(it, color = MaterialTheme.colorScheme.primary) }
+                Text("If a source has no match or cannot be reached, the next one is checked. Signal path shows the actual decoded format. Bluetooth may still compress the output.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
-            Text("Music starts through the usual fast source while add-ons are checked in the background. Signal path shows the selected source and decoded quality. Lossless labels do not guarantee a lossless Bluetooth connection.", style = MaterialTheme.typography.bodySmall)
-            TextButton(onClick = onDismiss, modifier = Modifier.fillMaxWidth()) { Text("Done") }
         }
     }
-    deleting?.let { addon -> AlertDialog(onDismissRequest = { deleting = null }, title = { Text("Remove add-on?") },
-        text = { Text("Remove ${addon.manifest.name}? Downloaded songs stay on your device.") },
-        confirmButton = { TextButton(onClick = { AddonStore.remove(addon.key); deleting = null }) { Text("Remove") } },
-        dismissButton = { TextButton(onClick = { deleting = null }) { Text("Keep") } }) }
+    if (adding) AlertDialog(onDismissRequest = { if (!working) adding = false }, title = { Text("Add audio source") }, text = {
+        Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            Text("Paste a service root or manifest URL. OpenTune loads its capabilities without installing executable code.")
+            OutlinedTextField(input, { input = it.take(2048) }, label = { Text("HTTPS addon URL") }, singleLine = true)
+            if (working) LinearProgressIndicator(Modifier.fillMaxWidth())
+            notice?.let { Text(it) }
+        }
+    }, confirmButton = { TextButton(enabled = input.isNotBlank() && !working, onClick = { scope.launch {
+        working = true; notice = null
+        try { val base = AddonProtocol.normalize(input); AddonStore.add(base, AddonClient.forBase(base).manifest()); input = ""; adding = false; notice = "Source added" }
+        catch (e: CancellationException) { throw e }
+        catch (e: AddonHttp.Failure) { notice = "Service returned HTTP ${e.status}" }
+        catch (_: Exception) { notice = "Could not load this manifest. Check the URL and connection." }
+        finally { working = false }
+    } }) { Text("Add source") } }, dismissButton = { TextButton(enabled = !working, onClick = { adding = false }) { Text("Cancel") } })
 }

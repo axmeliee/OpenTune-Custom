@@ -53,7 +53,7 @@ object ExternalStreams {
 
     fun allowed(lossless: Boolean? = null): Boolean = AppSettings.playback.value.let {
         val maximum = AppSettings.effectiveAudioQuality == AudioQuality.MAX
-        val enabled = maximum || when (lossless) { true -> it.losslessStreaming; false -> it.jioSaavnQuality; null -> it.losslessStreaming || it.jioSaavnQuality }
+        val enabled = when (lossless) { true -> maximum || it.losslessStreaming; false -> it.jioSaavnQuality; null -> maximum || it.losslessStreaming || it.jioSaavnQuality }
         enabled && (lossless != false || AppSettings.effectiveAudioQuality.maxKbps >= 320) &&
             (!it.losslessUnmeteredOnly || !AppSettings.onMeteredNetwork())
     }
@@ -102,7 +102,7 @@ object ExternalStreams {
 
     internal fun remember(videoId: String, rendition: Rendition) {
         if (renditions.size > 256) renditions.clear()
-        pinned.entries.removeIf { now() - it.value.second.at >= TTL }
+        pinned.entries.removeIf { now() - it.value.second.at >= 2 * 60 * 60_000L }
         pinned[rendition.key] = videoId to rendition
         renditions[videoId] = rendition
     }
@@ -111,7 +111,7 @@ object ExternalStreams {
 
     fun resolve(videoId: String, key: String): String {
         val rendition = get(videoId, key)
-        if (rendition == null || !addonAllowed(rendition) || !allowed(rendition.lossless) || now() - rendition.at >= TTL) {
+        if (rendition == null || !addonAllowed(rendition) || !allowed(rendition.lossless)) {
             throw IOException("External rendition expired; resume the original stream")
         }
         return rendition.url

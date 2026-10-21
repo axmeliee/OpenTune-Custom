@@ -175,6 +175,16 @@ class PlaybackService : MediaLibraryService() {
 
         val floatOutput = AppSettings.playback.value.floatOutput
         val renderers = object : DefaultRenderersFactory(context) {
+            init {
+                setEnableDecoderFallback(true)
+                setMediaCodecSelector { mime, secure, tunneling ->
+                    val selector = if (mime == "audio/flac") androidx.media3.exoplayer.mediacodec.MediaCodecSelector.PREFER_SOFTWARE
+                        else androidx.media3.exoplayer.mediacodec.MediaCodecSelector.DEFAULT
+                    selector.getDecoderInfos(mime, secure, tunneling).filterNot {
+                        mime == "audio/flac" && LosslessAudioPolicy.unsafeFlacDecoder(it.name)
+                    }
+                }
+            }
             override fun buildAudioSink(
                 context: Context,
                 enableFloatOutput: Boolean,
@@ -937,6 +947,7 @@ class PlaybackService : MediaLibraryService() {
      */
     private fun scheduleUpgrade(force: Boolean = false) {
         upgradeJob?.cancel()
+        NerdStats.onUpgrade(null)
         if (!force && !AppSettings.playback.value.qualityUpgrade && !ExternalStreams.allowed()) return
         val player = mediaSession?.player as? ExoPlayer ?: return
         val item = player.currentMediaItem ?: return
@@ -946,7 +957,8 @@ class PlaybackService : MediaLibraryService() {
             val key = externalStreamKeyOf(selectedUri(uri)) ?: return false
             return ExternalStreams.get(id, key)?.lossless != false
         }
-        if (alreadyExternal()) return
+        if (alreadyExternal() && !force) return
+        NerdStats.onUpgrade(id)
         upgradeJob = scope.launch {
             if (!force) delay(UPGRADE_DELAY_MS)
             val startup = startupToken(uri)?.let { startupSelections[it] }
@@ -956,7 +968,7 @@ class PlaybackService : MediaLibraryService() {
                     true
                 } != true) return@launch
             }
-            if (alreadyExternal()) return@launch
+            if (alreadyExternal() && !force) return@launch
             val duration = player.duration.takeIf { it > 0 } ?: item.toSong().durationMillis()
             // A slow startup lookup can finish here without delaying audible playback.
             val saavn = if (!Podcasts.isEpisode(id) && externalStreamKeyOf(selectedUri(uri)) == null)
@@ -976,6 +988,9 @@ class PlaybackService : MediaLibraryService() {
             if (player.currentMediaItem?.localConfiguration?.uri != uri) return@launch
             updateExternalStats()
             if (lossless != null && ExternalStreams.allowed(lossless.lossless)) {
+                val existing = externalStreamKeyOf(selectedUri(uri))?.let { ExternalStreams.get(id, it) }
+                if (existing?.lossless == true && com.opentune.data.addons.AddonResolver.qualityScore(lossless.bits, lossless.sampleRate) <=
+                    com.opentune.data.addons.AddonResolver.qualityScore(existing.bits, existing.sampleRate)) return@launch
                 val left = player.duration - player.currentPosition
                 if (player.duration > 0 && left < UPGRADE_MIN_REMAINING_MS) return@launch
                 swapToUpgrade(player, id, externalStreamUri(id, lossless.key))
@@ -989,6 +1004,8 @@ class PlaybackService : MediaLibraryService() {
             if (player.duration > 0 && left < UPGRADE_MIN_REMAINING_MS) return@launch
             swapToUpgrade(player, id)
         }
+        val currentJob = upgradeJob
+        currentJob?.invokeOnCompletion { if (upgradeJob === currentJob) NerdStats.onUpgrade(null) }
     }
 
     private fun swapToUpgrade(player: ExoPlayer, id: String, uri: android.net.Uri = youtubeFallbackUri(id, upgraded = true)) {

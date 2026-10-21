@@ -400,6 +400,7 @@ private fun settingsSections(
     var listenBrainzDialog by remember { mutableStateOf(false) }
     var sponsorBlockDialog by remember { mutableStateOf(false) }
     var update by remember { mutableStateOf<UpdateCheck.Release?>(null) }
+    var showPairing by remember { mutableStateOf(false) }
     var showWhatsNew by remember { mutableStateOf(false) }
     var supportDialog by remember { mutableStateOf(false) }
     val pendingUpdate by UpdateCheck.pending.collectAsState()
@@ -435,6 +436,7 @@ private fun settingsSections(
     val metered = remember { AppSettings.onMeteredNetwork() }
     var qualityDialog by remember { mutableStateOf<Boolean?>(null) } // true = Wi-Fi, false = mobile
     var audioAddons by remember { mutableStateOf(false) }
+    if (showPairing) com.opentune.ui.account.ReceiveSessionSheet { showPairing = false }
     if (audioAddons) AudioAddonsSheet { audioAddons = false }
     var folderDialog by remember { mutableStateOf(false) }
     var cacheBytes by remember { mutableLongStateOf(0L) }
@@ -659,6 +661,9 @@ private fun settingsSections(
                     } else {
                         NavRow("Sign in to YouTube Music", onSignIn, summary = "Your playlists, liked songs and recommendations", icon = Icons.Rounded.AccountCircle)
                     }
+                },
+                Entry("Sign in with your phone", "tv qr pairing youtube music") {
+                    NavRow("Sign in with your phone", { showPairing = true }, summary = "Scan a QR code from a signed-in phone on the same Wi-Fi", icon = Icons.Rounded.AccountCircle)
                 },
                 if (signedIn) {
                     Entry("Sign out", "logout account") {
@@ -976,8 +981,8 @@ private fun settingsSections(
                 Entry("Skip to chorus", "chorus jump skip button song parts") {
                     ToggleRow("Skip to chorus button", ui.skipToChorus, { v -> AppSettings.updateUi { it.copy(skipToChorus = v) } }, summary = "A button under the title that jumps to the next chorus, when the lyrics mark one", icon = Icons.Rounded.FastForward)
                 },
-                Entry("Source pill", "audio source quality pill badge codec bitrate jiosaavn youtube") {
-                    ToggleRow("Show the source pill", ui.sourcePill, { v -> AppSettings.updateUi { it.copy(sourcePill = v) } }, summary = "The pill under the title that says where the audio comes from and its quality", icon = Icons.Rounded.HighQuality)
+                Entry("Audio quality label", "audio source quality pill badge codec bitrate jiosaavn youtube") {
+                    ToggleRow("Show the quality label", ui.sourcePill, { v -> AppSettings.updateUi { it.copy(sourcePill = v) } }, summary = "The pill under the title that says where the audio comes from and its quality", icon = Icons.Rounded.HighQuality)
                 },
                 Entry("Album covers", "artwork cover musicbrainz cover art archive video thumbnail") {
                     ToggleRow("Album covers from MusicBrainz", ui.albumCovers, { v -> AppSettings.updateUi { it.copy(albumCovers = v) } }, summary = "Shows the album's cover in the player instead of a video frame, and for local files without one", icon = Icons.Rounded.Album)
@@ -1335,6 +1340,7 @@ private fun settingsSections(
                         icon = Icons.Rounded.Info,
                     )
                 },
+                Entry("OpenTune community", "github discord community addons developer") { CommunityBanner() },
                 Entry("Support OpenTune", "donate upi pay money tip support developer") {
                     NavRow("Support OpenTune", { supportDialog = true }, summary = "A small thank-you helps keep OpenTune going", icon = Icons.Rounded.Favorite)
                 },
