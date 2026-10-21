@@ -132,20 +132,22 @@ fun Modifier.glass(shape: Shape, tint: Color = MaterialTheme.colorScheme.surface
                 vibrancy()
                 blur(look.liquidBlur.toPx())
                 // A wide, deep lens: content bends visibly for the last stretch
-                // before the edge, with the light split into a fringe there.
-                lens(26.dp.toPx(), 56.dp.toPx(), depthEffect = true, chromaticAberration = true)
+                // before the edge, with the light split into a fringe there. Deep
+                // enough that the glass reads as thick, like BitChord's.
+                lens(30.dp.toPx(), 62.dp.toPx(), depthEffect = true, chromaticAberration = true)
             },
             highlight = { Highlight.Default },
             shadow = { Shadow.Default },
             innerShadow = { InnerShadow.Default },
             onDrawSurface = { drawRect(film) },
         ).border(
-            0.9.dp,
-            // A lit rim: brightest where light would catch it, top left and bottom right.
+            1.1.dp,
+            // A lit rim, brightest where light would catch it (top left and bottom
+            // right). Strong, like the bright bevel on BitChord's Liquid Glass.
             Brush.linearGradient(
-                0f to Color.White.copy(alpha = if (dark) 0.44f else 0.7f),
-                0.45f to Color.White.copy(alpha = if (dark) 0.10f else 0.25f),
-                1f to Color.White.copy(alpha = if (dark) 0.32f else 0.55f),
+                0f to Color.White.copy(alpha = if (dark) 0.6f else 0.85f),
+                0.45f to Color.White.copy(alpha = if (dark) 0.14f else 0.3f),
+                1f to Color.White.copy(alpha = if (dark) 0.44f else 0.65f),
             ),
             shape,
         )
@@ -255,7 +257,7 @@ internal fun glassLook(style: GlassStyle): GlassLook = when (style) {
     // Without Liquid Glass (older Android, or blur reduced) it's the clearest frost.
     // Liquid's own blur (the fourth figure) is heavy enough that what's behind
     // reads as soft fields of colour, not detail, as on BitChord and iOS 26.
-    GlassStyle.LIQUID -> GlassLook(20.dp, 0.30f, 0f, 26.dp, 0.08f, 1.8f)
+    GlassStyle.LIQUID -> GlassLook(20.dp, 0.30f, 0f, 18.dp, 0.06f, 2.0f)
 }
 
 /** The colour a [GlassStyle] washes the glass with, from the surface [base] and the [accent]. */

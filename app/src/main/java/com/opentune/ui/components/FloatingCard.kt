@@ -124,6 +124,8 @@ fun FloatingCard(
     header: (@Composable ColumnScope.() -> Unit)? = null,
     /** Opens at half height; dragging the top, or scrolling the content, takes it up to nearly full. */
     expandable: Boolean = false,
+    /** Opens already at full content height (up to 90% of the screen), so nothing needs scrolling to reach. */
+    startExpanded: Boolean = false,
     content: @Composable ColumnScope.() -> Unit,
 ) {
     val ui by AppSettings.ui.collectAsState()
@@ -187,7 +189,8 @@ fun FloatingCard(
                 // an expandable card never grows past it, so a short menu has no empty foot.
                 var naturalPx by remember { mutableFloatStateOf(Float.MAX_VALUE) }
                 val fullPx = minOf(with(density) { (maxCard * 0.9f).toPx() }, naturalPx)
-                val halfPx = minOf(with(density) { (maxCard * 0.5f).toPx() }, fullPx)
+                // Start at full height when asked, so the whole menu shows at once; otherwise half.
+                val halfPx = if (startExpanded) fullPx else minOf(with(density) { (maxCard * 0.5f).toPx() }, fullPx)
                 val range = (fullPx - halfPx).coerceAtLeast(0f)
                 fun settle(velocity: Float) {
                     settling?.cancel()

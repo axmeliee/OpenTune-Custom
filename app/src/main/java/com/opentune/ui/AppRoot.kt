@@ -674,7 +674,10 @@ fun AppRoot(vm: PlayerViewModel) {
             // Floating chrome: the mini player above the nav pill and search button.
             // It sits outside the recorded layer, so its Liquid Glass can sample it.
             if (chromeVisible) CompositionLocalProvider(LocalBackdrop provides backdrop.takeIf { sampled }) {
-            val openPlayer: (Boolean) -> Unit = { playerOpen = true }
+            val openPlayer: (Boolean) -> Unit = { folded ->
+                if (!chromeUi.reduceAnimation) com.opentune.ui.components.PlayerMorph.startOpen(round = folded)
+                playerOpen = true
+            }
             if (layout.nav == NavChrome.DOCK) {
             Column(Modifier.align(Alignment.BottomCenter).fillMaxWidth().navigationBarsPadding().padding(bottom = 12.dp)) {
                 starCard()
@@ -750,7 +753,8 @@ fun AppRoot(vm: PlayerViewModel) {
 
             AnimatedVisibility(
                 visible = sheetOpen && song != null,
-                enter = PageMotion.playerIn(chromeUi.playerMotion, chromeUi.reduceAnimation),
+                // While the cover is growing into place, the player just fades in behind it.
+                enter = if (com.opentune.ui.components.PlayerMorph.expanding) fadeIn(tween(320)) else PageMotion.playerIn(chromeUi.playerMotion, chromeUi.reduceAnimation),
                 exit = PageMotion.playerOut(chromeUi.playerMotion, chromeUi.reduceAnimation),
             ) {
                 // Registered after the NavHost's own handler, so back closes the
@@ -770,6 +774,11 @@ fun AppRoot(vm: PlayerViewModel) {
                     onEqualizer = { playerOpen = false; nav.navigate("equalizer") },
                 )
             }
+            // The cover growing out of the mini player into the opening player, over everything.
+            com.opentune.ui.components.CoverMorph(
+                song?.thumbnailUrl.artworkAt(com.opentune.data.model.PLAYER_ART_PX),
+                song?.thumbnailUrl.artworkAt(ROW_ART_PX),
+            )
             // The chrome's snackbar is under the open player; this one shows
             // over it instead, so an Undo for something chosen in the player's
             // menu can be seen. Only one of the two is ever there.

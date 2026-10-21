@@ -141,6 +141,8 @@ fun SongMenuSheet(
         onDismiss = onDismiss,
         contentPadding = PaddingValues(0.dp),
         expandable = true,
+        // Open fully so the whole menu shows at once; the content lifts to make room, no scrolling needed.
+        startExpanded = true,
         // The song and its four quick actions stay put; the rest of the menu scrolls under them.
         header = {
             val card = LocalFloatingCard.current

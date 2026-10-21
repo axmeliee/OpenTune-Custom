@@ -345,6 +345,9 @@ fun ArtworkPane(
         spring(dampingRatio = 0.62f, stiffness = Spring.StiffnessLow),
         label = "artScale",
     )
+    // The opening cover morph lands on this cover; tell it where and how big.
+    com.opentune.ui.components.PlayerMorph.playerCoverScale = scale
+    androidx.compose.runtime.DisposableEffect(Unit) { onDispose { com.opentune.ui.components.PlayerMorph.playerCover = null } }
     val offsetX = remember { Animatable(0f) }
     val scope = rememberCoroutineScope()
     val threshold = with(LocalDensity.current) { 96.dp.toPx() }
@@ -380,6 +383,7 @@ fun ArtworkPane(
                 Modifier
                     .aspectRatio(1f)
                     .then(motion)
+                    .then(with(com.opentune.ui.components.PlayerMorph) { Modifier.playerLanding() })
                     .graphicsLayer {
                         scaleX = scale
                         scaleY = scale
@@ -388,6 +392,8 @@ fun ArtworkPane(
                         shadowElevation = 28.dp.toPx()
                         shape = androidx.compose.foundation.shape.RoundedCornerShape(28.dp)
                         clip = true
+                        // Hidden under the growing cover until the morph hands over.
+                        alpha = if (com.opentune.ui.components.PlayerMorph.expanding) 0f else 1f
                     },
                 shape = MaterialTheme.shapes.extraLarge,
                 imageModifier = Modifier.livingArt(isPlaying, moving),
@@ -755,7 +761,7 @@ fun MiniPlayer(
             contentAlignment = Alignment.Center,
         ) {
             ProgressRing(progress, accent, track, stroke = 3.dp, modifier = Modifier.matchParentSize())
-            Artwork(song.thumbnailUrl.artworkAt(ROW_ART_PX), Modifier.padding(4.dp).fillMaxSize(), CircleShape)
+            Artwork(song.thumbnailUrl.artworkAt(ROW_ART_PX), with(com.opentune.ui.components.PlayerMorph) { Modifier.padding(4.dp).fillMaxSize().miniLanding() }, CircleShape)
             if (isBuffering) CircularProgressIndicator(Modifier.matchParentSize(), strokeWidth = 3.dp, color = accent)
         }
         return
@@ -788,7 +794,7 @@ fun MiniPlayer(
         Row(Modifier.fillMaxSize().padding(start = 10.dp, end = 6.dp), verticalAlignment = Alignment.CenterVertically) {
             AnimatedContent(song, transitionSpec = { fadeIn(tween(300)) togetherWith fadeOut(tween(200)) }, label = "mini", modifier = Modifier.weight(1f)) { s ->
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Artwork(s.thumbnailUrl.artworkAt(ROW_ART_PX), Modifier.size(44.dp), RoundedCornerShape(12.dp))
+                    Artwork(s.thumbnailUrl.artworkAt(ROW_ART_PX), with(com.opentune.ui.components.PlayerMorph) { Modifier.size(44.dp).miniLanding() }, RoundedCornerShape(12.dp))
                     Column(Modifier.padding(start = 12.dp)) {
                         Text(s.title, maxLines = 1, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
                         com.opentune.ui.components.SubtitleLine(s.artist, explicit = s.isExplicit == true, style = MaterialTheme.typography.bodySmall)
