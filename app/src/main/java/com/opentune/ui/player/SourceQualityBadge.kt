@@ -1,5 +1,7 @@
 package com.opentune.ui.player
 
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
@@ -9,6 +11,9 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.FastForward
+import androidx.compose.material.icons.rounded.GraphicEq
+import androidx.compose.material.icons.rounded.Headphones
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.shape.CircleShape
@@ -45,45 +50,55 @@ import java.util.Locale
 @Composable
 internal fun SourceQualityBadge(mediaId: String, format: AudioFormatInfo?, onClick: () -> Unit, modifier: Modifier = Modifier) {
     val reported by NerdStats.playbackSource.collectAsState()
-    // Never show the previous song's provider while a new item is resolving.
+    val upgrading by NerdStats.upgrading.collectAsState()
     val source = reported?.takeIf { it.mediaId == mediaId }
-    val label = sourceQualityLabel(source, if (source != null) format else null)
+    val label = qualityStatusLabel(source, if (source != null) format else null, upgrading == mediaId)
     val colors = MaterialTheme.colorScheme
     val ui by com.opentune.data.settings.AppSettings.ui.collectAsState()
-    // The 48 dp touch height is kept as padding outside the pill, so the beam
-    // below is drawn on the pill's own edge, not around the touch area.
-    CompositionLocalProvider(androidx.compose.material3.LocalMinimumInteractiveComponentSize provides androidx.compose.ui.unit.Dp.Unspecified) {
-    TextButton(
-        onClick = onClick,
-        modifier = modifier.padding(vertical = 4.dp).heightIn(min = 40.dp)
-            .lightBeam(source?.provider == "JioSaavn" || isHighestQuality(source, if (source != null) format else null), still = ui.reduceAnimation, color = colors.primary)
-            .semantics {
-            contentDescription = "$label. Open signal path"
-        },
-        shape = CircleShape,
-        colors = ButtonDefaults.textButtonColors(
-            containerColor = colors.surfaceContainerHigh.copy(alpha = 0.9f),
-            contentColor = colors.onSurface,
-        ),
-        border = BorderStroke(1.dp, colors.outlineVariant.copy(alpha = 0.6f)),
-        contentPadding = PaddingValues(horizontal = 14.dp, vertical = 8.dp),
-    ) {
-        // Still finding the stream: a turning mark says it's working, not stuck.
-        if (source == null || source.provider.startsWith("Checking highest")) {
-            CircularProgressIndicator(Modifier.size(12.dp), color = colors.primary, strokeWidth = 1.5.dp, trackColor = colors.primary.copy(alpha = 0.2f))
-            Spacer(Modifier.width(8.dp))
-        }
+    val phase = if (ui.reduceAnimation || !isHighestQuality(source, format)) null else rememberInfiniteTransition(label = "quality light")
+        .animateFloat(-1f, 2f, infiniteRepeatable(tween(3200, easing = LinearEasing)), label = "quality sweep")
+    TextButton(onClick = onClick, modifier = modifier.widthIn(max = 280.dp).fillMaxWidth().heightIn(min = 40.dp).semantics { contentDescription = "$label. Open signal path" },
+        colors = ButtonDefaults.textButtonColors(contentColor = colors.onSurfaceVariant),
+        contentPadding = PaddingValues(horizontal = 6.dp, vertical = 4.dp)) {
+        Icon(if (isHighestQuality(source, format)) androidx.compose.material.icons.Icons.Rounded.GraphicEq else androidx.compose.material.icons.Icons.Rounded.Headphones,
+            null, Modifier.size(16.dp))
+        Spacer(Modifier.width(5.dp))
         Text(label, style = MaterialTheme.typography.labelMedium,
+            textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+            modifier = Modifier.graphicsLayer { compositingStrategy = androidx.compose.ui.graphics.CompositingStrategy.Offscreen }.drawWithCache {
+                onDrawWithContent {
+                    drawContent()
+                    phase?.value?.let { progress ->
+                        val x = progress * size.width
+                        drawRect(androidx.compose.ui.graphics.Brush.linearGradient(
+                            listOf(Color.Transparent, colors.onSurface.copy(alpha = 0.6f), Color.Transparent),
+                            start = androidx.compose.ui.geometry.Offset(x - 35.dp.toPx(), 0f),
+                            end = androidx.compose.ui.geometry.Offset(x + 35.dp.toPx(), size.height)),
+                            blendMode = androidx.compose.ui.graphics.BlendMode.SrcAtop)
+                    }
+                }
+            },
             maxLines = 1, overflow = TextOverflow.Ellipsis)
     }
+}
+
+internal fun qualityStatusLabel(source: NerdStats.Source?, format: AudioFormatInfo?, upgrading: Boolean): String {
+    if (source == null || source.provider.startsWith("Checking highest")) return if (upgrading) "Upgrading quality" else "Preparing audio"
+    val lossless = isHighestQuality(source, format)
+    val label = when {
+        lossless && ((format?.bitDepth ?: 0) > 16 || (format?.sampleRateHz ?: 0) > 48000) -> "Hi-Res Lossless"
+        lossless -> "Lossless"
+        (format?.bitrateKbps ?: source.kbps ?: 0) >= 128 -> "High quality"
+        else -> "Standard quality"
     }
+    return if (upgrading) "$label, upgrading" else label
 }
 
 /** Whether [source] is the best there is: lossless, rather than a lossy stream at any bitrate. */
 internal fun isHighestQuality(source: NerdStats.Source?, format: AudioFormatInfo?): Boolean {
     if (source == null || source.provider.startsWith("Checking highest")) return false
     val codec = format?.codec
-    return source.bits != null || codec?.contains("FLAC", ignoreCase = true) == true || codec?.contains("ALAC", ignoreCase = true) == true
+    return codec?.contains("FLAC", ignoreCase = true) == true || codec?.contains("ALAC", ignoreCase = true) == true
 }
 
 /**
@@ -157,9 +172,9 @@ internal fun sourceQualityLabel(source: NerdStats.Source?, format: AudioFormatIn
     if (source == null) return "Resolving audio…"
     val provider = source.provider.removePrefix("YouTube · ")
     if (source.provider.startsWith("Checking highest")) return "Checking highest quality…"
-    val codec = format?.codec ?: if (source.bits != null) "FLAC" else null
-    val bits = source.bits ?: format?.bitDepth
-    val rate = source.sampleRate ?: format?.sampleRateHz
+    val codec = format?.codec
+    val bits = format?.bitDepth ?: source.bits
+    val rate = format?.sampleRateHz ?: source.sampleRate
     val quality = if (codec?.contains("FLAC", ignoreCase = true) == true) {
         listOfNotNull("FLAC", bits?.let { "$it-bit" }, rate?.let { "${String.format(Locale.ROOT, "%.1f", it / 1000.0).removeSuffix(".0")} kHz" }).joinToString(" · ")
     } else listOfNotNull(codec, (format?.bitrateKbps ?: source.kbps)?.let { "$it kbps" }).joinToString(" · ")

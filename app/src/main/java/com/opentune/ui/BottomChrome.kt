@@ -606,7 +606,7 @@ internal fun DockItem(tab: ChromeTab, selected: Boolean, modifier: Modifier, col
     Column(
         modifier
             .clip(LENS_SHAPE)
-            .clickable(interactionSource = interaction, indication = null, onClick = onClick)
+            .clickable(interactionSource = interaction, indication = com.opentune.ui.components.FocusRing(LENS_SHAPE), onClick = onClick)
             .semantics { role = Role.Tab; this.selected = selected },
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center,
@@ -662,7 +662,7 @@ internal fun SearchOrb(selected: Boolean, modifier: Modifier = Modifier, onClick
             .padding(DOCK_INSET)
             .clip(CircleShape)
             .background(fill)
-            .clickable(interactionSource = interaction, indication = null, onClick = onClick)
+            .clickable(interactionSource = interaction, indication = com.opentune.ui.components.FocusRing(CircleShape), onClick = onClick)
             .semantics { role = Role.Tab; this.selected = selected },
         contentAlignment = Alignment.Center,
     ) {
@@ -689,7 +689,7 @@ private fun TabOrb(tab: ChromeTab, searchSelected: Boolean, modifier: Modifier, 
             .glass(CircleShape, tint = ink.film ?: MaterialTheme.colorScheme.surfaceContainerHigh)
             .dockHighlight(CircleShape)
             .clip(CircleShape)
-            .clickable(interactionSource = interaction, indication = null, onClickLabel = "Show navigation", onClick = onClick)
+            .clickable(interactionSource = interaction, indication = com.opentune.ui.components.FocusRing(CircleShape), onClickLabel = "Show navigation", onClick = onClick)
             .semantics { role = Role.Button },
         contentAlignment = Alignment.Center,
     ) {

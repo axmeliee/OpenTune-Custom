@@ -31,6 +31,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.rounded.Devices
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.Logout
 import androidx.compose.material.icons.automirrored.rounded.PlaylistPlay
@@ -400,6 +401,8 @@ private fun settingsSections(
     var listenBrainzDialog by remember { mutableStateOf(false) }
     var sponsorBlockDialog by remember { mutableStateOf(false) }
     var update by remember { mutableStateOf<UpdateCheck.Release?>(null) }
+    var showPlatforms by remember { mutableStateOf(false) }
+    var showPairing by remember { mutableStateOf(false) }
     var showWhatsNew by remember { mutableStateOf(false) }
     var supportDialog by remember { mutableStateOf(false) }
     val pendingUpdate by UpdateCheck.pending.collectAsState()
@@ -434,12 +437,10 @@ private fun settingsSections(
     val lib by AppSettings.library.collectAsState()
     val metered = remember { AppSettings.onMeteredNetwork() }
     var qualityDialog by remember { mutableStateOf<Boolean?>(null) } // true = Wi-Fi, false = mobile
-    var verifyLossless by remember { mutableStateOf(false) }
-    var qobuzRelayDialog by remember { mutableStateOf(false) }
-    if (qobuzRelayDialog) QobuzRelayDialog(pb.qobuzRelayUrl) { qobuzRelayDialog = false }
-    val losslessConnected by com.opentune.data.lossless.SpotiflacSession.connected.collectAsState()
-    val losslessNeedsVerification by com.opentune.data.lossless.SpotiflacSession.needsVerification.collectAsState()
-    if (verifyLossless) SpotiflacVerification { verifyLossless = false }
+    var audioAddons by remember { mutableStateOf(false) }
+    if (showPlatforms) PlatformsPage { showPlatforms = false }
+    if (showPairing) com.opentune.ui.account.ReceiveSessionSheet { showPairing = false }
+    if (audioAddons) AudioAddonsSheet { audioAddons = false }
     var folderDialog by remember { mutableStateOf(false) }
     var cacheBytes by remember { mutableLongStateOf(0L) }
     var message by remember { mutableStateOf<String?>(null) }
@@ -606,7 +607,7 @@ private fun settingsSections(
             title = "Download quality",
             options = AudioQuality.entries,
             selected = lib.downloadQuality,
-            label = { "${it.label} · ${if (it == AudioQuality.MAX) "Best YouTube download offered" else it.summary}" },
+            label = { "${it.label} · ${if (it == AudioQuality.MAX) "Lossless from add-ons when available; YouTube fallback" else it.summary}" },
             onSelect = { q -> AppSettings.updateLibrary { it.copy(downloadQuality = q) } },
             onDismiss = { downloadQualityDialog = false },
         )
@@ -664,6 +665,9 @@ private fun settingsSections(
                         NavRow("Sign in to YouTube Music", onSignIn, summary = "Your playlists, liked songs and recommendations", icon = Icons.Rounded.AccountCircle)
                     }
                 },
+                Entry("Sign in with your phone", "tv qr pairing youtube music") {
+                    NavRow("Sign in with your phone", { showPairing = true }, summary = "Scan a QR code from a signed-in phone on the same Wi-Fi", icon = Icons.Rounded.AccountCircle)
+                },
                 if (signedIn) {
                     Entry("Sign out", "logout account") {
                         SettingRow("Sign out", icon = Icons.AutoMirrored.Rounded.Logout, onClick = { confirmSignOut = true })
@@ -692,24 +696,15 @@ private fun settingsSections(
                         )
                     })
                 },
-                Entry("Lossless streaming", "flac tidal amazon qobuz spotiflac") {
-                    ToggleRow("Lossless below Max", pb.losslessStreaming, { v -> AppSettings.updatePlayback { it.copy(losslessStreaming = v) } }, summary = "Also look for FLAC after playback starts at other quality levels. Max automatically checks highest-quality sources before YouTube.", icon = Icons.Rounded.HighQuality)
+                Entry("Lossless streaming", "flac lossless addons") {
+                    ToggleRow("Lossless at other quality levels", pb.losslessStreaming, { v -> AppSettings.updatePlayback { it.copy(losslessStreaming = v) } }, summary = "Also check your audio add-ons after playback starts at other quality levels. Lossless checks them automatically in your chosen order.", icon = Icons.Rounded.HighQuality)
                 },
                 Entry("Unmetered networks only", "flac saavn mobile wifi data") {
-                    ToggleRow("Unmetered networks only", pb.losslessUnmeteredOnly, { v -> AppSettings.updatePlayback { it.copy(losslessUnmeteredOnly = v) } }, summary = "When on, mobile data uses YouTube even at Max. Turn off to try FLAC and JioSaavn on mobile data", icon = Icons.Rounded.Wifi)
+                    ToggleRow("Unmetered networks only", pb.losslessUnmeteredOnly, { v -> AppSettings.updatePlayback { it.copy(losslessUnmeteredOnly = v) } }, summary = "When on, mobile data uses YouTube even with Lossless selected. Turn off to try FLAC and JioSaavn on mobile data", icon = Icons.Rounded.Wifi)
                 },
-                Entry("Prefer hi-res lossless", "24 bit flac qobuz") {
-                    ToggleRow("Prefer hi-res lossless", pb.losslessHiRes, { v -> AppSettings.updatePlayback { it.copy(losslessHiRes = v) } }, summary = "Prefer hi-res for background upgrades too. Max always checks hi-res first. Uses more data.", icon = Icons.Rounded.HighQuality)
+                Entry("Audio add-ons", "source URL manifest order priority lossless flac high res") {
+                    SettingRow("Audio add-ons", icon = Icons.Rounded.HighQuality, summary = "Add service URLs and choose source priority", onClick = { audioAddons = true })
                 },
-                Entry("SpotiFLAC verification", "lossless session connect verify") {
-                    SettingRow("SpotiFLAC verification", icon = Icons.Rounded.HighQuality, summary = if (losslessConnected) "Connected · tap to renew" else if (losslessNeedsVerification) "Verify again · provider session needs renewing" else "Optional · public providers work without it", onClick = { verifyLossless = true })
-                },
-                Entry("Qobuz relay", "lossless custom server endpoint") {
-                    SettingRow("Qobuz relay", icon = Icons.Rounded.HighQuality, summary = if (pb.qobuzRelayUrl.isBlank()) "Optional · use your own compatible server" else "Custom server configured", onClick = { qobuzRelayDialog = true })
-                },
-                if (losslessConnected) Entry("Disconnect SpotiFLAC", "lossless session sign out") {
-                    SettingRow("Disconnect SpotiFLAC", icon = Icons.AutoMirrored.Rounded.Logout, onClick = { com.opentune.data.lossless.SpotiflacSession.clear() })
-                } else null,
                 Entry("Bit-perfect USB output", "dac exclusive passthrough hi-fi audiophile mixer bypass") {
                     ToggleRow(
                         "Bit-perfect USB output",
@@ -989,8 +984,8 @@ private fun settingsSections(
                 Entry("Skip to chorus", "chorus jump skip button song parts") {
                     ToggleRow("Skip to chorus button", ui.skipToChorus, { v -> AppSettings.updateUi { it.copy(skipToChorus = v) } }, summary = "A button under the title that jumps to the next chorus, when the lyrics mark one", icon = Icons.Rounded.FastForward)
                 },
-                Entry("Source pill", "audio source quality pill badge codec bitrate jiosaavn youtube") {
-                    ToggleRow("Show the source pill", ui.sourcePill, { v -> AppSettings.updateUi { it.copy(sourcePill = v) } }, summary = "The pill under the title that says where the audio comes from and its quality", icon = Icons.Rounded.HighQuality)
+                Entry("Audio quality label", "audio source quality pill badge codec bitrate jiosaavn youtube") {
+                    ToggleRow("Show the quality label", ui.sourcePill, { v -> AppSettings.updateUi { it.copy(sourcePill = v) } }, summary = "Shows quality and upgrade progress below the seek bar; tap for the full signal path", icon = Icons.Rounded.HighQuality)
                 },
                 Entry("Album covers", "artwork cover musicbrainz cover art archive video thumbnail") {
                     ToggleRow("Album covers from MusicBrainz", ui.albumCovers, { v -> AppSettings.updateUi { it.copy(albumCovers = v) } }, summary = "Shows the album's cover in the player instead of a video frame, and for local files without one", icon = Icons.Rounded.Album)
@@ -1348,6 +1343,10 @@ private fun settingsSections(
                         icon = Icons.Rounded.Info,
                     )
                 },
+                Entry("OpenTune on Web & TV", "web browser android tv television platforms qr") {
+                    NavRow("OpenTune on Web & TV", { showPlatforms = true }, summary = "Listen on another screen and pair your TV", icon = Icons.Rounded.Devices)
+                },
+                Entry("OpenTune community", "github discord community addons developer") { CommunityBanner() },
                 Entry("Support OpenTune", "donate upi pay money tip support developer") {
                     NavRow("Support OpenTune", { supportDialog = true }, summary = "A small thank-you helps keep OpenTune going", icon = Icons.Rounded.Favorite)
                 },

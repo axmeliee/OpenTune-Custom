@@ -34,13 +34,13 @@ internal val FOLDED_GROUPS = mapOf("Seek bar" to 2)
 internal val SETTINGS_CATEGORIES = listOf(
     SettingsCategory(
         "account", "Account", "YouTube Music sign-in", Icons.Rounded.Person,
-        listOf("YouTube Music" to listOf("YouTube Music account", "Sign out")),
+        listOf("YouTube Music" to listOf("YouTube Music account", "Sign in with your phone", "Sign out")),
     ),
     SettingsCategory(
         "audio", "Audio", "Quality, loudness, effects and output", Icons.Rounded.GraphicEq,
         listOf(
             "Streaming quality" to listOf("On Wi-Fi", "On mobile data", "Upgrade quality while playing"),
-            "Higher-quality sources" to listOf("Lossless streaming", "Unmetered networks only", "Prefer hi-res lossless", "Qobuz relay", "SpotiFLAC verification", "Disconnect SpotiFLAC"),
+            "Higher-quality sources" to listOf("Lossless streaming", "Unmetered networks only", "Audio add-ons"),
             "Loudness" to listOf("Loudness normalization", "Volume level", "Normalize on the phone speaker"),
             "Sound" to listOf("Equalizer", "Clarity", "Spatial audio", "System audio effects"),
             "Output" to listOf("Output precision", "Prefer USB DAC", "Bit-perfect USB output"),
@@ -70,7 +70,7 @@ internal val SETTINGS_CATEGORIES = listOf(
             "Layout" to listOf("Player layout", "Player buttons", "Player background", "Player beside the page"),
             "Cover art" to listOf("Moving cover art", "Moving covers on Home", "Glow under the cover", "Song change", "Full-screen cover art", "Album covers"),
             "Seek bar" to listOf("Wavy seek bar", "Lyric preview while seeking", "Seek bar thickness", "Seek bar handle", "Seek bar colour", "Seek bar time", "Song part marks"),
-            "Controls" to listOf("Source pill", "Skip to chorus", "Hide volume bar", "Hide song status", "Show stats for nerds"),
+            "Controls" to listOf("Audio quality label", "Skip to chorus", "Hide volume bar", "Hide song status", "Show stats for nerds"),
         ),
     ),
     SettingsCategory(
@@ -116,7 +116,7 @@ internal val SETTINGS_CATEGORIES = listOf(
         "about", "About", "Updates, source code and diagnostics", Icons.Rounded.Info,
         listOf(
             "Updates" to listOf("What's new", "Check for updates", "Check for updates automatically"),
-            "OpenTune" to listOf("Show the welcome again", "Support OpenTune", "Star on GitHub", "Count this phone in usage numbers", "Source code", "Export diagnostics"),
+            "OpenTune" to listOf("OpenTune community", "OpenTune on Web & TV", "Show the welcome again", "Support OpenTune", "Star on GitHub", "Count this phone in usage numbers", "Source code", "Export diagnostics"),
         ),
     ),
 )

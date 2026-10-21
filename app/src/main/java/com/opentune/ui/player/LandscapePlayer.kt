@@ -150,8 +150,8 @@ internal fun LandscapePlayer(
                     RoundIcon(Icons.Rounded.MoreHoriz, "More", onMore)
                     RoundIcon(Icons.Rounded.KeyboardArrowDown, "Close player", actions.collapse)
                 }
-                SourceQualityBadge(song.videoId, state.audioFormat, onClick = onSignal)
                 TimeBar(position, state.durationMs, actions.seekTo)
+                if (state.ui.sourcePill) SourceQualityBadge(song.videoId, state.audioFormat, onClick = onSignal, modifier = Modifier.align(Alignment.CenterHorizontally))
                 val lines = if (showLines) rememberLyricLines(state.lyrics, lyricsPosition) else "" to ""
                 LyricLine(lines.first, alpha = 0.92f, onLyrics)
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
@@ -260,7 +260,7 @@ private fun Tap(label: String, onClick: () -> Unit, enabled: Boolean = true, con
         Modifier
             .size(64.dp)
             .clip(CircleShape)
-            .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null, enabled = enabled, onClick = onClick)
+            .clickable(interactionSource = remember { MutableInteractionSource() }, indication = com.opentune.ui.components.FocusRing(CircleShape), enabled = enabled, onClick = onClick)
             .semantics { contentDescription = label },
         contentAlignment = Alignment.Center,
     ) { content() }

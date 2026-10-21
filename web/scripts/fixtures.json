@@ -1,0 +1,146 @@
+[
+  {
+    "path": "fixtures/README.md",
+    "sha256": "9c0cee236be2ea7ea4dde18181ce1295311b3bbad1ccc6bc2334c0fcdfb96830"
+  },
+  {
+    "path": "fixtures/index.json",
+    "sha256": "d2ba1eb63beaaf9995957082d05f7e536bc7ece7ee764e10e1aa74c596a11dd5"
+  },
+  {
+    "path": "fixtures/innertube/browse-album.json",
+    "sha256": "cb637590858c7c3edf8fad61792c4d974d711a1a53add0be9389294e82551299"
+  },
+  {
+    "path": "fixtures/innertube/browse-artist.json",
+    "sha256": "837783829a92fdcbd5e6b677e74b1d5c1c396767fa116a3b5ebb2848b7b65b5f"
+  },
+  {
+    "path": "fixtures/innertube/browse-explore.json",
+    "sha256": "2e1051a979887eb11102ccc85e5cd2a04ca726f57a730cfd4212444fe61a67b3"
+  },
+  {
+    "path": "fixtures/innertube/browse-home.json",
+    "sha256": "9b5cfc4848b0f5d19c7d4b69aca55406bac6c74b9470fd1269b14a914508cc25"
+  },
+  {
+    "path": "fixtures/innertube/browse-moods-and-genres.json",
+    "sha256": "cf3e5ee79fd34171143a907d017d8710b9a5ae2db2616d40de1995d28d3d1dbd"
+  },
+  {
+    "path": "fixtures/innertube/browse-new-releases.json",
+    "sha256": "79c4c4f35efc29449530a2a1230095e8d779cd1ccd499806808539aabaa34646"
+  },
+  {
+    "path": "fixtures/innertube/browse-playlist.json",
+    "sha256": "7a2982b9d9974cf0c6bfbcd21ea549c8466912a02abc9f7e2f568f609d2b6cd9"
+  },
+  {
+    "path": "fixtures/innertube/next-radio.json",
+    "sha256": "a011bcdb38405534ef430064d8026a6ef221ab79aa7c5c97faeaf8643207018a"
+  },
+  {
+    "path": "fixtures/innertube/player-web-remix-no-potoken.json",
+    "sha256": "b52e96bf0a640c3338fdc673a5f4929559abc07a9d069351dc9c4699740bb423"
+  },
+  {
+    "path": "fixtures/innertube/search-albums.json",
+    "sha256": "bf2ad96cfab992a85d04e57fcfe6a14d13dd1ed62b02e555c4c82b9e4c101acd"
+  },
+  {
+    "path": "fixtures/innertube/search-all.json",
+    "sha256": "870407a9a4fd255fbc5b632fae276e02c11737f8056f84ce3b7ec3100168ffe6"
+  },
+  {
+    "path": "fixtures/innertube/search-songs.json",
+    "sha256": "ca2cf0532f6efb1a1d9d4cb168d183c1b70eea315131c0f757cbffbb63798d91"
+  },
+  {
+    "path": "fixtures/innertube/search-suggestions.json",
+    "sha256": "2eaed8e93b1759298ecab8659b0a97231adbc7406cdacea9ca32d0192c993b82"
+  },
+  {
+    "path": "fixtures/lyrics/betterlyrics-portato.json",
+    "sha256": "601f19178eb4b809f68f8cb231cac782c65b74f49d8050f11a6f4d7fa62d8078"
+  },
+  {
+    "path": "fixtures/lyrics/betterlyrics.json",
+    "sha256": "a4f648c3ebd26f851a50ddfc64067a391588ff6dfa6de1e57f7aa876c7069429"
+  },
+  {
+    "path": "fixtures/lyrics/binilyrics.json",
+    "sha256": "a3fe28efc1829540bf36725e8142f0f44f3f05feb9d98db8ba93c64c72fc03dd"
+  },
+  {
+    "path": "fixtures/lyrics/genius-search.json",
+    "sha256": "3d441425045c4bf3e61f30c0e61f47fb76f1a123f427aea2e68a7af8e025f481"
+  },
+  {
+    "path": "fixtures/lyrics/google-translate.json",
+    "sha256": "9010e5a841cf0acfb13facfaa2c3318bc8118020ec071d15de099eb9a628fd01"
+  },
+  {
+    "path": "fixtures/lyrics/kugou-download.json",
+    "sha256": "052163fbbd01d531429971506b136dd395ad81fe229bdfe6b7ac2b50aa822901"
+  },
+  {
+    "path": "fixtures/lyrics/kugou-lyric-search.json",
+    "sha256": "ba5abc5a1549565fd67af697be9aea19be7c715e900fa37125810acd7e2980f4"
+  },
+  {
+    "path": "fixtures/lyrics/kugou-song-search.json",
+    "sha256": "76b5b15ee3a11f12c005070baa21b8fe26c1aaa6b11e007bdb9d0840ec09009b"
+  },
+  {
+    "path": "fixtures/lyrics/lrc-red-document.ttml",
+    "sha256": "2330facd559f5d59b217a927a450025334b228cf8d750764ba86ff8cf47a79b9"
+  },
+  {
+    "path": "fixtures/lyrics/lrc-red-search.json",
+    "sha256": "d07906317322858a99ea99cb46a70ce2a971f587da91398c66df90c108044a70"
+  },
+  {
+    "path": "fixtures/lyrics/lrclib-get.json",
+    "sha256": "1a36e1392318a424c4d923b061a513d7d63bffb0cbfa8e9dde6a85bbc80e3bad"
+  },
+  {
+    "path": "fixtures/lyrics/lrclib-search.json",
+    "sha256": "149293313dda7e7c808dcc4b09b8a03935f22c9ae1032369bfae0b057062c5f8"
+  },
+  {
+    "path": "fixtures/lyrics/lyricsplus-lyricsplus.prjktla.my.id.json",
+    "sha256": "f6d09e7176ad5a8d6b3b35b770f192bd2c25e3aa2f8a79b603e115303845f67b"
+  },
+  {
+    "path": "fixtures/lyrics/paxsenix-apple.json",
+    "sha256": "7f41e1256ac881226e3f1f132573bca52a7d886ba5772ed90369953e40e32251"
+  },
+  {
+    "path": "fixtures/lyrics/simpmusic.json",
+    "sha256": "bc74ff5e64190d99a045aaaf85eadb73a69ad553c0e498fd3fbe41ff96e95b96"
+  },
+  {
+    "path": "fixtures/lyrics/unison.json",
+    "sha256": "fe5d21f6cac706697a627936662093ee1e4120f5d4089966aab86778eb81f99e"
+  },
+  {
+    "path": "fixtures/lyrics/youtube-music-lyrics-tab.json",
+    "sha256": "4aa9a75af01f88988846914aa9d9eef54f564fa9100f11ece527f89601d2f624"
+  },
+  {
+    "path": "fixtures/spotify/canvas-anonymous.json",
+    "sha256": "a61711552e38fe6db0805349c94feccc2e9781893064c76497b85589f3551077"
+  },
+  {
+    "path": "fixtures/spotify/fetch-playlist.json",
+    "sha256": "093c4c749314c583ae2ab264cae9a1c75aaecb4b0732010535e8ca737486631f"
+  },
+  {
+    "path": "fixtures/spotify/search-tracks.json",
+    "sha256": "89b8cd7112aaab1c38806c8d74399d179a78eec4c29f715accee5c6ef1d40981"
+  },
+  {
+    "path": "fixtures/spotify/web-player.json",
+    "sha256": "7abf1124f935a7f94ec08100af6a8338da8cf7ecafdbf6360837d9d3cd0278e6"
+  }
+]

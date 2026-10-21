@@ -1,0 +1,105 @@
+package com.opentune.data.addons
+
+import org.json.JSONObject
+import okhttp3.HttpUrl
+import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
+
+/** HTTP add-on wire protocol; no downloaded code is evaluated. */
+data class AddonManifest(val id: String, val name: String, val version: String,
+    val downloads: Boolean = true, val outputRequired: Boolean = false,
+    val defaults: Map<String, String> = emptyMap(), val qualities: List<String> = emptyList()) {
+    fun parameters(tier: String): Map<String, String> = defaults + ("quality" to matchTier(tier, qualities))
+}
+data class AddonTrack(val id: String, val title: String, val artist: String, val album: String?,
+    val durationMs: Long, val artwork: String?, val streamUrl: String?, val format: String)
+data class AddonStream(val url: String, val codec: String, val transport: String?, val bits: Int?,
+    val sampleRate: Int?, val kbps: Int?, val addonId: String = "", val provider: String = "") {
+    val lossless get() = codec in setOf("flac", "alac", "pcm", "wav")
+    val mimeType get() = when (transport) { "hls" -> "application/x-mpegURL"; "dash" -> "application/dash+xml"; else -> null }
+    val extension get() = when (codec) { "flac" -> "flac"; "alac", "aac" -> "m4a"; "mp3" -> "mp3"; "opus" -> "ogg"; "pcm", "wav" -> "wav"; else -> null }
+}
+private fun JSONObject.text(key: String): String = opt(key)?.takeUnless { it == JSONObject.NULL }?.toString().orEmpty()
+
+object AddonProtocol {
+    fun url(raw: String): HttpUrl = requireNotNull(raw.toHttpUrlOrNull()?.takeIf {
+        it.isHttps && it.username.isEmpty() && it.password.isEmpty() && it.fragment == null
+    }) { "Enter an HTTPS add-on URL without a username, password or fragment." }
+    fun normalize(raw: String): String {
+        val input = url(raw.trim())
+        val segments = input.encodedPath.trimEnd('/').split('/').toMutableList()
+        if (segments.lastOrNull()?.endsWith(".json", true) == true) segments.removeAt(segments.lastIndex)
+        return input.newBuilder().encodedPath(segments.joinToString("/").ifBlank { "/" }.trimEnd('/') + "/").build().toString()
+    }
+    fun endpoint(base: String, path: List<String>, params: Map<String, String> = emptyMap()): String =
+        url(base).newBuilder().apply { path.forEach(::addPathSegment); params.forEach { (key, value) -> setQueryParameter(key, value) } }.build().toString()
+    fun manifest(text: String): AddonManifest {
+        val root = JSONObject(text)
+        val id = root.text("id").trim().take(200)
+        require(id.isNotBlank()) { "This URL did not return an add-on manifest." }
+        val resources = root.optJSONArray("resources")
+        require(resources == null || resources.length() == 0 || (0 until resources.length()).any { resources.optString(it).equals("search", true) }) { "This add-on does not support searching music." }
+        val defaults = linkedMapOf<String, String>(); val qualities = mutableListOf<String>()
+        root.optJSONArray("settings")?.let { array -> for (i in 0 until minOf(array.length(), 32)) {
+            val setting = array.optJSONObject(i) ?: continue
+            val key = setting.text("key").take(80).takeIf(String::isNotBlank) ?: continue
+            val value = setting.opt("default")
+            if (value is String || value is Number || value is Boolean) defaults[key] = value.toString().take(500)
+            if (key == "quality") setting.optJSONArray("options")?.let { options -> for (j in 0 until minOf(options.length(), 32)) {
+                options.optJSONObject(j)?.opt("value")?.takeIf { it is String || it is Number }?.toString()?.let(qualities::add)
+            } }
+        } }
+        return AddonManifest(id, root.text("name").ifBlank { id }.take(120), root.text("version").take(40),
+            flag(root.opt("allowDownloads")) ?: true, flag(root.opt("checkValidLossless")) ?: false, defaults, qualities)
+    }
+    fun search(text: String): List<AddonTrack> {
+        val tracks = JSONObject(text).optJSONArray("tracks") ?: error("The add-on returned an invalid search response.")
+        return (0 until minOf(tracks.length(), 100)).mapNotNull { i ->
+            val t = tracks.optJSONObject(i) ?: return@mapNotNull null
+            val id = t.text("id"); val title = t.text("title")
+            if (id.isBlank() || id.length > 1000 || title.isBlank()) return@mapNotNull null
+            AddonTrack(id, title.take(500), t.text("artist").take(500), t.text("album").takeIf(String::isNotBlank),
+                (t.optDouble("duration", 0.0).takeIf { it.isFinite() && it in 0.0..86400.0 }?.times(1000)?.toLong() ?: 0),
+                t.text("artworkURL").ifBlank { t.text("albumArtworkURL") }.takeIf(String::isNotBlank),
+                t.text("streamURL").takeIf(String::isNotBlank), t.text("format"))
+        }
+    }
+    fun stream(text: String): AddonStream {
+        val r = JSONObject(text)
+        require(r.text("error").isBlank()) { "The add-on could not resolve this recording." }
+        val encrypted = r.opt("encrypted")
+        require(encrypted == null || encrypted == JSONObject.NULL || encrypted.toString().lowercase() in setOf("false", "none", "", "0")) { "Encrypted audio is not supported." }
+        val address = url(r.text("url")).toString()
+        val description = listOf("format", "quality", "streamQuality", "audioQuality").joinToString(" ") { r.text(it) }.lowercase()
+        val stated = r.text("codec").ifBlank { r.text("fileCodec") }.lowercase()
+        val codec = when {
+            stated.isNotBlank() -> stated
+            "flac" in description -> "flac"
+            "alac" in description -> "alac"
+            else -> r.text("format").lowercase()
+        }
+        require(codec in setOf("flac", "alac", "wav", "pcm", "aac", "mp3", "opus")) { "This audio codec is not supported." }
+        val kind = r.text("manifest").ifBlank { r.text("mediaType") }.ifBlank { r.text("format") }.lowercase()
+        val transport = when {
+            kind in setOf("hls", "m3u8", "application/x-mpegurl", "application/vnd.apple.mpegurl") || url(address).encodedPath.endsWith(".m3u8", true) -> "hls"
+            kind in setOf("dash", "mpd", "application/dash+xml") || url(address).encodedPath.endsWith(".mpd", true) -> "dash"
+            else -> null
+        }
+        fun number(key: String) = r.optDouble(key, 0.0).takeIf { it.isFinite() && it > 0 }
+        val rate = number("sampleRate") ?: Regex("([\\d.]+)\\s*khz").find(description)?.groupValues?.get(1)?.toDoubleOrNull()
+        val bits = number("bitDepth")?.toInt() ?: Regex("(\\d{1,2})\\s*-?\\s*bit").find(description)?.groupValues?.get(1)?.toIntOrNull()
+        val bitrate = number("bitrate")
+        return AddonStream(address, codec, transport, bits?.takeIf { it in 8..32 }, rate?.let { if (it < 1000) (it * 1000).toInt() else it.toInt() }?.takeIf { it in 8000..768000 }, bitrate?.let { if (it > 3000) (it / 1000).toInt() else it.toInt() })
+    }
+    fun flag(value: Any?): Boolean? = when (value?.toString()?.lowercase()) { "true", "1" -> true; "false", "0" -> false; else -> null }
+}
+
+/** Same tier negotiation as BitChord: exact option first, then a semantic match. */
+fun matchTier(tier: String, options: List<String>): String {
+    options.firstOrNull { it.equals(tier, true) }?.let { return it }
+    if (tier == "HI_RES_LOSSLESS") {
+        return options.firstOrNull { option -> listOf("hi_res", "hi-res", "hires", "master", "max", "best").any { it in option.lowercase() } }
+            ?: matchTier("LOSSLESS", options)
+    }
+    val words = when (tier.uppercase()) { "LOSSLESS" -> listOf("lossless", "flac", "hi_res", "hi-res", "hires", "master"); "LOW" -> listOf("low", "128", "96", "64"); else -> listOf("high", "320", "256") }
+    return options.firstOrNull { option -> words.any { it in option.lowercase() } } ?: options.firstOrNull() ?: tier
+}

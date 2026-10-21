@@ -39,7 +39,16 @@
         </intent>
     </queries>
 
+    <!-- The same app runs on Android TV, driven by the remote: nothing here is required hardware. -->
+    <uses-feature android:name="android.software.leanback" android:required="false" />
+    <uses-feature android:name="android.hardware.touchscreen" android:required="false" />
+    <uses-feature android:name="android.hardware.microphone" android:required="false" />
+    <uses-feature android:name="android.hardware.location" android:required="false" />
+    <uses-feature android:name="android.hardware.location.network" android:required="false" />
+    <uses-feature android:name="android.hardware.wifi" android:required="false" />
+
     <application
+        android:banner="@drawable/tv_banner"
         android:name=".OpenTuneApp"
         android:allowBackup="true"
         android:fullBackupContent="@xml/backup_rules"
@@ -65,6 +74,11 @@
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
+            <!-- The TV home screen's row of apps. -->
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LEANBACK_LAUNCHER" />
+            </intent-filter>
             <!-- Open YouTube Music and YouTube links: songs, playlists, albums, channels.
                  Not autoVerify: these domains aren't ours, so the user picks OpenTune. -->
             <intent-filter tools:ignore="AppLinkWarning">
@@ -77,6 +91,18 @@
                 <data android:host="youtube.com" />
                 <data android:host="m.youtube.com" />
                 <data android:host="youtu.be" />
+            </intent-filter>
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="opentune" android:host="pair" />
+            </intent-filter>
+            <intent-filter tools:ignore="AppLinkWarning">
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="https" android:host="justshivv.github.io" android:pathPrefix="/Opentune/pair/" />
             </intent-filter>
             <!-- Invites to a Listen together room: opentune://together/<code>. -->
             <intent-filter>

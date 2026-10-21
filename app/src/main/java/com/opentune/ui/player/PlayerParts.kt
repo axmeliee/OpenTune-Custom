@@ -1,5 +1,12 @@
 package com.opentune.ui.player
 
+import androidx.compose.foundation.focusable
+import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.key
+import androidx.compose.ui.input.key.onKeyEvent
+import androidx.compose.ui.input.key.type
 import com.opentune.data.settings.AppSettings
 import com.opentune.ui.components.livingArt
 
@@ -42,6 +49,7 @@ import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.material.icons.Icons
@@ -507,6 +515,7 @@ fun SeekBar(
     lyricAt: ((Long) -> String?)? = null,
     /** Where the song's parts (verse, chorus) begin, in ms, marked as small gaps in the track. */
     marks: List<Long> = emptyList(),
+    quality: (@Composable () -> Unit)? = null,
 ) {
     var dragFraction by remember { mutableStateOf<Float?>(null) }
     var scrubStartY by remember { mutableStateOf(0f) }
@@ -547,6 +556,10 @@ fun SeekBar(
         .animateFloat(-0.3f, 1.3f, infiniteRepeatable(tween(1_300, easing = LinearEasing)), label = "sweep") else null
     val sheen = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.55f)
 
+    // A remote or keyboard focuses the bar and moves through the song with left and right.
+    var focused by remember { mutableStateOf(false) }
+    val focusRing = MaterialTheme.colorScheme.primary
+
     Column(modifier) {
         Box {
         if (lyricAt != null) ScrubLyric(dragFraction, durationMs, lyricAt)
@@ -554,6 +567,13 @@ fun SeekBar(
             Modifier
                 .fillMaxWidth()
                 .height(28.dp)
+                .onFocusChanged { focused = it.isFocused }
+                .onKeyEvent { e ->
+                    val step = seekStepMs(e.key, durationMs) ?: return@onKeyEvent false
+                    if (e.type == KeyEventType.KeyDown) onSeek((position() + step).coerceIn(0L, durationMs))
+                    true
+                }
+                .focusable()
                 // Redrawn every frame while playing; its own layer keeps that from
                 // re-recording the rest of the player.
                 .graphicsLayer()
@@ -593,10 +613,11 @@ fun SeekBar(
                     }
                 },
         ) {
-            val h = trackHeight.toPx()
+            val h = trackHeight.toPx() * (if (focused) 2f else 1f)
             val y = (size.height - h) / 2
             val r = CornerRadius(h / 2)
             val f = fraction()
+            if (focused) drawRoundRect(focusRing, Offset(-3.dp.toPx(), y - 3.dp.toPx()), Size(size.width + 6.dp.toPx(), h + 6.dp.toPx()), CornerRadius(h / 2 + 3.dp.toPx()), style = Stroke(2.dp.toPx()))
             val b = if (durationMs > 0) (buffered().toFloat() / durationMs).coerceIn(0f, 1f) else 0f
             drawRoundRect(inactive, Offset(0f, y), Size(size.width, h), r)
             if (sweep != null) {
@@ -656,19 +677,35 @@ fun SeekBar(
         val elapsedSeconds by remember(durationMs) {
             derivedStateOf { ((dragFraction?.times(durationMs)?.toLong() ?: position()) / 1000) }
         }
-        if (look.seekbarTime != com.opentune.data.settings.SeekbarTime.HIDDEN) Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-            Text(if (loading) "--:--" else formatTime(elapsedSeconds * 1000), style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            // Time left, as Apple Music shows it, or the song's length.
-            Text(
-                when {
-                    durationMs <= 0 -> "--:--"
-                    look.seekbarTime == com.opentune.data.settings.SeekbarTime.TOTAL -> formatTime(durationMs)
-                    else -> "-" + formatTime((durationMs - elapsedSeconds * 1000).coerceAtLeast(0))
-                },
-                style = MaterialTheme.typography.labelMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
+        if (look.seekbarTime != com.opentune.data.settings.SeekbarTime.HIDDEN) {
+            val timeStyle = MaterialTheme.typography.labelMedium.copy(fontFeatureSettings = "tnum")
+            val measurer = androidx.compose.ui.text.rememberTextMeasurer()
+            val density = LocalDensity.current
+            // Reserve identical, stable side columns using the whole track's length.
+            // Seconds changing width must never push the quality label sideways.
+            val timeWidth = remember(durationMs, timeStyle, density) {
+                val sample = if (durationMs > 0) "-" + formatTime(durationMs) else "--:--"
+                with(density) { (measurer.measure(sample, timeStyle).size.width + 8.dp.roundToPx()).toDp() }
+            }
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                Text(if (loading) "--:--" else formatTime(elapsedSeconds * 1000), modifier = Modifier.width(timeWidth),
+                    style = timeStyle, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1)
+                quality?.let { Box(Modifier.weight(1f), contentAlignment = Alignment.Center) { it() } }
+                Text(
+                    when {
+                        durationMs <= 0 -> "--:--"
+                        look.seekbarTime == com.opentune.data.settings.SeekbarTime.TOTAL -> formatTime(durationMs)
+                        else -> "-" + formatTime((durationMs - elapsedSeconds * 1000).coerceAtLeast(0))
+                    },
+                    modifier = Modifier.width(timeWidth),
+                    style = timeStyle,
+                    textAlign = androidx.compose.ui.text.style.TextAlign.End,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                )
+            }
         }
+        if (look.seekbarTime == com.opentune.data.settings.SeekbarTime.HIDDEN) quality?.let { Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) { it() } }
     }
 }
 
@@ -1009,5 +1046,16 @@ private fun BoxScope.ScrubLyric(dragFraction: Float?, durationMs: Long, lyricAt:
         ) { t ->
             Text(t, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold, maxLines = 2, overflow = TextOverflow.Ellipsis, textAlign = androidx.compose.ui.text.style.TextAlign.Center)
         }
+    }
+}
+
+/** How far left or right on a remote moves the song: 10 seconds, or a fiftieth of a long one. */
+internal fun seekStepMs(key: Key, durationMs: Long): Long? {
+    if (durationMs <= 0) return null
+    val step = maxOf(10_000L, durationMs / 50)
+    return when (key) {
+        Key.DirectionRight, Key.MediaFastForward -> step
+        Key.DirectionLeft, Key.MediaRewind -> -step
+        else -> null
     }
 }

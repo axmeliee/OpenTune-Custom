@@ -286,7 +286,7 @@ fun ModesPill(shuffle: ShuffleMode, smartShuffleAvailable: Boolean, repeatMode: 
     val haptics = com.opentune.ui.components.rememberHaptics()
     val context = LocalContext.current
     val shape = RoundedCornerShape(30.dp)
-    Row(Modifier.height(52.dp).glass(shape, Color.White.copy(alpha = 0.10f)), verticalAlignment = Alignment.CenterVertically) {
+    Row(Modifier.height(52.dp).clip(shape).background(MaterialTheme.colorScheme.surfaceContainerHigh), verticalAlignment = Alignment.CenterVertically) {
         // Like repeat beside it, shuffle has a third state for a queue from a
         // playlist or album: off, shuffle, smart shuffle, then off again.
         PillSegment(

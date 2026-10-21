@@ -62,16 +62,11 @@ object Support {
         }
     }
 
-    // ---- Asking for a star, twice a month ----
-
-    /** Days of use before the first ask. */
+    // A community invitation at most once every 30 days, after five days of use.
     private const val DAYS_BEFORE = 5
-    /** However the halves of the month fall, asks are at least this far apart. */
-    private val MIN_GAP_MS = TimeUnit.DAYS.toMillis(7)
-
+    private val MIN_GAP_MS = TimeUnit.DAYS.toMillis(30)
     private fun prefs(context: Context) = context.getSharedPreferences("support", Context.MODE_PRIVATE)
 
-    /** Counts today as a day OpenTune was used; called when the app comes to the front. */
     fun usedToday(context: Context, now: Long = System.currentTimeMillis()) {
         val p = prefs(context)
         val day = TimeUnit.MILLISECONDS.toDays(now)
@@ -79,31 +74,20 @@ object Support {
         p.edit { putLong("lastDay", day); putInt("days", p.getInt("days", 0) + 1) }
     }
 
-    /**
-     * Which half of which month [now] falls in, counted from year 0: the
-     * 1st to the 15th is one half, the 16th to the end the other. One ask
-     * per half makes two a month.
-     */
-    internal fun halfMonth(now: Long, zone: java.time.ZoneId = java.time.ZoneId.systemDefault()): Int {
-        val date = java.time.Instant.ofEpochMilli(now).atZone(zone).toLocalDate()
-        return (date.year * 12 + date.monthValue - 1) * 2 + if (date.dayOfMonth <= 15) 0 else 1
-    }
-
-    /** Whether to ask for a star now. */
     fun shouldAsk(context: Context, now: Long = System.currentTimeMillis()): Boolean {
         val p = prefs(context)
-        return shouldAsk(p.getBoolean("done", false), p.getInt("days", 0), p.getInt("askedHalf", -1), p.getLong("askedAt", 0), now)
+        return shouldAsk(p.getBoolean("done", false), p.getInt("days", 0), p.getLong("askedAt", 0), now)
     }
 
-    internal fun shouldAsk(done: Boolean, days: Int, askedHalf: Int, askedAt: Long, now: Long, zone: java.time.ZoneId = java.time.ZoneId.systemDefault()): Boolean =
-        !done && days >= DAYS_BEFORE && halfMonth(now, zone) != askedHalf && now - askedAt >= MIN_GAP_MS
+    internal fun shouldAsk(done: Boolean, days: Int, askedAt: Long, now: Long): Boolean =
+        !done && days >= DAYS_BEFORE && now - askedAt >= MIN_GAP_MS
 
-    /** The prompt was answered: [never] for a star given or "Don't ask again"; otherwise it comes back in the next half of the month. */
+    /** Record an impression too, so closing the app cannot trigger another prompt. */
     fun answered(context: Context, never: Boolean, now: Long = System.currentTimeMillis()) = prefs(context).edit {
-        putInt("askedHalf", halfMonth(now))
         putLong("askedAt", now)
         if (never) putBoolean("done", true)
     }
+
 }
 
 /** A thank-you to the developer: a few suggested sums, or your own, sent from the phone's UPI app. */
@@ -151,57 +135,33 @@ fun SupportDialog(onDismiss: () -> Unit) {
     )
 }
 
-/**
- * Twice a month, after some days of use: a small card that slides up above
- * the dock asking for a star on GitHub. Starring or "Don't ask again" ends
- * it; closing it waits for the next half of the month.
- */
+/** A dismissible monthly community invitation. */
 @Composable
 fun StarCard(onDismiss: () -> Unit, modifier: Modifier = Modifier) {
     val context = LocalContext.current
-    val shape = androidx.compose.foundation.shape.RoundedCornerShape(26.dp)
-    Column(
-        modifier.fillMaxWidth().padding(horizontal = 12.dp).padding(bottom = 10.dp)
-            .glass(shape)
-            .padding(start = 18.dp, end = 10.dp, top = 16.dp, bottom = 8.dp),
-    ) {
-        Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
-            androidx.compose.foundation.layout.Box(
-                Modifier.size(40.dp).clip(androidx.compose.foundation.shape.CircleShape)
-                    .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.18f)),
-                contentAlignment = androidx.compose.ui.Alignment.Center,
-            ) {
-                Icon(Icons.Rounded.Star, null, Modifier.size(22.dp), tint = MaterialTheme.colorScheme.primary)
-            }
-            Column(Modifier.weight(1f).padding(start = 14.dp, end = 4.dp)) {
-                Text("Enjoying OpenTune?", style = MaterialTheme.typography.titleMedium)
-                Text(
-                    "A star on GitHub helps other people find it. It's free and takes a second.",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
-            // Not now: back in the next half of the month.
-            androidx.compose.material3.IconButton(
-                onClick = { Support.answered(context, never = false); onDismiss() },
-                modifier = Modifier.align(androidx.compose.ui.Alignment.Top).size(36.dp),
-            ) {
-                Icon(Icons.Rounded.Close, "Not now", Modifier.size(20.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
-            }
-        }
-        Row(Modifier.fillMaxWidth().padding(top = 6.dp), verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
-            androidx.compose.material3.TextButton(onClick = { Support.answered(context, never = true); onDismiss() }) {
-                Text("Don't ask again", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            }
-            androidx.compose.foundation.layout.Spacer(Modifier.weight(1f))
-            androidx.compose.material3.Button(onClick = {
-                Support.answered(context, never = true)
-                runCatching { context.startActivity(Intent(Intent.ACTION_VIEW, Support.REPO.toUri())) }
-                onDismiss()
-            }) {
-                Icon(Icons.Rounded.Star, null, Modifier.size(18.dp))
-                Text("Star on GitHub", Modifier.padding(start = 6.dp), maxLines = 1)
-            }
-        }
+    androidx.compose.runtime.LaunchedEffect(Unit) { Support.answered(context, never = false) }
+    fun open(url: String) {
+        runCatching { context.startActivity(Intent(Intent.ACTION_VIEW, url.toUri())) }
+        onDismiss()
     }
+    FloatingDialog(
+        onDismissRequest = onDismiss,
+        icon = { Icon(Icons.Rounded.Favorite, null) },
+        title = { Text("Made for music. Built together.") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                Text("Join the OpenTune community to share ideas, find add-ons and help shape what comes next. A GitHub star helps more listeners discover the app.")
+                androidx.compose.material3.FilledTonalButton(
+                    onClick = { open("https://discord.gg/6udrCVh5n") }, modifier = Modifier.fillMaxWidth(),
+                ) { Text("Join Discord") }
+                androidx.compose.material3.FilledTonalButton(
+                    onClick = { open(Support.REPO) }, modifier = Modifier.fillMaxWidth(),
+                ) { Icon(Icons.Rounded.Star, null, Modifier.size(18.dp)); Text("Star on GitHub", Modifier.padding(start = 8.dp)) }
+                androidx.compose.material3.TextButton(onClick = { Support.answered(context, never = true); onDismiss() }) {
+                    Text("Don't show again")
+                }
+            }
+        },
+        confirmButton = { SheetButton("Maybe later", onClick = onDismiss, closes = true) },
+    )
 }

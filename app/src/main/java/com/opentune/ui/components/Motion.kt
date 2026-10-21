@@ -11,6 +11,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.unit.dp
 
 /**
  * A click that sinks a little under the finger and springs back, the way
@@ -27,7 +28,7 @@ fun Modifier.pressable(onClick: () -> Unit, pressedScale: Float = 0.95f): Modifi
     )
     return this
         .graphicsLayer { scaleX = scale; scaleY = scale }
-        .clickable(interactionSource = interaction, indication = null, onClick = onClick)
+        .clickable(interactionSource = interaction, indication = FocusRing(androidx.compose.foundation.shape.RoundedCornerShape(14.dp)), onClick = onClick)
 }
 
 /**

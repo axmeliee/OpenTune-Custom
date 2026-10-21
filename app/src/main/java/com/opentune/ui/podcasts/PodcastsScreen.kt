@@ -322,7 +322,7 @@ fun EpisodeRow(
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
                         modifier = Modifier.padding(top = 4.dp).then(
-                            if (showShow && episode.showBrowseId != null) Modifier.clickable { onOpenShow(episode.showBrowseId) } else Modifier,
+                            if (showShow && episode.showBrowseId != null) Modifier.clickable { onOpenShow(episode.showBrowseId!!) } else Modifier,
                         ),
                     )
                 }

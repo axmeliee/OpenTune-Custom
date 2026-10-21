@@ -322,7 +322,7 @@ private fun ListenOrb(listening: Boolean, level: () -> Float, modifier: Modifier
     }
     val shape = remember { Path() }
     Canvas(
-        modifier.clickable(interactionSource = remember { MutableInteractionSource() }, indication = null, onClick = onClick),
+        modifier.clickable(interactionSource = remember { MutableInteractionSource() }, indication = com.opentune.ui.components.FocusRing(androidx.compose.foundation.shape.CircleShape), onClick = onClick),
     ) {
         val c = center
         val base = size.minDimension * 0.27f * (1f + 0.03f * breathe * (1f - on.value))

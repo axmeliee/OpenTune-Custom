@@ -13,17 +13,21 @@ OpenTune adapts these in `ui/player/EchoMotion.kt`, `PlayerButtons.kt`
 and `ui/PageMotion.kt`, with its own palette, pause/lifecycle
 handling and reduced-motion behavior. See [Echo motion](docs/echo-motion.md).
 
-The community lossless provider protocols, endpoint registry, SpotiFLAC session
-signing and verification flow under `data/lossless/` and `ui/settings/SpotiflacVerification.kt`
-are adapted from
+The earlier community lossless integration was adapted from
 [Spotui](https://github.com/Spotui/Spotui/tree/main/app/src/main/java/com/music/spotui/lossless)
-under GPLv3. OpenTune adds YouTube Music identity lookup through
-[Odesli](https://odesli.co), cancellable network requests, FLAC validation,
-separate rendition caches and playback fallback.
+under GPLv3, with Qobuz relay protocol references from
+[Meld](https://github.com/FrancescoGrazioso/Meld) (Metrolist Project, GPLv3).
+Its fixed provider registry, relay and SpotiFLAC verification implementation have
+been removed; FLAC validation and rendition-cache behavior remain in `data/lossless/`.
 
-The Qobuz relay protocol in `data/lossless/QobuzCatalog.kt` follows
-[Meld's QobuzAudioProvider](https://github.com/FrancescoGrazioso/Meld/blob/main/app/src/main/kotlin/com/metrolist/music/qobuz/QobuzAudioProvider.kt)
-(Metrolist Project, copyright 2026, GPLv3). The JioSaavn URL decoding and
+The HTTP add-on client in `data/addons/` implements the documented
+[BitChord add-on protocol](https://bitchord.kushagrasingh.in/docs), informed by
+[BitChord's source](https://github.com/kushagrasinghx/BitChord) under GPLv3.
+OpenTune supplies its own settings, persistence, strict catalog matching,
+transport validation and ordered lookup integration. No executable extension
+packages are bundled.
+
+The JioSaavn URL decoding and
 conditional 320 kbps rendition selection follow
 [BitChord's JioSaavnService](https://github.com/kushagrasinghx/BitChord/blob/main/app/src/main/java/com/music/bitchord/data/jiosaavn/JioSaavnService.kt)
 (GPLv3). OpenTune adds conservative catalog matching and byte/size verification.
@@ -52,3 +56,19 @@ under CC BY-NC-SA 4.0), and radio stations from the
 The QR code on a Listen together invite is made with
 [ZXing](https://github.com/zxing/zxing) (`com.google.zxing:core`), by the
 ZXing authors, under the Apache License 2.0.
+
+## BitChord browser player and audio compatibility fixes
+
+The `web/` preview adapts the existing React/WXT browser player from
+[kushagrasinghx/BitChord](https://github.com/kushagrasinghx/BitChord), commit
+`edc1e6f36febf71a118e649411d2fc21b70ead45`, licensed GPL-3.0. Its research notes
+are preserved in `web/docs/`; OpenTune branding, addon integration, host/path
+restrictions and build configuration were added here. The original license
+applies to the derived files; OpenTune is also GPL-3.0.
+
+`LosslessAudioPolicy` adapts BitChord's Samsung FLAC decoder exclusion and
+STREAMINFO measurement approach from `AudioOutputPolicy.kt` and
+`PlaybackService.kt` at the same commit. It excludes affected Samsung vendor
+FLAC decoders and reads actual FLAC metadata rather than treating float PCM
+as proof of a hi-res master. No proprietary SF Pro font files are bundled in
+the browser preview; it uses DM Sans and system fallbacks.

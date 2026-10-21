@@ -7,6 +7,8 @@
   &nbsp;·&nbsp;
   <a href="https://justshivv.github.io/Opentune/">Website</a>
   &nbsp;·&nbsp;
+  <a href="https://discord.gg/6udrCVh5n">Discord</a>
+  &nbsp;·&nbsp;
   <a href="#features">Features</a>
   &nbsp;·&nbsp;
   <a href="#building">Build it yourself</a>
@@ -28,6 +30,9 @@ An Android music player for YouTube Music. It talks to YouTube's internal
 no server of your own. Sign in if you want your likes and playlists.
 
 Built with Kotlin, Jetpack Compose and Media3. Android 8.0 and newer.
+
+Questions, ideas or bug reports: join the
+[Discord](https://discord.gg/6udrCVh5n).
 
 ## See it
 
@@ -109,30 +114,17 @@ iOS 16 or newer.
 
 ### Listening
 
-- **Highest-quality sources first.** Choose Max streaming quality to check
-  matching FLAC sources before opening YouTube audio. A bounded search compares
-  verified candidates by bit depth and sample rate, including hi-res. If no FLAC
-  is available, OpenTune tries matching JioSaavn 320 kbps, then falls back to
-  InnerTubeX/InnerTube. Provider checks can delay startup (up to 12 seconds for
-  FLAC plus 10 seconds for JioSaavn). The unmetered-only setting still applies.
-  Other quality levels start on YouTube and can optionally upgrade afterward.
-  Qobuz supports direct catalog
-  matching and a compatible custom relay; Tidal, Amazon and the original
-  Qobuz community route use Odesli when its public mapping API is available.
-  A matching, verified
-  FLAC can replace the stream at the current position; an unavailable or failed
-  provider falls back to YouTube. External sources are restricted to unmetered
-  networks by default. Optional SpotiFLAC verification and a Qobuz relay
-  can be configured under Higher-quality sources. JioSaavn is lossy.
-  Track title, artist, album (when known),
-  duration, the catalog's 320 flag and the returned audio are checked first.
-  Availability depends on third-party providers. This does
-  not change downloads, local files, podcasts, radio or your own server streams.
-  Signal Path shows the active provider and actual codec, precision, sample rate
-  and bitrate when known; output quality still depends on
-  Android, your audio device and enabled effects.
-  See [the source review](docs/audio-source-review.md) for the assessed clients
-  and live-provider limitations.
+- **Lossless audio from add-ons you choose.** Add a BitChord-compatible HTTPS
+  service or manifest URL in **Settings → Audio → Audio add-ons**. Enable sources
+  and put them in your preferred order. Max quality starts music through the
+  usual fast sources, then checks add-ons in the background. The first matching
+  lossless result wins. **Lossless below Max** enables those checks at other
+  playback qualities. Max downloads also try eligible add-ons that allow direct
+  file downloads. Signal Path reports the source and detected audio format;
+  availability and actual precision depend on the recording and service.
+  JioSaavn remains a lossy 320 kbps option with YouTube fallback. Network policy
+  and output restrictions still apply. See [audio add-ons](docs/audio-addons.md)
+  for setup, supported transports and platform limits.
 
 - **Two stream engines that switch on their own.**
   InnerTubeX leads and
@@ -286,6 +278,26 @@ iOS 16 or newer.
   OpenTune"), and tap a song to play its list from there. Sideloaded
   builds show up in Android Auto once "Unknown sources" is turned on in
   Android Auto's developer settings.
+- **Android TV.** The same APK shows up in the TV's row of apps. The remote
+  moves between rows and buttons with a clear highlight, OK opens or plays,
+  and left and right on the seek bar skip through the song. The screen stays
+  on while music plays.
+- **Wear OS.** A separate watch app (`wear/`) that plays on the watch
+  itself, over its Wi-Fi or LTE and Bluetooth headphones, with no phone
+  needed. Search by voice or keyboard, play your liked and recent songs on
+  the watch, skip, like, see what's up next, and turn the crown for volume.
+  It asks for headphones rather than playing from the watch's speaker.
+- **Desktop (early).** A Windows, macOS and Linux app (`desktop/`, run it
+  with `./gradlew :desktop:run`; CI builds an MSI, DMG and DEB). It has
+  Home, search with recent searches, albums, playlists, artists and
+  podcasts, a queue that carries on with YouTube Music's up-next, synced
+  lyrics from the phone's sources (lit word by word, with a per-song source
+  and offset), your own playlists, liked and recent songs, your own
+  Subsonic server, the 15-band equalizer and its presets, speed,
+  balance and a sleep timer. It uses the phone app's code for YouTube Music,
+  lyrics, Subsonic and settings as-is, but finds streams with
+  NewPipe only, so some songs don't play yet. Signing in to YouTube Music
+  isn't there. On Linux it needs FFmpeg's libraries (libavcodec) for audio.
 - **Opens YouTube links.** music.youtube.com, youtube.com and youtu.be
   links, or links shared to the app, open in OpenTune.
 

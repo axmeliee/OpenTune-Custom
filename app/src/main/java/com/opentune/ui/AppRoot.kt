@@ -174,7 +174,7 @@ fun AppRoot(vm: PlayerViewModel) {
     if (whatsNew.isNotEmpty() && update == null) {
         com.opentune.ui.components.WhatsNewSheet(whatsNew, com.opentune.BuildConfig.VERSION_NAME, onDismiss = { whatsNew = emptyList() })
     }
-    // Twice a month, after some days of use, a request for a star on GitHub,
+    // Once a month, after some days of use, a community invitation,
     // sliding up above the dock; never over an update or What's new, and not
     // straight after opening.
     var askStar by remember { mutableStateOf(false) }
@@ -184,7 +184,7 @@ fun AppRoot(vm: PlayerViewModel) {
     }
     val starCard: @Composable () -> Unit = {
         androidx.compose.animation.AnimatedVisibility(
-            visible = askStar && update == null && whatsNew.isEmpty(),
+            visible = askStar && !playerOpen && update == null && whatsNew.isEmpty(),
             enter = androidx.compose.animation.slideInVertically(spring(dampingRatio = 0.8f, stiffness = 300f)) { it } + fadeIn(),
             exit = androidx.compose.animation.slideOutVertically(tween(220)) { it } + fadeOut(tween(180)),
         ) {

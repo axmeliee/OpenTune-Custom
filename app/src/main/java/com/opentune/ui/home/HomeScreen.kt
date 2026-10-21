@@ -127,6 +127,7 @@ fun HomeScreen(
     LaunchedEffect(signedIn) {
         if (signedIn != seenSignedIn) {
             seenSignedIn = signedIn
+            MusicRepository.refreshHomeRecommendations()
             loader.reload(keepContent = true)
         }
     }
@@ -150,7 +151,7 @@ fun HomeScreen(
 
     com.opentune.ui.components.MarkRefreshBox(
         isRefreshing = refreshing,
-        onRefresh = { loader.reload(keepContent = true) },
+        onRefresh = { MusicRepository.refreshHomeRecommendations(); loader.reload(keepContent = true) },
         modifier = Modifier.fillMaxSize(),
     ) {
         LazyColumn(state = listState, contentPadding = contentPadding, modifier = Modifier.fillMaxSize().nestedScroll(covers.scrollWatch)) {

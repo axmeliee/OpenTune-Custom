@@ -47,7 +47,7 @@ for tag, attrs in home.tags:
 privacy = Page((ROOT / 'site/privacy/index.html').read_text())
 assert privacy.matches('link', rel='canonical', href=BASE + 'privacy/')
 urls = [node.text for node in ElementTree.parse(ROOT / 'site/sitemap.xml').iter('{http://www.sitemaps.org/schemas/sitemap/0.9}loc')]
-assert set(urls) == {BASE, BASE + 'privacy/'}
+assert set(urls) == {BASE, BASE + 'privacy/', BASE + 'addons/'}
 assert not any('/usage' in u or '/together' in u for u in urls)
 with tempfile.TemporaryDirectory() as directory:
     subprocess.run([sys.executable, str(ROOT / 'scripts/prepare-store-package.py'), '--commit', 'a' * 40, '--output', directory], check=True)
