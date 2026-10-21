@@ -141,7 +141,7 @@ class ChoiceSheetScreenshotTest {
     }
 
     /** The song menu opens at half height, and dragging its top takes it up. */
-    @Test fun songMenuHalfThenFull() {
+    @Test fun songMenuOpensFull() {
         com.opentune.data.library.LibraryStore.init(compose.activity)
         val song = com.opentune.data.model.Song("4NRXx6U8ABQ", "Blinding Lights", "The Weeknd", null, "3:20")
         val menu = com.opentune.ui.components.SongMenuActions({}, {}, {}, {}, {}, dislike = {}, playVideoVersion = {})
@@ -150,14 +150,9 @@ class ChoiceSheetScreenshotTest {
                 com.opentune.ui.components.SongMenuSheet(song.copy(artistId = "UC1", albumId = "MPRE1"), onDismiss = {})
             }
         }
-        save("song_menu_half")
-        val cardTop = { compose.onNodeWithText("Blinding Lights").fetchSemanticsNode().boundsInRoot.top }
-        val before = cardTop()
-        compose.onNodeWithText("Blinding Lights").performTouchInput { swipeUp(startY = centerY, endY = centerY - 900f, durationMillis = 300) }
-        compose.mainClock.advanceTimeBy(1_500)
-        compose.waitForIdle()
         save("song_menu_full")
-        assertTrue("the menu should grow when its top is dragged up ($before -> ${cardTop()})", cardTop() < before - 200f)
+        // It opens at full height, so a row well down the menu is already on screen without any scrolling.
+        compose.onNodeWithText("Open album").assertIsDisplayed()
     }
 
     private fun show(content: @androidx.compose.runtime.Composable () -> Unit) {

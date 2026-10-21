@@ -155,7 +155,6 @@ object WhatsNew {
         "0.3.7" to listOf(
             Note(Icons.AutoMirrored.Rounded.QueueMusic, "Daily mixes", "New on Home every day, made from what you play: your top artists, this time of day, what's on repeat and old favourites."),
             Note(Icons.Rounded.Waves, "Waveform seek bar", "See the song's loud and quiet parts as you scrub. Settings › Player."),
-            Note(Icons.Rounded.AutoAwesome, "Covers that fly", "Tap a song and its cover flies down into the now-playing card. Settings › Motion."),
             Note(Icons.Rounded.Favorite, "A burst of hearts", "Liking a song in the player sends hearts out in the cover's colours."),
             Note(Icons.Rounded.Lyrics, "Lyrics in colour", "The cover's colours drift slowly behind the lyrics."),
             Note(Icons.Rounded.Image, "Blurred headers", "Album, artist and playlist pages have their cover blurred behind the top."),
