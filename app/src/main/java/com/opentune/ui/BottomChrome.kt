@@ -728,7 +728,19 @@ internal fun dockInk(): DockInk {
     val liquid = LocalBackdrop.current != null && liquidGlassOn() && ui.glassStyle == GlassStyle.LIQUID
     if (!liquid) {
         val a = scheme.primary
-        return DockInk(a, scheme.onSurfaceVariant, scheme.onSurface, a.copy(alpha = 0.24f), a.copy(alpha = 0.14f), a.copy(alpha = 0.45f), a.copy(alpha = 0.08f), null, null)
+        // Over a glass dock with content showing through, the muted inactive tint
+        // washes out and the icons vanish. Lift it toward white on a dark app, or
+        // a strong ink on a light one, and give every glyph a faint shadow so it
+        // reads over whatever colour is behind. A solid dock keeps the scheme tint.
+        val overGlass = LocalBackdrop.current != null && liquidGlassOn()
+        val dark = scheme.surface.luminance() <= 0.5f
+        val off = when {
+            !overGlass -> scheme.onSurfaceVariant
+            dark -> Color.White.copy(alpha = 0.9f)
+            else -> scheme.onSurface.copy(alpha = 0.82f)
+        }
+        val shade = if (overGlass) androidx.compose.ui.graphics.Shadow(Color.Black.copy(alpha = 0.3f), blurRadius = 5f) else null
+        return DockInk(a, off, scheme.onSurface, a.copy(alpha = 0.24f), a.copy(alpha = 0.14f), a.copy(alpha = 0.45f), a.copy(alpha = 0.08f), null, shade)
     }
     val dark = scheme.surface.luminance() <= 0.5f
     return DockInk(
