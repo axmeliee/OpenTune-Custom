@@ -182,6 +182,14 @@ fun SubtitleLine(
 /** Between the names in a line of artists: commas, "&", " x ", "and", "feat.", "ft.", "with". */
 private val ARTIST_JOINS = Regex("""\s*,\s*|\s+&\s+|\s+x\s+|\s+and\s+|\s+(?:feat\.?|ft\.?|featuring|with)\s+""", RegexOption.IGNORE_CASE)
 
+/** A link that looks like the text around it in every state. */
+private val PLAIN_LINK = androidx.compose.ui.text.TextLinkStyles(
+    style = androidx.compose.ui.text.SpanStyle(),
+    focusedStyle = androidx.compose.ui.text.SpanStyle(),
+    hoveredStyle = androidx.compose.ui.text.SpanStyle(),
+    pressedStyle = androidx.compose.ui.text.SpanStyle(),
+)
+
 /**
  * A song's artists on one line, each name its own link: tapping a name opens
  * that artist's page, not just the first one's. Names cut off at the end of
@@ -204,7 +212,9 @@ fun ArtistLinks(
                 val n = artists.substring(at, end)
                 val trimmed = n.trim()
                 if (trimmed.isEmpty()) { append(n); return }
-                withLink(androidx.compose.ui.text.LinkAnnotation.Clickable(trimmed) { onArtist(trimmed) }) { append(n) }
+                // Drawn like the plain line it replaces: no underline, no colour, no
+                // press highlight. Only a tap on the name gives it away as a link.
+                withLink(androidx.compose.ui.text.LinkAnnotation.Clickable(trimmed, PLAIN_LINK) { onArtist(trimmed) }) { append(n) }
             }
             ARTIST_JOINS.findAll(artists).forEach { m ->
                 name(m.range.first)
