@@ -135,11 +135,19 @@ internal fun LandscapePlayer(
             val roomy = maxHeight >= 300.dp
             Column(Modifier.fillMaxSize(), verticalArrangement = Arrangement.SpaceBetween) {
                 Row(verticalAlignment = Alignment.Top) {
+                    // Lyrics or the queue in the cover's place: the cover stays in sight, small, before the title.
+                    if (side != null) {
+                        Artwork(
+                            song.thumbnailUrl.artworkAt(com.opentune.data.model.ROW_ART_PX),
+                            Modifier.padding(top = 4.dp, end = 14.dp).size(64.dp),
+                            RoundedCornerShape(10.dp),
+                        )
+                    }
                     Column(Modifier.weight(1f)) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Text(device, style = MaterialTheme.typography.labelLarge, color = scheme.primary, maxLines = 1, overflow = TextOverflow.Ellipsis)
                             Spacer(Modifier.width(4.dp))
-                            Icon(Icons.Rounded.Headphones, null, Modifier.size(14.dp), tint = scheme.primary)
+                            Icon(outputRoute.icon, null, Modifier.size(14.dp), tint = scheme.primary)
                         }
                         Text(song.title, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
                         Text(
@@ -169,14 +177,10 @@ internal fun LandscapePlayer(
                     val context = LocalContext.current
                     RoundIcon(Icons.Rounded.SpeakerGroup, "Choose where it plays", { openOutputSwitcher(context) })
                     RoundIcon(
-                        when {
-                            outputRoute == OutputRoute.CAST -> Icons.Rounded.Cast
-                            outputRoute.isHeadset -> Icons.Rounded.Headphones
-                            else -> Icons.Rounded.Smartphone
-                        },
+                        outputRoute.icon,
                         "Audio output",
                         { showOutput = true },
-                        tint = if (outputRoute != OutputRoute.PHONE) scheme.primary else scheme.onSurface,
+                        tint = if (outputRoute == OutputRoute.CAST) scheme.primary else scheme.onSurface,
                     )
                     if (showOutput) com.opentune.ui.cast.AudioOutputSheet(
                         onDismiss = { showOutput = false },

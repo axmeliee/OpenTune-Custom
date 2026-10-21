@@ -1,0 +1,133 @@
+package com.opentune.ui.components
+
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.spring
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.derivedStateOf
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.runtime.withFrameNanos
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.CornerRadius
+import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.geometry.RoundRect
+import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.Outline
+import androidx.compose.ui.graphics.Shape
+import androidx.compose.ui.graphics.TransformOrigin
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.unit.Density
+import androidx.compose.ui.unit.LayoutDirection
+import androidx.compose.ui.unit.dp
+
+/**
+ * The full player growing out of the mini player as one card, and shrinking
+ * back into it: the card's bounds run between the mini player's
+ * ([PlayerMorph.miniBar]) and the screen, its corners round as it gets
+ * smaller, and near the mini player's size it darkens to the mini player's
+ * face and fades onto it. A pull up on the mini player moves it with the
+ * finger ([PlayerMorph.pulling]); a drag down on the player hands over where
+ * the card was ([PlayerMorph.handOff]) and the shrink carries on from there.
+ *
+ * [content] is laid out once at full size. Each frame only moves, scales and
+ * clips its layer, on the render thread: nothing is measured or composed
+ * again while the card moves.
+ */
+@Composable
+fun PlayerSheet(open: Boolean, onSettled: (Boolean) -> Unit, content: @Composable () -> Unit) {
+    val t = remember { Animatable(if (open) 1f else 0f) }
+    LaunchedEffect(open) {
+        if (open) {
+            if (PlayerMorph.sheetAt > t.value) t.snapTo(PlayerMorph.sheetAt)
+            PlayerMorph.sheetAt = 0f
+            PlayerMorph.cardFrom = null
+            // The first frames build the player (out of sight, or under the
+            // finger): the card starts moving once they're done, not through them.
+            withFrameNanos { }
+            withFrameNanos { }
+            t.animateTo(1f, spring(dampingRatio = 0.92f, stiffness = 340f, visibilityThreshold = 0.001f))
+        } else {
+            // The page and dock come back under it on this frame.
+            withFrameNanos { }
+            t.animateTo(0f, spring(dampingRatio = 1f, stiffness = 420f, visibilityThreshold = 0.001f))
+            PlayerMorph.cardFrom = null
+        }
+    }
+    val settled by remember { derivedStateOf { t.value >= 1f && !t.isRunning } }
+    val report by rememberUpdatedState(onSettled)
+    LaunchedEffect(settled, open) { report(settled && open) }
+
+    val shown by remember { derivedStateOf { t.value > 0f || PlayerMorph.pulling > 0f || PlayerMorph.sheetAt > 0f } }
+    if (!open && !shown) return
+
+    val density = LocalDensity.current
+    val barCorner = with(density) { 22.dp.toPx() }
+    val shadow = with(density) { 18.dp.toPx() }
+    val fallbackLift = with(density) { 120.dp.toPx() }
+    val fallbackHeight = with(density) { 64.dp.toPx() }
+    val face = MaterialTheme.colorScheme.surfaceContainerHigh
+    // Where the card is, 0 on the mini player and 1 filling the screen.
+    val p: () -> Float = { maxOf(t.value, PlayerMorph.pulling, PlayerMorph.sheetAt) }
+    Box(
+        Modifier
+            .fillMaxSize()
+            .graphicsLayer {
+                val w = size.width
+                val h = size.height
+                if (w <= 0f || h <= 0f) return@graphicsLayer
+                val k = p().coerceIn(0f, 1f)
+                val mini = PlayerMorph.miniBar
+                    ?: Rect(w * 0.04f, h - fallbackLift - fallbackHeight, w * 0.96f, h - fallbackLift)
+                val card = PlayerMorph.cardFrom
+                val from = card ?: Rect(0f, 0f, w, h)
+                fun lerp(a: Float, b: Float) = a + (b - a) * k
+                val left = lerp(mini.left, from.left)
+                val top = lerp(mini.top, from.top)
+                val width = lerp(mini.width, from.width).coerceAtLeast(1f)
+                val height = lerp(mini.height, from.height)
+                // Scaled by width alone, so the player inside keeps its shape;
+                // the clip below takes it down to the card's height.
+                val s = width / w
+                transformOrigin = TransformOrigin(0f, 0f)
+                translationX = left
+                translationY = top
+                scaleX = s
+                scaleY = s
+                val miniCorner = if (PlayerMorph.miniBarRound) mini.height / 2f else barCorner
+                val corner = lerp(miniCorner, if (card != null) PlayerMorph.cardCornerPx else 0f) / s
+                val clipHeight = (height / s).coerceAtMost(h)
+                if (k < 1f || card != null) {
+                    shape = CardShape(clipHeight, corner)
+                    clip = true
+                    shadowElevation = shadow * minOf(1f, (1f - k) * 4f, k * 4f)
+                } else {
+                    clip = false
+                    shadowElevation = 0f
+                }
+                // On the mini player's size, it fades onto the real one beneath.
+                alpha = (k / 0.12f).coerceIn(0f, 1f)
+            },
+    ) {
+        content()
+        // The mini player's face, coming over the player as the card gets small.
+        Box(
+            Modifier
+                .fillMaxSize()
+                .graphicsLayer { alpha = ((0.45f - p()) / 0.45f).coerceIn(0f, 1f) }
+                .background(face),
+        )
+    }
+}
+
+/** The card's outline: [height] tall from the top, with [corner] corners, in the layer's own pixels. */
+private class CardShape(private val height: Float, private val corner: Float) : Shape {
+    override fun createOutline(size: Size, layoutDirection: LayoutDirection, density: Density): Outline =
+        Outline.Rounded(RoundRect(0f, 0f, size.width, minOf(height, size.height), CornerRadius(corner)))
+}

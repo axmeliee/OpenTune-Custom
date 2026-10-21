@@ -35,6 +35,7 @@ import androidx.compose.ui.unit.dp
 import com.opentune.ui.components.FloatingCard
 import com.opentune.ui.components.rememberHaptics
 import com.opentune.ui.player.OutputRoute
+import com.opentune.ui.player.icon
 import com.opentune.ui.player.isHeadset
 import com.opentune.ui.player.rememberOutputDeviceName
 import com.opentune.ui.player.rememberOutputRoute
@@ -54,7 +55,7 @@ fun AudioOutputSheet(onDismiss: () -> Unit, onCast: () -> Unit, onPipeline: () -
     FloatingCard(onDismiss = onDismiss, title = "Audio output", icon = Icons.Rounded.Speaker) {
         Column(Modifier.padding(bottom = 10.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
             OutputRow(
-                icon = if (route.isHeadset) Icons.Rounded.Headphones else Icons.Rounded.Smartphone,
+                icon = if (route == OutputRoute.CAST) Icons.Rounded.Smartphone else route.icon,
                 title = if (route == OutputRoute.CAST) "This phone" else deviceName,
                 subtitle = if (casting == null) "Playing here" else "Silent here while casting",
                 selected = casting == null,

@@ -722,8 +722,9 @@ fun AppRoot(vm: PlayerViewModel) {
             // Floating chrome: the mini player above the nav pill and search button.
             // It sits outside the recorded layer, so its Liquid Glass can sample it.
             if (chromeVisible) CompositionLocalProvider(LocalBackdrop provides backdrop.takeIf { sampled }) {
-            val openPlayer: (Boolean) -> Unit = { folded ->
-                if (!chromeUi.reduceAnimation) com.opentune.ui.components.PlayerMorph.startOpen(round = folded)
+            val openPlayer: (Boolean) -> Unit = { _ ->
+                // The whole player grows out of the mini player, from wherever a pull left it.
+                if (!chromeUi.reduceAnimation) com.opentune.ui.components.PlayerMorph.openSheet()
                 playerOpen = true
             }
             if (layout.nav == NavChrome.DOCK) {
@@ -799,39 +800,41 @@ fun AppRoot(vm: PlayerViewModel) {
                 }
             }
 
-            AnimatedVisibility(
-                visible = sheetOpen && song != null,
-                // The cover grows in on open and shrinks back out on close; the player
-                // itself just fades behind it, leaving the morph to carry the motion.
-                enter = if (com.opentune.ui.components.PlayerMorph.expanding) fadeIn(tween(320)) else PageMotion.playerIn(chromeUi.playerMotion, chromeUi.reduceAnimation),
-                exit = if (com.opentune.ui.components.PlayerMorph.collapsing) fadeOut(tween(360)) else PageMotion.playerOut(chromeUi.playerMotion, chromeUi.reduceAnimation),
-            ) {
-                val closePlayer = {
-                    if (!chromeUi.reduceAnimation) com.opentune.ui.components.PlayerMorph.startClose()
-                    playerOpen = false
-                }
+            val sheetMorph = !chromeUi.reduceAnimation
+            androidx.compose.runtime.SideEffect { com.opentune.ui.components.PlayerMorph.sheetMorph = sheetMorph }
+            // The player itself, whichever way it comes and goes.
+            val playerSheet: @Composable (settled: Boolean) -> Unit = { settled ->
                 // Registered after the NavHost's own handler, so back closes the
                 // player first instead of popping the page behind it.
-                BackHandler(enabled = sheetOpen) { closePlayer() }
-                // Once the player has slid fully over the page, the chrome under it is
+                BackHandler(enabled = sheetOpen) { playerOpen = false }
+                // Once the player is fully over the page, the chrome under it is
                 // taken out: no second position loop or glass redrawn behind it.
-                val settled = transition.currentState == EnterExitState.Visible && transition.targetState == EnterExitState.Visible
                 var still by remember { mutableStateOf(true) }
                 LaunchedEffect(settled, still) { playerCovers = settled && still }
                 DisposableEffect(Unit) { onDispose { playerCovers = false } }
                 PlayerScreen(
                     vm,
-                    onCollapse = closePlayer,
+                    onCollapse = { playerOpen = false },
                     onCovering = { still = it },
                     onTogether = { playerOpen = false; nav.navigate("together") },
                     onEqualizer = { playerOpen = false; nav.navigate("equalizer") },
                 )
             }
-            // The cover growing out of the mini player into the opening player, over everything.
-            com.opentune.ui.components.CoverMorph(
-                song?.thumbnailUrl.artworkAt(com.opentune.data.model.PLAYER_ART_PX),
-                song?.thumbnailUrl.artworkAt(ROW_ART_PX),
-            )
+            if (sheetMorph) {
+                // Out of the mini player as one card, and back into it.
+                var sheetSettled by remember { mutableStateOf(false) }
+                com.opentune.ui.components.PlayerSheet(open = sheetOpen && song != null, onSettled = { sheetSettled = it }) {
+                    playerSheet(sheetSettled)
+                }
+            } else {
+                AnimatedVisibility(
+                    visible = sheetOpen && song != null,
+                    enter = PageMotion.playerIn(chromeUi.playerMotion, chromeUi.reduceAnimation),
+                    exit = PageMotion.playerOut(chromeUi.playerMotion, chromeUi.reduceAnimation),
+                ) {
+                    playerSheet(transition.currentState == EnterExitState.Visible && transition.targetState == EnterExitState.Visible)
+                }
+            }
             // The chrome's snackbar is under the open player; this one shows
             // over it instead, so an Undo for something chosen in the player's
             // menu can be seen. Only one of the two is ever there.

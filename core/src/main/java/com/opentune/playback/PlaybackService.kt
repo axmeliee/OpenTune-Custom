@@ -206,12 +206,15 @@ class PlaybackService : MediaLibraryService() {
         // which is video-sized caution. A stream starts after half a second buffered
         // and a local file after a quarter second.
         val loadControl = DefaultLoadControl.Builder()
-            .setBufferDurationsMsForStreaming(20_000, FAR_BUFFER_MS, 500, 2_000)
+            .setBufferDurationsMsForStreaming(30_000, FAR_BUFFER_MS, 500, 2_000)
             .setBufferDurationsMsForLocalPlayback(5_000, FAR_BUFFER_MS, 250, 500)
-            // The byte ceiling decides, not the time one: about a whole song
-            // of Opus, so a fetched track is fetched once and seeks within it
-            // are instant. Media3's audio default is around 40 seconds.
+            // The byte ceiling decides, not the time one: a whole song at CD
+            // quality, a couple of minutes at 24-bit/96 kHz, so a fetched track is
+            // fetched once and seeks within it are instant. 8 MB held only about
+            // 15 s of hi-res FLAC, and any dip in the connection stalled it.
             .setTargetBufferBytes(FAR_BUFFER_BYTES)
+            // However heavy the stream, at least the minimum time ahead is held.
+            .setPrioritizeTimeOverSizeThresholds(true)
             .setBackBuffer(BACK_BUFFER_MS, true)
             .build()
 
@@ -680,9 +683,21 @@ class PlaybackService : MediaLibraryService() {
         }
 
         override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
+            // The same song put onto its better stream: the swap that did it is
+            // still running, waiting to bring the volume back up. A new upgrade
+            // check here used to cancel it and leave every song after silent.
+            val swap = mediaItem != null && mediaItem.mediaId == swappingTo
             updateExternalStats()
             applyLoudness()
-            scheduleUpgrade()
+            if (!swap) scheduleUpgrade()
+            // Nothing but a blend or a swap turns the main player down; outside
+            // one, a new song always starts at full level.
+            (mediaSession?.player as? ExoPlayer)?.let { p ->
+                if (!swap && !swapRamping && crossfade?.blending != true && p.volume < 1f) {
+                    Log.w(TAG, "Player volume was left at ${p.volume}; back to full")
+                    p.volume = 1f
+                }
+            }
             watchSegments(mediaItem)
             // A podcast episode picks up where it was left.
             mediaItem?.mediaId?.let(Podcasts::resumeAt)?.let { at ->
@@ -715,6 +730,7 @@ class PlaybackService : MediaLibraryService() {
         }
 
         override fun onPlaybackStateChanged(playbackState: Int) {
+            watchStall(playbackState)
             if (playbackState == Player.STATE_READY) {
                 updateExternalStats()
                 // The figure arrives with the stream; on a first play it's
@@ -1092,6 +1108,8 @@ class PlaybackService : MediaLibraryService() {
         val index = player.currentMediaItemIndex
         val item = player.getMediaItemAt(index)
         val next = item.buildUpon().setUri(uri).setMimeType(externalStreamKeyOf(uri)?.let { ExternalStreams.get(id, it)?.mimeType }).build()
+        // Playing out loud: a second player carries the song across the switch, so nothing is heard to stop.
+        if (player.isPlaying && !BitPerfectUsb.active) bridgedSwap(player, index, id, next)?.let { return it }
         if (!prebuffer(player, next)) {
             Log.w(TAG, "The better stream for $id didn't load in time; staying on this one")
             return false
@@ -1099,23 +1117,154 @@ class PlaybackService : MediaLibraryService() {
         // The queue may have moved on, or a blend begun, while it loaded.
         if (player.currentMediaItemIndex != index || player.currentMediaItem?.mediaId != id || crossfade?.blending == true) return false
         val smooth = player.isPlaying && !BitPerfectUsb.active
-        val level = player.volume
-        if (smooth) rampVolume(player, 0f, SWAP_DIP_MS)
-        val position = player.currentPosition
-        swappingTo = id
-        // If the player updates the item in place there's no transition to clear this.
-        scope.launch { delay(2_000); if (swappingTo == id) swappingTo = null }
-        player.replaceMediaItem(index, next)
-        updateExternalStats()
-        applyLoudness()
-        if (player.currentMediaItemIndex != index || player.currentPosition < position - 1_000) player.seekTo(index, position)
-        if (smooth) {
-            // Back up once the new stream is sounding, to the level it was at.
-            kotlinx.coroutines.withTimeoutOrNull(3_000) { while (player.playbackState != Player.STATE_READY || !player.isPlaying) delay(30) }
-            rampVolume(player, level, SWAP_RISE_MS)
+        // Outside a blend (ruled out above) the main player plays at full level.
+        val level = 1f
+        swapRamping = smooth
+        try {
+            if (smooth) rampVolume(player, 0f, SWAP_DIP_MS)
+            val position = player.currentPosition
+            swappingTo = id
+            // If the player updates the item in place there's no transition to clear this.
+            scope.launch { delay(2_000); if (swappingTo == id) swappingTo = null }
+            player.replaceMediaItem(index, next)
+            updateExternalStats()
+            applyLoudness()
+            if (player.currentMediaItemIndex != index || player.currentPosition < position - 1_000) player.seekTo(index, position)
+            if (smooth) {
+                // Back up once the new stream is sounding.
+                kotlinx.coroutines.withTimeoutOrNull(3_000) { while (player.playbackState != Player.STATE_READY || !player.isPlaying) delay(30) }
+                rampVolume(player, level, SWAP_RISE_MS)
+            }
+            Log.d(TAG, "Swapped $id to its upgraded stream at ${position}ms")
+            return true
+        } finally {
+            swapRamping = false
+            // Cancelled or failed between the dip and the rise: never leave the music silent.
+            if (smooth && crossfade?.blending != true && player.volume < level) player.volume = level
         }
-        Log.d(TAG, "Swapped $id to its upgraded stream at ${position}ms")
-        return true
+    }
+
+    /** True while a swap has the volume dipped, so nothing else puts it back mid-ramp. */
+    private var swapRamping = false
+
+    /**
+     * The swap with nothing to hear: a second player (the "bridge") loads the
+     * better stream ahead, starts it silently in step with the song, and takes
+     * the sound over in a short crossfade. The main player changes streams
+     * while silent, catches up with the bridge, and takes the sound back the
+     * same way. Its rebuffering after the change happens while the bridge is
+     * the one sounding, so no gap or dip reaches the ears.
+     *
+     * Null when the bridge couldn't be set up (no factory, or the stream
+     * wouldn't load): the caller falls back to the plain swap. Otherwise
+     * whether it swapped.
+     */
+    private suspend fun bridgedSwap(player: ExoPlayer, index: Int, id: String, next: MediaItem): Boolean? {
+        val make = auditionPlayer ?: return null
+        val bridge = make()
+        swapRamping = true
+        var handedOver = false
+        try {
+            if (player.audioSessionId != C.AUDIO_SESSION_ID_UNSET) bridge.setAudioSessionId(player.audioSessionId)
+            bridge.playbackParameters = player.playbackParameters
+            bridge.setMediaItem(next)
+            bridge.seekTo(player.currentPosition + AUDITION_LEAD_MS)
+            bridge.prepare()
+            val loaded = kotlinx.coroutines.withTimeoutOrNull(AUDITION_TIMEOUT_MS) {
+                while (true) {
+                    if (bridge.playerError != null || bridge.playbackState == Player.STATE_ENDED) return@withTimeoutOrNull false
+                    if (player.currentMediaItem?.mediaId != id) return@withTimeoutOrNull false
+                    val covered = bridge.bufferedPosition >= player.currentPosition + AUDITION_AHEAD_MS ||
+                        (bridge.duration > 0 && bridge.bufferedPosition >= bridge.duration - 500)
+                    if (bridge.playbackState == Player.STATE_READY && covered) return@withTimeoutOrNull true
+                    delay(200)
+                }
+                @Suppress("UNREACHABLE_CODE") false
+            } ?: false
+            if (!loaded) {
+                Log.w(TAG, "The better stream for $id didn't load in time; staying on this one")
+                return false
+            }
+            // The queue may have moved on, a blend begun or playback stopped while it loaded.
+            if (player.currentMediaItemIndex != index || player.currentMediaItem?.mediaId != id ||
+                crossfade?.blending == true || !player.isPlaying
+            ) return false
+
+            // 1. The bridge plays, silent, in step with the song as it is heard now.
+            bridge.volume = 0f
+            bridge.playWhenReady = true
+            if (!lineUp(follower = bridge, leader = player)) {
+                Log.w(TAG, "Couldn't line the better stream for $id up with the song; staying on this one")
+                return false
+            }
+            // 2. The sound moves onto it.
+            crossfadeVolumes(from = player, to = bridge, BRIDGE_FADE_MS)
+            handedOver = true
+
+            // 3. Silent now, the main player changes streams and catches up with the bridge.
+            swappingTo = id
+            scope.launch { delay(4_000); if (swappingTo == id) swappingTo = null }
+            player.replaceMediaItem(index, next)
+            updateExternalStats()
+            applyLoudness()
+            player.seekTo(index, bridge.currentPosition + BRIDGE_SEEK_LEAD_MS)
+            val ready = kotlinx.coroutines.withTimeoutOrNull(BRIDGE_CATCH_UP_MS) {
+                while (player.playbackState != Player.STATE_READY || !player.isPlaying) delay(20)
+                true
+            } == true
+            if (ready) lineUp(follower = player, leader = bridge)
+
+            // 4. The sound comes back to the main player, now on the better stream.
+            crossfadeVolumes(from = bridge, to = player, BRIDGE_FADE_MS)
+            handedOver = false
+            Log.d(TAG, "Swapped $id to its upgraded stream at ${player.currentPosition}ms, bridged")
+            return true
+        } finally {
+            swapRamping = false
+            bridge.release()
+            // However it ended, the main player sounds at full level again.
+            if (crossfade?.blending != true && player.volume < 1f) player.volume = 1f
+            if (handedOver) Log.w(TAG, "Bridge for $id ended early; the main player took the sound back")
+        }
+    }
+
+    /**
+     * Seeks [follower] (playing) until it plays where [leader] does, within
+     * [BRIDGE_ALIGN_MS]. Each seek lands a little ahead, by an amount learned
+     * from the last try, to cover the time the seek itself takes to sound.
+     */
+    private suspend fun lineUp(follower: ExoPlayer, leader: ExoPlayer): Boolean {
+        var lead = BRIDGE_SEEK_LEAD_MS
+        repeat(BRIDGE_ALIGN_TRIES) {
+            if (!settledPlaying(follower)) return false
+            val drift = follower.currentPosition - leader.currentPosition
+            if (kotlin.math.abs(drift) <= BRIDGE_ALIGN_MS) return true
+            lead = (lead - drift).coerceIn(0L, 2_000L)
+            follower.seekTo(leader.currentPosition + lead)
+        }
+        return settledPlaying(follower) && kotlin.math.abs(follower.currentPosition - leader.currentPosition) <= BRIDGE_ALIGN_MS * 3
+    }
+
+    /** Waits for [p] to be playing from a buffer, then a moment more for its position to settle. */
+    private suspend fun settledPlaying(p: ExoPlayer): Boolean {
+        val ok = kotlinx.coroutines.withTimeoutOrNull(3_000) {
+            while (p.playbackState != Player.STATE_READY || !p.isPlaying) delay(15)
+            true
+        } == true
+        if (ok) delay(BRIDGE_SETTLE_MS)
+        return ok
+    }
+
+    /** Equal-power fade from [from] to [to] over [ms]: the level stays even through it. */
+    private suspend fun crossfadeVolumes(from: ExoPlayer, to: ExoPlayer, ms: Long) {
+        val start = SystemClock.elapsedRealtime()
+        while (true) {
+            val p = ((SystemClock.elapsedRealtime() - start).toFloat() / ms).coerceIn(0f, 1f)
+            from.volume = kotlin.math.cos(p * Math.PI / 2).toFloat()
+            to.volume = kotlin.math.sin(p * Math.PI / 2).toFloat()
+            if (p >= 1f) break
+            delay(10)
+        }
     }
 
     private fun updateExternalStats() {
@@ -1421,6 +1570,41 @@ class PlaybackService : MediaLibraryService() {
      *    the queue and autoplay without a sound. Playback stops on the error
      *    instead, so it's shown, and play tries again.
      */
+    private var stallJob: Job? = null
+
+    /**
+     * A better stream that stops to buffer mid-song and doesn't come back
+     * within [STALL_FALLBACK_MS] goes back to the stream the song started on,
+     * from where it stopped, the way a failed one does: a hi-res file over a
+     * weak connection shouldn't leave the music standing still.
+     */
+    private fun watchStall(state: Int) {
+        stallJob?.cancel()
+        if (state != Player.STATE_BUFFERING) return
+        val player = mediaSession?.player as? ExoPlayer ?: return
+        val item = player.currentMediaItem ?: return
+        val uri = item.localConfiguration?.uri ?: return
+        if (!isUpgradedUri(uri) && externalStreamKeyOf(uri) == null) return
+        // Only mid-song: the start and a seek buffer by design.
+        if (player.currentPosition < STALL_MIN_POSITION_MS) return
+        val at = player.currentPosition
+        stallJob = scope.launch {
+            delay(STALL_FALLBACK_MS)
+            if (player.playbackState != Player.STATE_BUFFERING || !player.playWhenReady) return@launch
+            if (player.currentMediaItem?.localConfiguration?.uri != uri || kotlin.math.abs(player.currentPosition - at) > 1_000) return@launch
+            Log.w(TAG, "Better stream for ${item.mediaId} stalled for ${STALL_FALLBACK_MS}ms at ${at}ms; back to the one it started on")
+            StreamResolver.dropUpgrade(item.mediaId)
+            val index = player.currentMediaItemIndex
+            swappingTo = item.mediaId
+            player.replaceMediaItem(index, item.buildUpon().setUri(youtubeFallbackUri(item.mediaId)).setMimeType(null).build())
+            updateExternalStats()
+            applyLoudness()
+            player.seekTo(index, at)
+            player.prepare()
+            PlaybackRequests.report("The better stream kept stopping, so this song went back to the regular one")
+        }
+    }
+
     private fun recover(error: PlaybackException) {
         val player = mediaSession?.player as? ExoPlayer ?: return
         val item = player.currentMediaItem ?: return
@@ -1573,10 +1757,23 @@ class PlaybackService : MediaLibraryService() {
         const val AUDITION_LEAD_MS = 1_500L
         const val AUDITION_TIMEOUT_MS = 25_000L
         /** The volume dip around a swap: quickly down, gently back. */
+        /** Each crossfade between the main player and the bridge. */
+        const val BRIDGE_FADE_MS = 260L
+        /** Two players this close play the same moment: their mix over a fade sounds as one. */
+        const val BRIDGE_ALIGN_MS = 20L
+        const val BRIDGE_ALIGN_TRIES = 5
+        /** A first guess at how long a seek takes to sound, landed ahead by. */
+        const val BRIDGE_SEEK_LEAD_MS = 120L
+        const val BRIDGE_SETTLE_MS = 120L
+        /** How long the bridge carries the song while the main player loads the new stream. */
+        const val BRIDGE_CATCH_UP_MS = 8_000L
         const val SWAP_DIP_MS = 120L
         const val SWAP_RISE_MS = 260L
+        /** Stuck buffering this long mid-song, a better stream gives way to the regular one. */
+        const val STALL_FALLBACK_MS = 6_000L
+        const val STALL_MIN_POSITION_MS = 3_000L
         const val FAR_BUFFER_MS = 15 * 60 * 1000
-        const val FAR_BUFFER_BYTES = 8 * 1024 * 1024
+        const val FAR_BUFFER_BYTES = 48 * 1024 * 1024
         const val BACK_BUFFER_MS = 30_000
         const val MIN_LOUDNESS_GAIN_MB = -1500
         const val MAX_LOUDNESS_GAIN_MB = 900

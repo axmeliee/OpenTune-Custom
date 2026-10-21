@@ -482,6 +482,8 @@ data class LibrarySettings(
     val songCacheMb: Int = 512,
     val downloadQuality: AudioQuality = AudioQuality.MAX,
     val downloadWifiOnly: Boolean = true,
+    /** Also copy each download into the phone's Music folder, in a format other apps play; see [com.opentune.data.download.DownloadExport]. */
+    val exportDownloads: Boolean = false,
     /** Leave out songs and albums marked explicit; see [com.opentune.data.ContentFilter]. */
     val hideExplicit: Boolean = false,
     /** Notify about new albums and singles from followed artists. */

@@ -767,6 +767,7 @@ fun LocalPlaylistScreen(id: String, contentPadding: PaddingValues, actions: Song
                 isPlaying = actions.isPlaying,
                 onPlayNext = { actions.playNext(song) },
                 onAddToQueue = { actions.addToQueue(song) },
+                onRemoveFromPlaylist = { LibraryStore.removeFromPlaylist(id, i) },
                 trailing = {
                     IconButton(onClick = { LibraryStore.removeFromPlaylist(id, i) }) { Icon(Icons.Rounded.Close, "Remove from playlist") }
                 },

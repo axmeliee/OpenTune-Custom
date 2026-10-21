@@ -37,9 +37,13 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
+import org.robolectric.annotation.GraphicsMode
 
 /** Swiping song rows in an ordinary vertical list; the arithmetic is in [SwipeQueueTest]. */
 @RunWith(RobolectricTestRunner::class)
+// Native graphics: a slow drag is also a long press, and the menu it opens
+// copies the screen for its frost, which legacy graphics can't draw.
+@GraphicsMode(GraphicsMode.Mode.NATIVE)
 @Config(sdk = [35], application = android.app.Application::class)
 class SwipeToQueueRowTest {
     @get:Rule val compose = createComposeRule()

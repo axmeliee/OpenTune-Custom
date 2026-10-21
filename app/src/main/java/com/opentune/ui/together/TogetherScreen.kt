@@ -168,7 +168,7 @@ fun TogetherScreen(contentPadding: PaddingValues, code: String?, onBack: () -> U
     if (switchRoom && invite != null) {
         androidx.compose.material3.AlertDialog(
             onDismissRequest = { switchRoom = false },
-            title = { Text("Join the invited room?") },
+            title = { com.opentune.ui.components.FrostBehind(enabled = !com.opentune.data.settings.AppSettings.ui.collectAsState().value.reduceBlur); Text("Join the invited room?") },
             text = { Text("This leaves your current room.") },
             confirmButton = { androidx.compose.material3.TextButton(onClick = {
                 switchRoom = false

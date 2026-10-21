@@ -44,6 +44,7 @@ import androidx.compose.material.icons.rounded.MoreHoriz
 import androidx.compose.material.icons.rounded.Person
 import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material.icons.rounded.Radio
+import androidx.compose.material.icons.rounded.RemoveCircleOutline
 import androidx.compose.material.icons.rounded.Share
 import androidx.compose.material.icons.rounded.Shuffle
 import androidx.compose.material.icons.rounded.ThumbDownOffAlt
@@ -145,7 +146,13 @@ fun ContextMenu(anchor: Rect, onDismiss: () -> Unit, entries: List<MenuEntry>, p
         onDismissRequest = { close() },
         properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false),
     ) {
-        FrostBehind(enabled = !ui.reduceBlur)
+        // The screen behind frosted by the app itself; the window's blur only where that can't be done.
+        var frost by remember { mutableStateOf(if (ui.reduceBlur) Frost.FAILED else Frost.PENDING) }
+        FrostBehind(enabled = !ui.reduceBlur, standIn = frost != Frost.FAILED)
+        if (frost != Frost.FAILED) {
+            val got = ScreenFrost(shown = { shown }, veil = 0.62f)
+            LaunchedEffect(got) { frost = got }
+        }
         val view = LocalView.current
         val density = LocalDensity.current
         // Where this dialog's own window sits on the screen, to place the item where it was.
@@ -285,7 +292,14 @@ private fun MenuLine(entry: MenuEntry, onPick: (MenuEntry) -> Unit) {
  * full menu for everything else.
  */
 @Composable
-fun SongContextMenu(song: Song, anchor: Rect, onDismiss: () -> Unit, preview: @Composable () -> Unit) {
+fun SongContextMenu(
+    song: Song,
+    anchor: Rect,
+    onDismiss: () -> Unit,
+    /** Inside one of your own playlists: takes this song out of it. */
+    onRemoveFromPlaylist: (() -> Unit)? = null,
+    preview: @Composable () -> Unit,
+) {
     val actions = LocalSongMenu.current
     val context = LocalContext.current
     val liked by LibraryStore.liked.collectAsState()
@@ -306,6 +320,7 @@ fun SongContextMenu(song: Song, anchor: Rect, onDismiss: () -> Unit, preview: @C
         add(MenuEntry(if (isLiked) "Remove from Liked Music" else "Like", if (isLiked) Icons.Rounded.Favorite else Icons.Rounded.FavoriteBorder, 0) { LibraryStore.setLiked(song, !isLiked) })
         if (actions != null) add(MenuEntry("Dislike", Icons.Rounded.ThumbDownOffAlt, 0) { actions.dislike(song) })
         add(MenuEntry("Add to playlist", Icons.AutoMirrored.Rounded.PlaylistAdd, 0) { next = "playlist" })
+        onRemoveFromPlaylist?.let { add(MenuEntry("Remove from this playlist", Icons.Rounded.RemoveCircleOutline, 0) { it() }) }
         if (!local) add(
             when (download?.state) {
                 DownloadState.DONE -> MenuEntry("Remove download", Icons.Rounded.DeleteOutline) { Downloads.remove(context, song.videoId) }
