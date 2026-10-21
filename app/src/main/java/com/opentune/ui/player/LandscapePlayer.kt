@@ -38,6 +38,7 @@ import androidx.compose.material.icons.rounded.KeyboardArrowDown
 import androidx.compose.material.icons.rounded.MoreHoriz
 import androidx.compose.material.icons.rounded.SpeakerGroup
 import androidx.compose.material.icons.rounded.Cast
+import androidx.compose.material.icons.rounded.Smartphone
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -104,6 +105,8 @@ internal fun LandscapePlayer(
     var nextRolls by remember { mutableIntStateOf(0) }
     val haptics = com.opentune.ui.components.rememberHaptics()
     var showCast by remember { mutableStateOf(false) }
+    var showOutput by remember { mutableStateOf(false) }
+    val outputRoute = rememberOutputRoute()
     Row(
         Modifier
             .fillMaxSize()
@@ -165,7 +168,21 @@ internal fun LandscapePlayer(
                     }
                     val context = LocalContext.current
                     RoundIcon(Icons.Rounded.SpeakerGroup, "Choose where it plays", { openOutputSwitcher(context) })
-                    RoundIcon(Icons.Rounded.Cast, "Play on another device", { showCast = true })
+                    RoundIcon(
+                        when {
+                            outputRoute == OutputRoute.CAST -> Icons.Rounded.Cast
+                            outputRoute.isHeadset -> Icons.Rounded.Headphones
+                            else -> Icons.Rounded.Smartphone
+                        },
+                        "Audio output",
+                        { showOutput = true },
+                        tint = if (outputRoute != OutputRoute.PHONE) scheme.primary else scheme.onSurface,
+                    )
+                    if (showOutput) com.opentune.ui.cast.AudioOutputSheet(
+                        onDismiss = { showOutput = false },
+                        onCast = { showOutput = false; showCast = true },
+                        onPipeline = { showOutput = false; onSignal() },
+                    )
                     if (showCast) com.opentune.ui.cast.CastSheet(onDismiss = { showCast = false })
                 }
                 if (roomy) {

@@ -245,8 +245,15 @@ data class PlaybackSettings(
     val sleepWindDown: Boolean = true,
     val wifiQuality: AudioQuality = AudioQuality.MAX,
     val mobileQuality: AudioQuality = AudioQuality.MAX,
-    /** Keep hi-res local files in 32-bit float to the output; bypasses effects for them. */
-    val floatOutput: Boolean = false,
+    /**
+     * Carry the signal to the output as 32-bit float. With float output on, the
+     * decoder is asked for high-res PCM rather than 16-bit (Android 12+ FLAC
+     * decoders oblige), so a 24-bit source keeps its precision to the mixer
+     * instead of being cut to 16-bit at the decoder. On by default for
+     * end-to-end hi-res; a device whose mixer dislikes float can turn it off and
+     * fall back to dithered 16-bit.
+     */
+    val floatOutput: Boolean = true,
     val preferUsbDac: Boolean = true,
     /** Slowly level every track toward the same loudness. */
     val loudnessNormalization: Boolean = true,

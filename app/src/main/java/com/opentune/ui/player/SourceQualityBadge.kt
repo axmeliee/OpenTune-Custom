@@ -55,8 +55,9 @@ internal fun SourceQualityBadge(mediaId: String, format: AudioFormatInfo?, onCli
     val label = qualityStatusLabel(source, if (source != null) format else null, upgrading == mediaId)
     val colors = MaterialTheme.colorScheme
     val ui by com.opentune.data.settings.AppSettings.ui.collectAsState()
-    val phase = if (ui.reduceAnimation || !isHighestQuality(source, format)) null else rememberInfiniteTransition(label = "quality light")
-        .animateFloat(-1f, 2f, infiniteRepeatable(tween(3200, easing = LinearEasing)), label = "quality sweep")
+    // A thin light line runs across the label whatever the quality; it just reads the signal path.
+    val phase = if (ui.reduceAnimation) null else rememberInfiniteTransition(label = "quality light")
+        .animateFloat(-0.15f, 1.15f, infiniteRepeatable(tween(2800, easing = LinearEasing)), label = "quality sweep")
     TextButton(onClick = onClick, modifier = modifier.widthIn(max = 280.dp).fillMaxWidth().heightIn(min = 40.dp).semantics { contentDescription = "$label. Open signal path" },
         colors = ButtonDefaults.textButtonColors(contentColor = colors.onSurfaceVariant),
         contentPadding = PaddingValues(horizontal = 6.dp, vertical = 4.dp)) {
@@ -70,10 +71,14 @@ internal fun SourceQualityBadge(mediaId: String, format: AudioFormatInfo?, onCli
                     drawContent()
                     phase?.value?.let { progress ->
                         val x = progress * size.width
-                        drawRect(androidx.compose.ui.graphics.Brush.linearGradient(
-                            listOf(Color.Transparent, colors.onSurface.copy(alpha = 0.6f), Color.Transparent),
-                            start = androidx.compose.ui.geometry.Offset(x - 35.dp.toPx(), 0f),
-                            end = androidx.compose.ui.geometry.Offset(x + 35.dp.toPx(), size.height)),
+                        val half = 9.dp.toPx()
+                        // A narrow upright line of light, swept over the grey text only.
+                        drawRect(androidx.compose.ui.graphics.Brush.horizontalGradient(
+                            0f to Color.Transparent,
+                            0.5f to colors.onSurface.copy(alpha = 0.85f),
+                            1f to Color.Transparent,
+                            startX = x - half,
+                            endX = x + half),
                             blendMode = androidx.compose.ui.graphics.BlendMode.SrcAtop)
                     }
                 }

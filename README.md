@@ -96,6 +96,40 @@ whenever the iOS app changes on main.
 
 iOS 16 or newer.
 
+### Android TV
+
+The phone APK runs on Android TV too, and shows up in the TV's row of
+apps. You drive it with the remote, and the screen stays on while music
+plays.
+
+Typing a password with a remote is no fun, so you sign the TV in from
+your phone instead:
+
+1. Install the same APK on the TV, from the
+   [releases](https://github.com/justshivv/Opentune/releases) page.
+2. On the TV, open Settings → Account and choose Sign in with your phone.
+3. Scan the QR code with a phone that has OpenTune, on the same Wi-Fi,
+   and approve sharing your YouTube Music session. The code expires after
+   two minutes.
+
+The phone and the TV each keep their own local library.
+
+### Web player (preview)
+
+There's a player you open in a browser on a computer, written in React.
+You can browse, search and listen there. It plays YouTube Music through a
+companion browser extension, so you install that as well; it works in
+Chrome and Firefox. The extension isn't in the browser stores yet, so you
+load a preview package in developer mode. Your library stays in that
+browser.
+
+Open it at
+[justshivv.github.io/Opentune/player](https://justshivv.github.io/Opentune/player/).
+
+It's a preview, so not everything from the Android app is there. Audio
+add-ons work for direct FLAC over CORS-enabled media, and the audio stays
+on your own connection with no hosted proxy.
+
 ## Highlights
 
 - **No ads in the app, no account, no server.** Signing in is optional and
@@ -107,6 +141,9 @@ iOS 16 or newer.
   in step, on their own phones.
 - **Live radio** from 50,000+ stations, nearest first.
 - **Cast** to Chromecasts, smart TVs and network speakers on your Wi-Fi.
+- **On the web and the TV too.** A browser player (preview, with a
+  companion extension) and an Android TV app you sign in by scanning a
+  code from your phone.
 - **Name that song**: hold the phone up and it tells you what's playing.
 - **Podcasts**, downloads, Android Auto, a home-screen widget and imports
   from Spotify and YouTube playlists.
