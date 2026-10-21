@@ -418,6 +418,45 @@ private fun outputName(context: Context, am: AudioManager?): String {
         ?.takeIf { it.isNotBlank() } ?: "This phone"
 }
 
+/** Which kind of output the sound is going to, for the player's output button and the pipeline page. */
+enum class OutputRoute { PHONE, HEADPHONES, BLUETOOTH, USB, CAST }
+
+/** True for anything you'd put over your ears: the button shows a headphone icon for these. */
+val OutputRoute.isHeadset: Boolean get() = this == OutputRoute.HEADPHONES || this == OutputRoute.BLUETOOTH || this == OutputRoute.USB
+
+/** The live output route, following device changes and casting. */
+@Composable
+fun rememberOutputRoute(): OutputRoute {
+    val context = LocalContext.current
+    val am = remember { context.getSystemService(AudioManager::class.java) }
+    var route by remember { mutableStateOf(outputRoute(am)) }
+    DisposableEffect(am) {
+        val cb = object : AudioDeviceCallback() {
+            override fun onAudioDevicesAdded(added: Array<out AudioDeviceInfo>?) { route = outputRoute(am) }
+            override fun onAudioDevicesRemoved(removed: Array<out AudioDeviceInfo>?) { route = outputRoute(am) }
+        }
+        am?.registerAudioDeviceCallback(cb, null)
+        onDispose { am?.unregisterAudioDeviceCallback(cb) }
+    }
+    val cast by com.opentune.cast.Cast.session.collectAsState()
+    return if (cast != null) OutputRoute.CAST else route
+}
+
+private fun outputRoute(am: AudioManager?): OutputRoute {
+    val devices = am?.getDevices(AudioManager.GET_DEVICES_OUTPUTS).orEmpty()
+    fun has(vararg types: Int) = devices.any { it.type in types }
+    val bt = buildList {
+        add(AudioDeviceInfo.TYPE_BLUETOOTH_A2DP)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) { add(AudioDeviceInfo.TYPE_BLE_HEADSET); add(AudioDeviceInfo.TYPE_BLE_SPEAKER) }
+    }.toIntArray()
+    return when {
+        has(*bt) -> OutputRoute.BLUETOOTH
+        has(AudioDeviceInfo.TYPE_USB_HEADSET, AudioDeviceInfo.TYPE_USB_DEVICE) -> OutputRoute.USB
+        has(AudioDeviceInfo.TYPE_WIRED_HEADPHONES, AudioDeviceInfo.TYPE_WIRED_HEADSET) -> OutputRoute.HEADPHONES
+        else -> OutputRoute.PHONE
+    }
+}
+
 /** What the sleep timer shows: off, minutes left, or "end of song". */
 @Composable
 fun sleepTimerLabel(): String? {

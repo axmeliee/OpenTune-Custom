@@ -86,6 +86,8 @@ fun SettingRow(
     onClick: (() -> Unit)? = null,
     trailing: (@Composable () -> Unit)? = null,
     below: (@Composable ColumnScope.() -> Unit)? = null,
+    /** Shown where the icon would be; an avatar, say. Takes the icon's place when set. */
+    leading: (@Composable () -> Unit)? = null,
     /** Still being worked on: marked with a small "Beta" tag after the title. */
     beta: Boolean = false,
 ) {
@@ -97,7 +99,10 @@ fun SettingRow(
             .padding(horizontal = 20.dp, vertical = 16.dp),
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
-            if (icon != null) {
+            if (leading != null) {
+                leading()
+                Box(Modifier.width(26.dp))
+            } else if (icon != null) {
                 Icon(icon, null, tint = MaterialTheme.colorScheme.onSurface.copy(alpha = alpha), modifier = Modifier.size(26.dp))
                 Box(Modifier.width(26.dp))
             }
@@ -120,7 +125,7 @@ fun SettingRow(
             }
         }
         if (below != null) {
-            Column(Modifier.padding(start = if (icon != null) 52.dp else 0.dp, top = 12.dp), content = below)
+            Column(Modifier.padding(start = if (icon != null || leading != null) 52.dp else 0.dp, top = 12.dp), content = below)
         }
     }
 }
@@ -141,8 +146,8 @@ fun ToggleRow(
 }
 
 @Composable
-fun NavRow(title: String, onClick: () -> Unit, summary: String? = null, icon: ImageVector? = null, value: String? = null, dot: Boolean = false) {
-    SettingRow(title, summary = summary, icon = icon, onClick = onClick, trailing = {
+fun NavRow(title: String, onClick: () -> Unit, summary: String? = null, icon: ImageVector? = null, value: String? = null, dot: Boolean = false, leading: (@Composable () -> Unit)? = null) {
+    SettingRow(title, summary = summary, icon = icon, onClick = onClick, leading = leading, trailing = {
         Row(verticalAlignment = Alignment.CenterVertically) {
             if (dot) UpdateDot(Modifier.padding(end = 6.dp))
             if (value != null) {

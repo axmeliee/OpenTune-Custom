@@ -249,6 +249,11 @@ class DspAudioProcessor : BaseAudioProcessor() {
     private var filters: Array<Array<Biquad>> = emptyArray()
     private var frame = FloatArray(0)
     private var space: Space3D? = null
+    // Noise-shaping error carried between samples, one per channel, so reducing
+    // the processed float signal to 16-bit scatters its error above hearing
+    // instead of truncating. Seeded nonzero for the dither generator.
+    private var ns = FloatArray(0)
+    private var ditherState = -0x61c8864680b583ebL
 
     override fun onConfigure(inputAudioFormat: AudioFormat): AudioFormat {
         val enc = inputAudioFormat.encoding
@@ -259,6 +264,7 @@ class DspAudioProcessor : BaseAudioProcessor() {
         sampleRate = inputAudioFormat.sampleRate
         isFloat = enc == C.ENCODING_PCM_FLOAT
         frame = FloatArray(channels)
+        ns = FloatArray(channels)
         space = if (sampleRate > 0) Space3D(sampleRate) else null
         applied = null
         return inputAudioFormat
@@ -304,7 +310,13 @@ class DspAudioProcessor : BaseAudioProcessor() {
                 // The sleep timer's fade, on an otherwise untouched signal.
                 while (inputBuffer.remaining() >= 4) out.putFloat(inputBuffer.getFloat() * gain)
             } else {
-                while (inputBuffer.remaining() >= 2) out.putShort((inputBuffer.getShort() * gain).toInt().toShort())
+                var ch = 0
+                var d = nextTriangularDither()
+                while (inputBuffer.remaining() >= 2) {
+                    if (ch == 0) d = nextTriangularDither()
+                    out.putShort(toPcm16(inputBuffer.getShort() / 32768f * gain, ch, d))
+                    ch = if (ch + 1 >= channels) 0 else ch + 1
+                }
             }
             out.flip()
             return
@@ -321,14 +333,44 @@ class DspAudioProcessor : BaseAudioProcessor() {
                 frame[c] = if (isFloat) inputBuffer.getFloat() else inputBuffer.getShort() / 32768f
             }
             processFrame(p, pre, leftGain, rightGain, limit)
+            val d = nextTriangularDither()
             for (c in 0 until channels) {
                 val s = frame[c] * gain
-                if (isFloat) out.putFloat(s) else out.putShort((s * 32767f).toInt().coerceIn(-32768, 32767).toShort())
+                if (isFloat) out.putFloat(s) else out.putShort(toPcm16(s, c, d))
             }
         }
         // Trailing partial frame, if a buffer ever ends mid-frame.
         while (inputBuffer.hasRemaining()) out.put(inputBuffer.get())
         out.flip()
+    }
+
+    /**
+     * One processed sample (−1..1) to a 16-bit value, dithered and noise-shaped.
+     * Triangular dither breaks up the correlation that makes plain truncation
+     * sound grainy on quiet tails, and feeding the rounding error back shifts
+     * that dither noise up out of the ear's most sensitive range. Done only
+     * where the float signal has to become 16-bit, so hi-res stays clean.
+     *
+     * A truly silent sample stays silent (no dither hiss on a muted channel or
+     * a gap), and [dither] is shared across a frame's channels, so identical
+     * channels — mono content — quantise to the same value.
+     */
+    private fun toPcm16(sample: Float, channel: Int, dither: Float): Short {
+        if (sample == 0f) { ns[channel] = 0f; return 0 }
+        val desired = sample * 32767f + ns[channel]
+        val q = Math.round(desired + dither).coerceIn(-32768, 32767)
+        ns[channel] = desired - q
+        return q.toShort()
+    }
+
+    /** Two xorshift uniforms summed: triangular noise within ±1 LSB, cheap enough per sample. */
+    private fun nextTriangularDither(): Float {
+        var s = ditherState
+        s = s xor (s shl 13); s = s xor (s ushr 7); s = s xor (s shl 17)
+        ditherState = s
+        val u1 = ((s ushr 40).toInt() and 0xFFFF) / 65536f
+        val u2 = ((s ushr 8).toInt() and 0xFFFF) / 65536f
+        return (u1 - 0.5f) + (u2 - 0.5f)
     }
 
     private fun processFrame(p: DspParams, pre: Float, leftGain: Float, rightGain: Float, limit: Boolean) {

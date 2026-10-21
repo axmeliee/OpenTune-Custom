@@ -55,8 +55,9 @@ internal fun SourceQualityBadge(mediaId: String, format: AudioFormatInfo?, onCli
     val label = qualityStatusLabel(source, if (source != null) format else null, upgrading == mediaId)
     val colors = MaterialTheme.colorScheme
     val ui by com.opentune.data.settings.AppSettings.ui.collectAsState()
-    val phase = if (ui.reduceAnimation || !isHighestQuality(source, format)) null else rememberInfiniteTransition(label = "quality light")
-        .animateFloat(-1f, 2f, infiniteRepeatable(tween(3200, easing = LinearEasing)), label = "quality sweep")
+    // A thin light line runs across the label whatever the quality; it just reads the signal path.
+    val phase = if (ui.reduceAnimation) null else rememberInfiniteTransition(label = "quality light")
+        .animateFloat(-0.15f, 1.15f, infiniteRepeatable(tween(2800, easing = LinearEasing)), label = "quality sweep")
     TextButton(onClick = onClick, modifier = modifier.widthIn(max = 280.dp).fillMaxWidth().heightIn(min = 40.dp).semantics { contentDescription = "$label. Open signal path" },
         colors = ButtonDefaults.textButtonColors(contentColor = colors.onSurfaceVariant),
         contentPadding = PaddingValues(horizontal = 6.dp, vertical = 4.dp)) {
@@ -70,10 +71,14 @@ internal fun SourceQualityBadge(mediaId: String, format: AudioFormatInfo?, onCli
                     drawContent()
                     phase?.value?.let { progress ->
                         val x = progress * size.width
-                        drawRect(androidx.compose.ui.graphics.Brush.linearGradient(
-                            listOf(Color.Transparent, colors.onSurface.copy(alpha = 0.6f), Color.Transparent),
-                            start = androidx.compose.ui.geometry.Offset(x - 35.dp.toPx(), 0f),
-                            end = androidx.compose.ui.geometry.Offset(x + 35.dp.toPx(), size.height)),
+                        val half = 9.dp.toPx()
+                        // A narrow upright line of light, swept over the grey text only.
+                        drawRect(androidx.compose.ui.graphics.Brush.horizontalGradient(
+                            0f to Color.Transparent,
+                            0.5f to colors.onSurface.copy(alpha = 0.85f),
+                            1f to Color.Transparent,
+                            startX = x - half,
+                            endX = x + half),
                             blendMode = androidx.compose.ui.graphics.BlendMode.SrcAtop)
                     }
                 }
@@ -85,14 +90,28 @@ internal fun SourceQualityBadge(mediaId: String, format: AudioFormatInfo?, onCli
 internal fun qualityStatusLabel(source: NerdStats.Source?, format: AudioFormatInfo?, upgrading: Boolean): String {
     if (source == null || source.provider.startsWith("Checking highest")) return if (upgrading) "Upgrading quality" else "Preparing audio"
     val lossless = isHighestQuality(source, format)
-    val label = when {
+    val tier = when {
         lossless && ((format?.bitDepth ?: 0) > 16 || (format?.sampleRateHz ?: 0) > 48000) -> "Hi-Res Lossless"
         lossless -> "Lossless"
         (format?.bitrateKbps ?: source.kbps ?: 0) >= 128 -> "High quality"
         else -> "Standard quality"
     }
-    return if (upgrading) "$label, upgrading" else label
+    // The concrete signal behind the tier: bit depth and rate for lossless,
+    // the stream's bitrate otherwise. So "Lossless" reads "Lossless · 24-bit/96 kHz".
+    val detail = if (lossless) {
+        val bits = format?.bitDepth ?: source.bits
+        val rate = format?.sampleRateHz ?: source.sampleRate
+        listOfNotNull(bits?.let { "$it-bit" }, rate?.let { khzLabel(it) }).joinToString("/").ifEmpty { null }
+    } else {
+        (format?.bitrateKbps ?: source.kbps)?.takeIf { it > 0 }?.let { "$it kbps" }
+    }
+    val label = listOfNotNull(tier, detail).joinToString(" · ")
+    return if (upgrading) "$label · upgrading" else label
 }
+
+/** A sample rate in Hz as "44.1 kHz" or "96 kHz", trimming a trailing ".0". */
+private fun khzLabel(hz: Int): String =
+    "${String.format(Locale.ROOT, "%.1f", hz / 1000.0).removeSuffix(".0")} kHz"
 
 /** Whether [source] is the best there is: lossless, rather than a lossy stream at any bitrate. */
 internal fun isHighestQuality(source: NerdStats.Source?, format: AudioFormatInfo?): Boolean {
@@ -176,7 +195,7 @@ internal fun sourceQualityLabel(source: NerdStats.Source?, format: AudioFormatIn
     val bits = format?.bitDepth ?: source.bits
     val rate = format?.sampleRateHz ?: source.sampleRate
     val quality = if (codec?.contains("FLAC", ignoreCase = true) == true) {
-        listOfNotNull("FLAC", bits?.let { "$it-bit" }, rate?.let { "${String.format(Locale.ROOT, "%.1f", it / 1000.0).removeSuffix(".0")} kHz" }).joinToString(" · ")
+        listOfNotNull("FLAC", bits?.let { "$it-bit" }, rate?.let { khzLabel(it) }).joinToString(" · ")
     } else listOfNotNull(codec, (format?.bitrateKbps ?: source.kbps)?.let { "$it kbps" }).joinToString(" · ")
     return "$provider · ${quality.ifEmpty { "quality pending" }}"
 }

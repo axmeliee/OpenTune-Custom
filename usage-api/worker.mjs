@@ -81,11 +81,15 @@ export async function summary(db, now = new Date(), timeZone = 'UTC') {
     db.prepare('SELECT release,COUNT(*) AS browsers FROM downloads GROUP BY release ORDER BY MAX(first_requested_at) DESC'),
     db.prepare('SELECT COUNT(DISTINCT browser) AS browsers FROM downloads'),
     db.prepare(currentVersionsSql),
+    db.prepare('SELECT COUNT(*) AS n FROM version_transitions'),
+    db.prepare('SELECT to_version AS version, COUNT(*) AS updates FROM version_transitions GROUP BY to_version ORDER BY updates DESC, version DESC'),
   ]);
   return { asOf: now.toISOString(), timeZone, totals: results[0].results[0], today: results[1].results[0],
     week: results[2].results[0].active, month: results[3].results[0].active,
     daily: results[4].results, versions: results[5].results, downloads: results[6].results,
-    downloadBrowsers: results[7].results[0].browsers, currentVersions: results[8].results };
+    downloadBrowsers: results[7].results[0].browsers, currentVersions: results[8].results,
+    // Version moves (updates, and the occasional downgrade): counted, not mistaken for new installs.
+    updates: { total: results[9].results[0].n, byVersion: results[10].results } };
 }
 
 // Inclusive calendar dates in the requested reporting zone; bounded to keep dashboard queries predictable.
@@ -115,6 +119,44 @@ export async function analytics(db, range, now = new Date(), timeZone = 'UTC') {
     coverageSince: results[3].results[0].since };
 }
 
+// Aggregate-only, no version breakdown or per-day series: safe to serve without
+// a sign-in, for the README badge and a public "active this month" count.
+export async function publicCounts(db, now = new Date(), timeZone = 'UTC') {
+  const table = activityTable(timeZone);
+  const day = calendarDay(now, timeZone);
+  const week = new Date(day + 'T00:00:00Z');
+  week.setUTCDate(week.getUTCDate() - ((week.getUTCDay() + 6) % 7));
+  const month = day.slice(0, 7) + '-01';
+  const results = await db.batch([
+    db.prepare(`SELECT COUNT(DISTINCT installation) AS n FROM ${allActivity}`),
+    db.prepare(`SELECT COUNT(DISTINCT installation) AS n FROM ${table} WHERE day=?`).bind(day),
+    db.prepare(`SELECT COUNT(DISTINCT installation) AS n FROM ${table} WHERE day>=? AND day<=?`).bind(week.toISOString().slice(0, 10), day),
+    db.prepare(`SELECT COUNT(DISTINCT installation) AS n FROM ${table} WHERE day>=? AND day<=?`).bind(month, day),
+  ]);
+  return { asOf: now.toISOString(), timeZone,
+    installations: results[0].results[0].n, daily: results[1].results[0].n,
+    weekly: results[2].results[0].n, monthly: results[3].results[0].n };
+}
+
+// 1234 -> "1.2k", 1200000 -> "1.2M": short enough for a badge.
+export function shortCount(value) {
+  const n = Number(value) || 0;
+  if (n < 1000) return String(n);
+  if (n < 1e6) return (n / 1e3).toFixed(n < 1e4 ? 1 : 0).replace(/\.0$/, '') + 'k';
+  return (n / 1e6).toFixed(1).replace(/\.0$/, '') + 'M';
+}
+
+// A Shields.io "endpoint" badge: https://shields.io/badges/endpoint-badge
+export function badge(counts, params = new URLSearchParams()) {
+  const metric = params.get('metric');
+  const value = metric === 'installations' ? counts.installations
+    : metric === 'daily' ? counts.daily
+    : metric === 'weekly' ? counts.weekly
+    : counts.monthly;
+  const label = params.get('label') || (metric === 'installations' ? 'installs' : 'active');
+  return { schemaVersion: 1, label, message: shortCount(value), color: '1db954', cacheSeconds: 300 };
+}
+
 export default {
   async fetch(request, env) {
     const url = new URL(request.url);
@@ -132,7 +174,7 @@ export default {
       return result;
     };
     const json = (body,status=200) => new Response(JSON.stringify(body),{status,headers});
-    if(request.method==='OPTIONS' && ['/auth/login','/auth/logout','/v1/activity','/v1/download','/v1/summary','/v1/analytics','/v1/addons'].includes(path)) return new Response(null,{status:204,headers});
+    if(request.method==='OPTIONS' && ['/auth/login','/auth/logout','/v1/activity','/v1/download','/v1/summary','/v1/analytics','/v1/addons','/v1/public','/v1/badge'].includes(path)) return new Response(null,{status:204,headers});
     // Only this catalog is public. Usage analytics and catalog writes remain owner-only.
     if (request.method === 'GET' && path === '/v1/addons') {
       try { const result = json(await catalog(env.DB)); result.headers.set('Cache-Control','public, max-age=300'); return result; }
@@ -141,8 +183,10 @@ export default {
     const authentication = await authRoute(request, env);
     if (authentication) return cors(authentication);
     const reporting = ['/v1/activity', '/v1/download'].includes(path) && request.method==='POST';
+    // Aggregate counts for the README badge and a public total; no sign-in needed.
+    const publicRead = ['/v1/public', '/v1/badge'].includes(path) && request.method==='GET';
     // Static Pages contains no private data; every read is authorized here.
-    if (!reporting && !(await authorized(request, env))) return cors(locked(request));
+    if (!reporting && !publicRead && !(await authorized(request, env))) return cors(locked(request));
     try {
       if (request.method === 'POST' && path === '/v1/addons') {
         try { return json(await publishCatalog(env.DB, await readCatalogBody(request))); }
@@ -164,6 +208,13 @@ export default {
       if (request.method==='GET' && path==='/v1/summary') {
         let zone;try { zone=reportZone(url.searchParams.get('timeZone') || 'UTC'); } catch(e) {return json({error:e.message},400);}
         return json(await summary(env.DB,new Date(),zone));
+      }
+      if (request.method==='GET' && path==='/v1/public') {
+        let zone;try { zone=reportZone(url.searchParams.get('timeZone') || 'UTC'); } catch(e) {return json({error:e.message},400);}
+        return json(await publicCounts(env.DB,new Date(),zone));
+      }
+      if (request.method==='GET' && path==='/v1/badge') {
+        return json(badge(await publicCounts(env.DB,new Date(),'UTC'),url.searchParams));
       }
       if (request.method!=='POST' || !['/v1/activity','/v1/download'].includes(path)) return json({error:'Not found'},404);
       if (!request.headers.get('Content-Type')?.startsWith('application/json')) return json({error:'JSON required'},415);

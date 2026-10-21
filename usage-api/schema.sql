@@ -33,8 +33,28 @@ CREATE TABLE IF NOT EXISTS downloads (
   PRIMARY KEY (browser, release)
 );
 
-
 -- Public community addon catalog; only the authenticated owner can modify it.
 CREATE TABLE IF NOT EXISTS addon_catalog (
   id INTEGER PRIMARY KEY CHECK(id=1), revision INTEGER NOT NULL, payload TEXT NOT NULL
 );
+
+-- Version changes, one row per move, recorded by a trigger when an installation's
+-- current version changes. The version breakdown above already moves an
+-- installation's count from its old version to its new one; this counts those
+-- moves, so an update is never mistaken for a new installation. A retry at the
+-- same revision does not update the row, so it records nothing.
+CREATE TABLE IF NOT EXISTS version_transitions (
+  installation TEXT NOT NULL,
+  from_version TEXT NOT NULL,
+  to_version TEXT NOT NULL,
+  changed_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS version_transitions_to ON version_transitions(to_version);
+CREATE INDEX IF NOT EXISTS version_transitions_at ON version_transitions(changed_at);
+CREATE TRIGGER IF NOT EXISTS record_version_change
+AFTER UPDATE OF version ON installation_versions
+FOR EACH ROW WHEN old.version <> new.version
+BEGIN
+  INSERT INTO version_transitions(installation, from_version, to_version, changed_at)
+  VALUES (new.installation, old.version, new.version, new.received_at);
+END;

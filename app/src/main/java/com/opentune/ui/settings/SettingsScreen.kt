@@ -19,6 +19,7 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
@@ -39,6 +40,7 @@ import androidx.compose.material.icons.automirrored.rounded.QueueMusic
 import androidx.compose.material.icons.automirrored.rounded.VolumeOff
 import androidx.compose.material.icons.automirrored.rounded.VolumeUp
 import androidx.compose.material.icons.rounded.AccountCircle
+import androidx.compose.material.icons.rounded.PersonAdd
 import androidx.compose.material.icons.rounded.Album
 import androidx.compose.material.icons.rounded.Animation
 import androidx.compose.material.icons.rounded.AutoAwesome
@@ -320,7 +322,16 @@ fun SettingsScreen(
                                     } else {
                                         c.summary
                                     }
-                                    NavRow(c.title, { openKey = c.key }, summary = summary, icon = c.icon, dot = c.key == "about" && updatePending)
+                                    // The account row wears the signed-in Google photo in place of the icon.
+                                    val avatar = account?.thumbnailUrl?.takeIf { c.key == "account" && signedIn }
+                                    NavRow(
+                                        c.title,
+                                        { openKey = c.key },
+                                        summary = summary,
+                                        icon = if (avatar == null) c.icon else null,
+                                        dot = c.key == "about" && updatePending,
+                                        leading = avatar?.let { url -> { Artwork(url, Modifier.size(28.dp), CircleShape) } },
+                                    )
                                 }
                             }
                         }
@@ -393,6 +404,7 @@ private fun settingsSections(
 ): List<Section> {
     val signedIn by AccountStore.signedIn.collectAsState()
     val account by AccountStore.account.collectAsState()
+    val accounts by AccountStore.accounts.collectAsState()
     val done by Downloads.done.collectAsState(Downloads.doneNow())
     var downloadQualityDialog by remember { mutableStateOf(false) }
     var lyricsSourcesDialog by remember { mutableStateOf(false) }
@@ -652,25 +664,35 @@ private fun settingsSections(
         Section(
             "Account",
             listOfNotNull(
-                Entry("YouTube Music account", "sign in login google profile") {
+                Entry("YouTube Music account", "sign in login google profile switch add") {
                     if (signedIn) {
-                        SettingRow(
-                            account?.name ?: "Signed in",
-                            summary = account?.email?.takeIf { it.isNotBlank() } ?: "YouTube Music",
-                            trailing = {
-                                Artwork(account?.thumbnailUrl, Modifier.size(40.dp), CircleShape)
-                            },
-                        )
+                        Column {
+                            accounts.forEachIndexed { i, acc ->
+                                if (i > 0) RowDivider()
+                                SettingRow(
+                                    acc.name.ifBlank { "Signed in" },
+                                    summary = acc.email.ifBlank { "YouTube Music" },
+                                    onClick = if (acc.active) null else ({ AccountStore.switchTo(acc.id) }),
+                                    leading = { Artwork(acc.thumbnailUrl, Modifier.size(40.dp), CircleShape) },
+                                    trailing = if (acc.active) ({ Icon(Icons.Rounded.Check, "Active account", tint = MaterialTheme.colorScheme.primary) }) else null,
+                                )
+                            }
+                        }
                     } else {
                         NavRow("Sign in to YouTube Music", onSignIn, summary = "Your playlists, liked songs and recommendations", icon = Icons.Rounded.AccountCircle)
                     }
                 },
+                if (signedIn) {
+                    Entry("Add another account", "add switch google account multiple") {
+                        NavRow("Add another account", onSignIn, summary = "Sign in to a second YouTube Music account and switch between them", icon = Icons.Rounded.PersonAdd)
+                    }
+                } else null,
                 Entry("Sign in with your phone", "tv qr pairing youtube music") {
                     NavRow("Sign in with your phone", { showPairing = true }, summary = "Scan a QR code from a signed-in phone on the same Wi-Fi", icon = Icons.Rounded.AccountCircle)
                 },
                 if (signedIn) {
                     Entry("Sign out", "logout account") {
-                        SettingRow("Sign out", icon = Icons.AutoMirrored.Rounded.Logout, onClick = { confirmSignOut = true })
+                        SettingRow(if (accounts.size > 1) "Sign out of this account" else "Sign out", icon = Icons.AutoMirrored.Rounded.Logout, onClick = { confirmSignOut = true })
                     }
                 } else null,
             ),

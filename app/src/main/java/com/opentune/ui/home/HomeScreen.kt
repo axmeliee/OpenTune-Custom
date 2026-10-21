@@ -80,6 +80,7 @@ import com.opentune.ui.components.Shelf
 import com.opentune.ui.components.ShelfPlaceholder
 import com.opentune.ui.components.SongListItem
 import com.opentune.ui.rememberLoader
+import com.opentune.ui.toSong
 import com.opentune.ui.type
 
 @OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
@@ -261,6 +262,8 @@ private fun Recents(songs: List<Song>, asGrid: Boolean, actions: SongActions, on
                     state = pages,
                     modifier = Modifier.fillMaxWidth().height(64.dp * 4),
                     verticalAlignment = Alignment.Top,
+                    // Leave the next page's covers peeking at the edge, so it reads as scrollable.
+                    contentPadding = PaddingValues(end = 40.dp),
                 ) { page ->
                     Column(Modifier.fillMaxWidth()) {
                         for (i in page * 4 until minOf(page * 4 + 4, songs.size)) {
@@ -362,18 +365,35 @@ private fun QuickPicks(shelf: HomeShelf, onItemClick: (ShelfItem) -> Unit, actio
     Column {
         SectionHeader(shelf.title, subtitle = shelf.subtitle, action = action)
         val pages = rememberPagerState(pageCount = { (shelf.items.size + 3) / 4 })
-        HorizontalPager(state = pages, modifier = Modifier.fillMaxWidth().height(64.dp * 4), verticalAlignment = Alignment.Top) { page ->
+        HorizontalPager(
+            state = pages,
+            modifier = Modifier.fillMaxWidth().height(64.dp * 4),
+            verticalAlignment = Alignment.Top,
+            // The next column's covers peek at the edge, so there's clearly more.
+            contentPadding = PaddingValues(end = 40.dp),
+        ) { page ->
             Column(Modifier.fillMaxWidth()) {
                 for (item in shelf.items.drop(page * 4).take(4)) {
-                    Row(
-                        Modifier.fillMaxWidth().height(64.dp).clickable { onItemClick(item) }.padding(horizontal = 20.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(12.dp),
-                    ) {
-                        Artwork(item.thumbnailUrl.artworkAt(ROW_ART_PX), Modifier.size(48.dp))
-                        Column(Modifier.weight(1f)) {
-                            Text(item.title, maxLines = 1, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.bodyLarge)
-                            com.opentune.ui.components.SubtitleLine(item.subtitle, explicit = item.explicit)
+                    val song = item.toSong()
+                    if (song != null) {
+                        // The same row as Recents, so each gets the three-dot menu.
+                        SongListItem(
+                            song = song,
+                            onClick = { onItemClick(item) },
+                            modifier = Modifier.fillMaxWidth().height(64.dp),
+                            swipeToQueue = false,
+                        )
+                    } else {
+                        Row(
+                            Modifier.fillMaxWidth().height(64.dp).clickable { onItemClick(item) }.padding(horizontal = 20.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(12.dp),
+                        ) {
+                            Artwork(item.thumbnailUrl.artworkAt(ROW_ART_PX), Modifier.size(48.dp))
+                            Column(Modifier.weight(1f)) {
+                                Text(item.title, maxLines = 1, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.bodyLarge)
+                                com.opentune.ui.components.SubtitleLine(item.subtitle, explicit = item.explicit)
+                            }
                         }
                     }
                 }

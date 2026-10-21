@@ -124,7 +124,7 @@ async function loadAll() {
   $('refresh').disabled = true; $('updated').textContent = '';
   $('current-versions-note').textContent = 'Loading current versions…';
   $('lifetime-status').textContent = 'Loading totals…'; $('github-status').textContent = 'Loading GitHub totals…';
-  for (const id of ['all-installs', 'all-plays', 'all-browsers', 'all-downloads']) $(id).textContent = '—';
+  for (const id of ['all-installs', 'all-plays', 'all-browsers', 'all-downloads', 'all-updates']) $(id).textContent = '—';
   for (const id of ['downloads-table', 'browser-table', 'current-versions-table']) empty(id, 'Loading…');
   apiPromise = Promise.resolve(apiBase);
   summaryPromise = apiPromise.then(api => response(api + '/v1/summary?' + new URLSearchParams({timeZone:reportZone()}), signal));
@@ -133,10 +133,15 @@ async function loadAll() {
     summaryPromise.then(data => {
       if (signal.aborted) return;
       $('all-installs').textContent = fmt(data.totals.installs); $('all-plays').textContent = fmt(data.totals.plays); $('all-browsers').textContent = fmt(data.downloadBrowsers);
+      // Older servers have no updates figure; show it only when present.
+      $('all-updates').textContent = data.updates ? fmt(data.updates.total) : '—';
       $('lifetime-status').textContent = data.totals.since ? `Activity recorded since ${dateLabel(data.totals.since)}` : 'No activity reports received yet.';
       table('browser-table', ['Release', 'Browsers'], data.downloads.map(row => [row.release, row.browsers]));
       if (Array.isArray(data.currentVersions)) {
-        table('current-versions-table', ['Version', 'Installations'], data.currentVersions.map(row => [row.version, row.installations]));
+        // How many of each version's installations arrived by updating to it.
+        const updatedTo = new Map((data.updates?.byVersion || []).map(row => [row.version, row.updates]));
+        table('current-versions-table', ['Version', 'Installations', 'Updated to'],
+          data.currentVersions.map(row => [row.version, row.installations, updatedTo.get(row.version) || 0]));
         const inferred = data.currentVersions.reduce((sum, row) => sum + row.inferred, 0);
         $('current-versions-note').textContent = `${fmt(data.totals.installs)} reporting installations in total. ${inferred ? `${fmt(inferred)} older installations estimated from daily history.` : 'Each installation is assigned to its latest reported version.'}`;
       } else {

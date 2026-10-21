@@ -50,6 +50,8 @@ import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowRight
 import androidx.compose.material.icons.automirrored.rounded.QueueMusic
 import androidx.compose.material.icons.rounded.Bedtime
 import androidx.compose.material.icons.rounded.Cast
+import androidx.compose.material.icons.rounded.Headphones
+import androidx.compose.material.icons.rounded.Smartphone
 import androidx.compose.material.icons.rounded.BugReport
 import androidx.compose.material.icons.rounded.Favorite
 import androidx.compose.material.icons.rounded.FavoriteBorder
@@ -251,9 +253,18 @@ fun PlayerScreen(
         position = rememberPlaybackPosition(vm),
         buffered = vm::bufferedPositionMs,
         actions = actions,
+        seeks = rememberSeekCount(vm),
         onCovering = onCovering,
         docked = docked,
     )
+}
+
+/** A count that rises on each manual seek, for the lyrics clock to take a jump cleanly. */
+@Composable
+fun rememberSeekCount(vm: PlayerViewModel): () -> Long {
+    val count = remember { mutableLongStateOf(0L) }
+    LaunchedEffect(vm) { vm.seeks.collect { count.longValue++ } }
+    return { count.longValue }
 }
 
 private enum class Pane { COVER, LYRICS, QUEUE }
@@ -264,6 +275,8 @@ fun PlayerLayout(
     position: () -> Long,
     buffered: () -> Long,
     actions: PlayerActions,
+    /** Rises on each manual seek, for the lyrics clock to take jumps cleanly. */
+    seeks: () -> Long = { 0L },
     initialLyrics: Boolean = false,
     onCovering: (Boolean) -> Unit = {},
     /**
@@ -282,6 +295,7 @@ fun PlayerLayout(
     fun toggle(p: Pane) { paneName = if (pane == p) Pane.COVER.name else p.name }
     var showRemix by remember { mutableStateOf(false) }
     var showCast by remember { mutableStateOf(false) }
+    var showOutput by remember { mutableStateOf(false) }
     var showMenu by remember { mutableStateOf(false) }
     var showSleep by remember { mutableStateOf(false) }
     var showOffset by remember { mutableStateOf(false) }
@@ -296,6 +310,11 @@ fun PlayerLayout(
     val autoOffsetMs = ((state.lyrics as? LyricsState.Found)?.lyrics as? com.opentune.data.lyrics.Lyrics.Synced)?.autoOffsetMs ?: 0L
     val offsetMs = com.opentune.data.lyrics.lyricsOffset(lyricsSettings.offsets[current.videoId], (state.lyrics as? LyricsState.Found)?.lyrics)
     val lyricsPosition: () -> Long = { position() + offsetMs }
+    // For the lyrics clock: the intent to play (true through a buffer stall, so the
+    // words coast rather than snapping back), and [seeks], which rises on each seek so
+    // a jump is taken cleanly instead of being refused as a backward reading.
+    val lyricsPlaying: () -> Boolean = { state.isPlaying || state.isBuffering }
+    val lyricsSeeks: () -> Long = seeks
     // Long-press on the line being sung: shift this song's lyrics so that line starts now.
     val syncLine: (Long) -> Unit = { lineStart ->
         val shift = lineStart - position()
@@ -318,6 +337,7 @@ fun PlayerLayout(
     val liked by LibraryStore.liked.collectAsState()
     val isLiked = liked.any { it.videoId == current.videoId }
     val device = rememberOutputDeviceName()
+    val outputRoute = rememberOutputRoute()
     val sleepLabel = sleepTimerLabel()
 
     // Drag down anywhere outside the lyrics and queue lists to close.
@@ -454,6 +474,8 @@ fun PlayerLayout(
                                 blur = state.ui.blurLyrics,
                                 shareSong = current,
                                 onSyncLine = syncLine,
+                                playing = lyricsPlaying,
+                                seeks = lyricsSeeks,
                             )
                         }
                         Pane.QUEUE -> { ->
@@ -566,6 +588,8 @@ fun PlayerLayout(
                                 blur = state.ui.blurLyrics,
                                 shareSong = current,
                                 onSyncLine = syncLine,
+                                playing = lyricsPlaying,
+                                seeks = lyricsSeeks,
                             )
                         } else if (p == Pane.COVER) {
                             Box(Modifier.weight(1f).fillMaxWidth().then(if (docked) Modifier.fitSquare() else Modifier), contentAlignment = Alignment.Center) {
@@ -622,6 +646,8 @@ fun PlayerLayout(
                                     blur = state.ui.blurLyrics,
                                 shareSong = current,
                                     onSyncLine = syncLine,
+                                    playing = lyricsPlaying,
+                                    seeks = lyricsSeeks,
                                 )
                             } else {
                                 Text("Queue", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, modifier = Modifier.padding(vertical = 8.dp))
@@ -702,7 +728,16 @@ fun PlayerLayout(
                                     verticalAlignment = Alignment.CenterVertically,
                                 ) {
                                     GlassToggle(Icons.Rounded.Bedtime, "Sleep timer", sleepLabel != null, { showSleep = true })
-                                    GlassToggle(Icons.Rounded.Cast, "Play on another device", com.opentune.ui.cast.castingTo() != null, { showCast = true })
+                                    GlassToggle(
+                                        when {
+                                            outputRoute == OutputRoute.CAST -> Icons.Rounded.Cast
+                                            outputRoute.isHeadset -> Icons.Rounded.Headphones
+                                            else -> Icons.Rounded.Smartphone
+                                        },
+                                        "Audio output",
+                                        outputRoute != OutputRoute.PHONE,
+                                        { showOutput = true },
+                                    )
                                 }
                             }
                         }
@@ -734,6 +769,11 @@ fun PlayerLayout(
             Box(Modifier.fillMaxSize().graphicsLayer { alpha = (windDown * 0.55f).coerceIn(0f, 0.55f) }.background(Color.Black))
         }
         if (showRemix) RemixSheet(onDismiss = { showRemix = false })
+        if (showOutput) com.opentune.ui.cast.AudioOutputSheet(
+            onDismiss = { showOutput = false },
+            onCast = { showOutput = false; showCast = true },
+            onPipeline = { showOutput = false; showSignal = true },
+        )
         if (showCast) com.opentune.ui.cast.CastSheet(onDismiss = { showCast = false })
         if (showSleep) SleepTimerDialog(onDismiss = { showSleep = false })
         if (showMenu) {

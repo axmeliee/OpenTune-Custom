@@ -19,6 +19,7 @@
   <img src="https://img.shields.io/badge/Android-8.0%2B-3DDC84?logo=android&logoColor=white" alt="Android 8.0+">
   <img src="https://img.shields.io/badge/Kotlin-Compose-7F52FF?logo=kotlin&logoColor=white" alt="Kotlin and Jetpack Compose">
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-GPL--3.0-blue" alt="GPL-3.0"></a>
+  <a href="https://justshivv.github.io/Opentune/usage/"><img src="https://img.shields.io/endpoint?url=https%3A%2F%2Fopentune-usage.create-a-new-site-with-sites.workers.dev%2Fv1%2Fbadge%3Flabel%3Dactive%2520this%2520month&cacheSeconds=300" alt="Active installations this month"></a>
 </p>
 
 [![Get it on Orion Store](https://raw.githubusercontent.com/RookieEnough/Orion-Store/refs/heads/main/assets/orion-badge.png)](https://rookieenough.github.io/Orion-Data/redirect.html?id=opentune&icon=https%3A%2F%2Fjustshivv.github.io%2FOpentune%2Ficon-512.png)
@@ -95,6 +96,40 @@ whenever the iOS app changes on main.
 
 iOS 16 or newer.
 
+### Android TV
+
+The phone APK runs on Android TV too, and shows up in the TV's row of
+apps. You drive it with the remote, and the screen stays on while music
+plays.
+
+Typing a password with a remote is no fun, so you sign the TV in from
+your phone instead:
+
+1. Install the same APK on the TV, from the
+   [releases](https://github.com/justshivv/Opentune/releases) page.
+2. On the TV, open Settings → Account and choose Sign in with your phone.
+3. Scan the QR code with a phone that has OpenTune, on the same Wi-Fi,
+   and approve sharing your YouTube Music session. The code expires after
+   two minutes.
+
+The phone and the TV each keep their own local library.
+
+### Web player (preview)
+
+There's a player you open in a browser on a computer, written in React.
+You can browse, search and listen there. It plays YouTube Music through a
+companion browser extension, so you install that as well; it works in
+Chrome and Firefox. The extension isn't in the browser stores yet, so you
+load a preview package in developer mode. Your library stays in that
+browser.
+
+Open it at
+[justshivv.github.io/Opentune/player](https://justshivv.github.io/Opentune/player/).
+
+It's a preview, so not everything from the Android app is there. Audio
+add-ons work for direct FLAC over CORS-enabled media, and the audio stays
+on your own connection with no hosted proxy.
+
 ## Highlights
 
 - **No ads in the app, no account, no server.** Signing in is optional and
@@ -106,6 +141,9 @@ iOS 16 or newer.
   in step, on their own phones.
 - **Live radio** from 50,000+ stations, nearest first.
 - **Cast** to Chromecasts, smart TVs and network speakers on your Wi-Fi.
+- **On the web and the TV too.** A browser player (preview, with a
+  companion extension) and an Android TV app you sign in by scanning a
+  code from your phone.
 - **Name that song**: hold the phone up and it tells you what's playing.
 - **Podcasts**, downloads, Android Auto, a home-screen widget and imports
   from Spotify and YouTube playlists.
@@ -571,6 +609,14 @@ transfers. Reinstalling or clearing app data creates a new ID. The server dedupl
 installations and merges cumulative play totals, so upload retries do not inflate counts.
 No hardware identifiers, accounts, song names or listening history are sent. Turn it off
 under Settings > About > Count this phone in usage numbers. Debug builds never count.
+
+The badge above and `GET /v1/public` expose only aggregate counts (total installations
+and daily, weekly and monthly active installations) with no sign-in; `GET /v1/badge`
+returns the same as a [Shields endpoint](https://shields.io/badges/endpoint-badge), so
+the README count refreshes itself. The full breakdown — versions, plays, downloads and
+per-day active numbers — stays behind the owner login on the usage dashboard. These are
+measured anonymous reports, not fraud-proof head counts, and there is no "active right
+now": the finest granularity is a calendar day.
 
 The website separately reports unique browsers requesting APKs and GitHub's raw APK
 download events. Neither means unique people or completed installs. Historical Abacus

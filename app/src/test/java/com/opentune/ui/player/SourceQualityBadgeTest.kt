@@ -31,9 +31,9 @@ class SourceQualityBadgeTest {
 
     @Test fun qualityTextUsesMeasuredFormatAndRealUpgradeState() {
         val source = NerdStats.Source("Community source",24,192000,320)
-        assertEquals("High quality, upgrading", qualityStatusLabel(source, AudioFormatInfo("AAC",320,44100,2), true))
-        assertEquals("Lossless", qualityStatusLabel(source, AudioFormatInfo("FLAC",null,44100,2,16), false))
-        assertEquals("Hi-Res Lossless", qualityStatusLabel(source, AudioFormatInfo("FLAC",null,96000,2,24), false))
+        assertEquals("High quality · 320 kbps · upgrading", qualityStatusLabel(source, AudioFormatInfo("AAC",320,44100,2), true))
+        assertEquals("Lossless · 16-bit/44.1 kHz", qualityStatusLabel(source, AudioFormatInfo("FLAC",null,44100,2,16), false))
+        assertEquals("Hi-Res Lossless · 24-bit/96 kHz", qualityStatusLabel(source, AudioFormatInfo("FLAC",null,96000,2,24), false))
         assertEquals("Upgrading quality", qualityStatusLabel(null, null, true))
     }
 }
