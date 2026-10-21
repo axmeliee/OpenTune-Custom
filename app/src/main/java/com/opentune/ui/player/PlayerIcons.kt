@@ -3,6 +3,7 @@ package com.opentune.ui.player
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Cast
 import androidx.compose.material.icons.rounded.Smartphone
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.PathFillType
 import androidx.compose.ui.graphics.SolidColor
@@ -50,22 +51,83 @@ internal object PlayerIcons {
         }.build()
     }
 
-    /** Two earbuds side by side, stems down, each with its speaker opening. */
+    /**
+     * A pair of earbuds facing outward: each a round head with its ear tip on
+     * the outer side, set apart by a crescent gap, a slanted sensor slot in
+     * the head, and a straight stem meeting the head in a smooth neck.
+     */
     val Earbuds: ImageVector by lazy {
         ImageVector.Builder("Earbuds", 24.dp, 24.dp, 24f, 24f).apply {
-            // The heads, the openings cut out of them.
-            path(fill = SolidColor(Color.Black), pathFillType = PathFillType.EvenOdd) {
-                circle(7.4f, 7.6f, 3.4f)
-                circle(6.6f, 7.6f, 1.15f)
-                circle(16.6f, 7.6f, 3.4f)
-                circle(17.4f, 7.6f, 1.15f)
-            }
-            // The stems, down from the inner side of each head.
-            path(fill = SolidColor(Color.Black)) {
-                stem(8.7f, 8.4f)
-                stem(13.5f, 8.4f)
+            for (mirror in listOf(false, true)) {
+                fun x(v: Float) = if (mirror) 24f - v else v
+                val head = Offset(x(7.1f), 9.0f)
+                val tip = Offset(x(3.3f), 10.0f)
+                val stem = x(7.43f)
+                // The head, its edge drawn around the gap that keeps it off the tip, the slot cut out.
+                path(fill = SolidColor(Color.Black), pathFillType = PathFillType.EvenOdd) {
+                    headAround(head, HEAD_R, tip, TIP_R + GAP)
+                    capsule(Offset(x(6.0f), 7.6f), Offset(x(7.0f), 9.8f), 0.62f)
+                }
+                path(fill = SolidColor(Color.Black)) {
+                    // The ear tip.
+                    moveTo(tip.x - TIP_R, tip.y)
+                    arcToRelative(TIP_R, TIP_R, 0f, true, true, 2 * TIP_R, 0f)
+                    arcToRelative(TIP_R, TIP_R, 0f, true, true, -2 * TIP_R, 0f)
+                    close()
+                    // The neck, curving in from the head to the stem.
+                    moveTo(stem - 2.0f, 11.6f)
+                    quadTo(stem - STEM_R, 12.3f, stem - STEM_R, 13.6f)
+                    lineTo(stem + STEM_R, 13.6f)
+                    quadTo(stem + STEM_R, 12.3f, stem + 2.0f, 11.6f)
+                    close()
+                    // The stem, straight down with a round end.
+                    capsule(Offset(stem, 11.8f), Offset(stem, 17.2f), STEM_R)
+                }
             }
         }.build()
+    }
+
+    private const val HEAD_R = 3.6f
+    private const val TIP_R = 1.9f
+    private const val GAP = 0.45f
+    private const val STEM_R = 1.2f
+
+    /**
+     * A circle of radius [r] about [c], less where it would come within
+     * [keep] of [away]: the long way round its own edge, then back along the
+     * inside of the circle it gives way to.
+     */
+    private fun PathBuilder.headAround(c: Offset, r: Float, away: Offset, keep: Float) {
+        val dx = away.x - c.x
+        val dy = away.y - c.y
+        val d = kotlin.math.sqrt(dx * dx + dy * dy)
+        val a = (r * r - keep * keep + d * d) / (2 * d)
+        val h = kotlin.math.sqrt((r * r - a * a).coerceAtLeast(0f))
+        val ux = dx / d
+        val uy = dy / d
+        val px = c.x + a * ux
+        val py = c.y + a * uy
+        val i1 = Offset(px - h * uy, py + h * ux)
+        val i2 = Offset(px + h * uy, py - h * ux)
+        moveTo(i1.x, i1.y)
+        arcTo(r, r, 0f, true, true, i2.x, i2.y)
+        arcTo(keep, keep, 0f, false, false, i1.x, i1.y)
+        close()
+    }
+
+    /** A capsule [r] wide on either side of the line from [a] to [b], round at both ends. */
+    private fun PathBuilder.capsule(a: Offset, b: Offset, r: Float) {
+        val dx = b.x - a.x
+        val dy = b.y - a.y
+        val len = kotlin.math.sqrt(dx * dx + dy * dy)
+        val nx = -dy / len * r
+        val ny = dx / len * r
+        moveTo(a.x + nx, a.y + ny)
+        lineTo(b.x + nx, b.y + ny)
+        arcTo(r, r, 0f, false, false, b.x - nx, b.y - ny)
+        lineTo(a.x - nx, a.y - ny)
+        arcTo(r, r, 0f, false, false, a.x + nx, a.y + ny)
+        close()
     }
 
     /**
@@ -116,23 +178,6 @@ internal object PlayerIcons {
         close()
     }
 
-    private fun PathBuilder.circle(cx: Float, cy: Float, r: Float) {
-        moveTo(cx - r, cy)
-        arcToRelative(r, r, 0f, true, true, 2 * r, 0f)
-        arcToRelative(r, r, 0f, true, true, -2 * r, 0f)
-        close()
-    }
-
-    /** A stem 1.8 wide with round ends, from ([x], [top]) down to y 20.3. */
-    private fun PathBuilder.stem(x: Float, top: Float) {
-        val w = 1.8f
-        val r = w / 2f
-        moveTo(x, top + r)
-        arcToRelative(r, r, 0f, false, true, w, 0f)
-        verticalLineTo(20.3f - r)
-        arcToRelative(r, r, 0f, false, true, -w, 0f)
-        close()
-    }
 }
 
 /** The icon for where the sound is going: earbuds for Bluetooth, headphones for a wire or USB. */
