@@ -924,19 +924,16 @@ fun PlayerLayout(
                                     Modifier.height(52.dp).clip(RoundedCornerShape(30.dp)).background(Color.White.copy(alpha = 0.14f)),
                                     verticalAlignment = Alignment.CenterVertically,
                                 ) {
-                                    Box(Modifier.width(76.dp), contentAlignment = Alignment.Center) {
-                                        GlassToggle(Icons.Rounded.Bedtime, "Sleep timer", sleepLabel != null, { showSleep = true })
-                                    }
+                                    // Each half is the button: a press fills the half, not a circle round the icon.
+                                    PillButton(Icons.Rounded.Bedtime, "Sleep timer", sleepLabel != null, { showSleep = true })
                                     Box(Modifier.width(1.dp).fillMaxHeight().background(Color.White.copy(alpha = 0.16f)))
-                                    Box(Modifier.width(76.dp), contentAlignment = Alignment.Center) {
-                                        GlassToggle(
-                                            outputRoute.icon,
-                                            "Audio output",
-                                            // Headphones only change the icon; lit up is for casting, a session to notice.
-                                            outputRoute == OutputRoute.CAST,
-                                            { showOutput = true },
-                                        )
-                                    }
+                                    PillButton(
+                                        outputRoute.icon,
+                                        "Audio output",
+                                        // Headphones only change the icon; lit up is for casting, a session to notice.
+                                        outputRoute == OutputRoute.CAST,
+                                        { showOutput = true },
+                                    )
                                 }
                             }
                         }

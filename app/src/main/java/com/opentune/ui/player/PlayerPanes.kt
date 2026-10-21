@@ -305,6 +305,22 @@ fun GlassToggle(icon: ImageVector, label: String, selected: Boolean, onClick: ()
 }
 
 /**
+ * One half (or third) of a pill of buttons: the whole segment is the button,
+ * so a press, and the lit look when [selected], fill the segment, the pill's
+ * own rounding shaping its outer end, rather than a circle round the icon.
+ */
+@Composable
+fun PillButton(icon: ImageVector, label: String, selected: Boolean, onClick: () -> Unit, width: androidx.compose.ui.unit.Dp = 76.dp) {
+    val bg by animateColorAsState(if (selected) Color.White.copy(alpha = 0.20f) else Color.Transparent, label = "pillButton")
+    Box(
+        Modifier.fillMaxHeight().width(width).background(bg).clickable(onClickLabel = label, onClick = onClick),
+        contentAlignment = Alignment.Center,
+    ) {
+        Icon(icon, label, Modifier.size(26.dp))
+    }
+}
+
+/**
  * Shuffle, repeat and autoplay in one glass pill, split by hairlines. Each
  * has a feel of its own under the finger (see [Haptics.Pattern]) and a small
  * motion of its own as it changes.
