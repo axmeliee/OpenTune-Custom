@@ -64,6 +64,25 @@ class DspPipelineTest {
     }
 
     @Test
+    fun ditheredSixteenBitStaysAudibleAndInRange() {
+        // Spatial processing forces the per-sample float→16-bit path, where the dither runs.
+        val dsp = DspAudioProcessor().apply { params = DspParams(spatial = true) }
+        val pipeline = AudioProcessingPipeline(ImmutableList.of<AudioProcessor>(dsp))
+        pipeline.configure(AudioProcessor.AudioFormat(48_000, 2, C.ENCODING_PCM_16BIT))
+        pipeline.flush(AudioProcessor.StreamMetadata.DEFAULT)
+        var nonZero = false
+        repeat(20) {
+            val input = pcm(512)
+            while (input.hasRemaining()) {
+                pipeline.queueInput(input)
+                val out = pipeline.getOutput().order(ByteOrder.nativeOrder())
+                while (out.remaining() >= 2) if (out.getShort().toInt() != 0) nonZero = true
+            }
+        }
+        org.junit.Assert.assertTrue("dithered output should not be silent", nonZero)
+    }
+
+    @Test
     fun sixteenBitWithTrimming() = sinkChain(DspAudioProcessor(), C.ENCODING_PCM_16BIT, { pcm(960) })
 
     @Test

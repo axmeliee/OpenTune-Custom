@@ -50,6 +50,8 @@ import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowRight
 import androidx.compose.material.icons.automirrored.rounded.QueueMusic
 import androidx.compose.material.icons.rounded.Bedtime
 import androidx.compose.material.icons.rounded.Cast
+import androidx.compose.material.icons.rounded.Headphones
+import androidx.compose.material.icons.rounded.Smartphone
 import androidx.compose.material.icons.rounded.BugReport
 import androidx.compose.material.icons.rounded.Favorite
 import androidx.compose.material.icons.rounded.FavoriteBorder
@@ -293,6 +295,7 @@ fun PlayerLayout(
     fun toggle(p: Pane) { paneName = if (pane == p) Pane.COVER.name else p.name }
     var showRemix by remember { mutableStateOf(false) }
     var showCast by remember { mutableStateOf(false) }
+    var showOutput by remember { mutableStateOf(false) }
     var showMenu by remember { mutableStateOf(false) }
     var showSleep by remember { mutableStateOf(false) }
     var showOffset by remember { mutableStateOf(false) }
@@ -334,6 +337,7 @@ fun PlayerLayout(
     val liked by LibraryStore.liked.collectAsState()
     val isLiked = liked.any { it.videoId == current.videoId }
     val device = rememberOutputDeviceName()
+    val outputRoute = rememberOutputRoute()
     val sleepLabel = sleepTimerLabel()
 
     // Drag down anywhere outside the lyrics and queue lists to close.
@@ -724,7 +728,16 @@ fun PlayerLayout(
                                     verticalAlignment = Alignment.CenterVertically,
                                 ) {
                                     GlassToggle(Icons.Rounded.Bedtime, "Sleep timer", sleepLabel != null, { showSleep = true })
-                                    GlassToggle(Icons.Rounded.Cast, "Play on another device", com.opentune.ui.cast.castingTo() != null, { showCast = true })
+                                    GlassToggle(
+                                        when {
+                                            outputRoute == OutputRoute.CAST -> Icons.Rounded.Cast
+                                            outputRoute.isHeadset -> Icons.Rounded.Headphones
+                                            else -> Icons.Rounded.Smartphone
+                                        },
+                                        "Audio output",
+                                        outputRoute != OutputRoute.PHONE,
+                                        { showOutput = true },
+                                    )
                                 }
                             }
                         }
@@ -756,6 +769,11 @@ fun PlayerLayout(
             Box(Modifier.fillMaxSize().graphicsLayer { alpha = (windDown * 0.55f).coerceIn(0f, 0.55f) }.background(Color.Black))
         }
         if (showRemix) RemixSheet(onDismiss = { showRemix = false })
+        if (showOutput) com.opentune.ui.cast.AudioOutputSheet(
+            onDismiss = { showOutput = false },
+            onCast = { showOutput = false; showCast = true },
+            onPipeline = { showOutput = false; showSignal = true },
+        )
         if (showCast) com.opentune.ui.cast.CastSheet(onDismiss = { showCast = false })
         if (showSleep) SleepTimerDialog(onDismiss = { showSleep = false })
         if (showMenu) {
