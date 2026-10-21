@@ -206,12 +206,15 @@ class PlaybackService : MediaLibraryService() {
         // which is video-sized caution. A stream starts after half a second buffered
         // and a local file after a quarter second.
         val loadControl = DefaultLoadControl.Builder()
-            .setBufferDurationsMsForStreaming(20_000, FAR_BUFFER_MS, 500, 2_000)
+            .setBufferDurationsMsForStreaming(30_000, FAR_BUFFER_MS, 500, 2_000)
             .setBufferDurationsMsForLocalPlayback(5_000, FAR_BUFFER_MS, 250, 500)
-            // The byte ceiling decides, not the time one: about a whole song
-            // of Opus, so a fetched track is fetched once and seeks within it
-            // are instant. Media3's audio default is around 40 seconds.
+            // The byte ceiling decides, not the time one: a whole song at CD
+            // quality, a couple of minutes at 24-bit/96 kHz, so a fetched track is
+            // fetched once and seeks within it are instant. 8 MB held only about
+            // 15 s of hi-res FLAC, and any dip in the connection stalled it.
             .setTargetBufferBytes(FAR_BUFFER_BYTES)
+            // However heavy the stream, at least the minimum time ahead is held.
+            .setPrioritizeTimeOverSizeThresholds(true)
             .setBackBuffer(BACK_BUFFER_MS, true)
             .build()
 
@@ -727,6 +730,7 @@ class PlaybackService : MediaLibraryService() {
         }
 
         override fun onPlaybackStateChanged(playbackState: Int) {
+            watchStall(playbackState)
             if (playbackState == Player.STATE_READY) {
                 updateExternalStats()
                 // The figure arrives with the stream; on a first play it's
@@ -1566,6 +1570,41 @@ class PlaybackService : MediaLibraryService() {
      *    the queue and autoplay without a sound. Playback stops on the error
      *    instead, so it's shown, and play tries again.
      */
+    private var stallJob: Job? = null
+
+    /**
+     * A better stream that stops to buffer mid-song and doesn't come back
+     * within [STALL_FALLBACK_MS] goes back to the stream the song started on,
+     * from where it stopped, the way a failed one does: a hi-res file over a
+     * weak connection shouldn't leave the music standing still.
+     */
+    private fun watchStall(state: Int) {
+        stallJob?.cancel()
+        if (state != Player.STATE_BUFFERING) return
+        val player = mediaSession?.player as? ExoPlayer ?: return
+        val item = player.currentMediaItem ?: return
+        val uri = item.localConfiguration?.uri ?: return
+        if (!isUpgradedUri(uri) && externalStreamKeyOf(uri) == null) return
+        // Only mid-song: the start and a seek buffer by design.
+        if (player.currentPosition < STALL_MIN_POSITION_MS) return
+        val at = player.currentPosition
+        stallJob = scope.launch {
+            delay(STALL_FALLBACK_MS)
+            if (player.playbackState != Player.STATE_BUFFERING || !player.playWhenReady) return@launch
+            if (player.currentMediaItem?.localConfiguration?.uri != uri || kotlin.math.abs(player.currentPosition - at) > 1_000) return@launch
+            Log.w(TAG, "Better stream for ${item.mediaId} stalled for ${STALL_FALLBACK_MS}ms at ${at}ms; back to the one it started on")
+            StreamResolver.dropUpgrade(item.mediaId)
+            val index = player.currentMediaItemIndex
+            swappingTo = item.mediaId
+            player.replaceMediaItem(index, item.buildUpon().setUri(youtubeFallbackUri(item.mediaId)).setMimeType(null).build())
+            updateExternalStats()
+            applyLoudness()
+            player.seekTo(index, at)
+            player.prepare()
+            PlaybackRequests.report("The better stream kept stopping, so this song went back to the regular one")
+        }
+    }
+
     private fun recover(error: PlaybackException) {
         val player = mediaSession?.player as? ExoPlayer ?: return
         val item = player.currentMediaItem ?: return
@@ -1730,8 +1769,11 @@ class PlaybackService : MediaLibraryService() {
         const val BRIDGE_CATCH_UP_MS = 8_000L
         const val SWAP_DIP_MS = 120L
         const val SWAP_RISE_MS = 260L
+        /** Stuck buffering this long mid-song, a better stream gives way to the regular one. */
+        const val STALL_FALLBACK_MS = 6_000L
+        const val STALL_MIN_POSITION_MS = 3_000L
         const val FAR_BUFFER_MS = 15 * 60 * 1000
-        const val FAR_BUFFER_BYTES = 8 * 1024 * 1024
+        const val FAR_BUFFER_BYTES = 48 * 1024 * 1024
         const val BACK_BUFFER_MS = 30_000
         const val MIN_LOUDNESS_GAIN_MB = -1500
         const val MAX_LOUDNESS_GAIN_MB = 900
