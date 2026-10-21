@@ -193,7 +193,7 @@ fun EqualizerScreen(contentPadding: PaddingValues, onBack: () -> Unit) {
                     { picking = true },
                     summary = hp?.let { "AutoEq correction measured by ${it.source} · ${it.filters.size} filters, ${formatDb(it.preampDb)} preamp" }
                         ?: "Pick your model from AutoEq's thousands of measurements",
-                    icon = Icons.Rounded.Headphones,
+                    icon = com.opentune.ui.player.PlayerIcons.Headphones,
                 )
                 if (hp != null) {
                     SettingRow("Turn off headphone correction", icon = Icons.Rounded.Close, onClick = { AppSettings.updateEqualizer { it.copy(headphone = null) } })

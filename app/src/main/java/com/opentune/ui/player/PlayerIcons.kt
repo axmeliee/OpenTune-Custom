@@ -1,5 +1,8 @@
 package com.opentune.ui.player
 
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.Cast
+import androidx.compose.material.icons.rounded.Smartphone
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.PathFillType
 import androidx.compose.ui.graphics.SolidColor
@@ -65,6 +68,42 @@ internal object PlayerIcons {
         }.build()
     }
 
+    /**
+     * Headphones, drawn plainly: a tall arch with square ends for the band,
+     * and two bars either side of it for the sound, the inner ones taller.
+     */
+    val Headphones: ImageVector by lazy {
+        ImageVector.Builder("Headphones", 24.dp, 24.dp, 24f, 24f).apply {
+            path(
+                fill = null,
+                stroke = SolidColor(Color.Black),
+                strokeLineWidth = 1.6f,
+                strokeLineCap = StrokeCap.Butt,
+                strokeLineJoin = StrokeJoin.Miter,
+            ) {
+                moveTo(7.4f, 18.6f)
+                verticalLineTo(10.8f)
+                arcToRelative(4.6f, 4.6f, 0f, false, true, 9.2f, 0f)
+                verticalLineTo(18.6f)
+            }
+            path(fill = SolidColor(Color.Black)) {
+                // Inner bars, then the shorter outer ones.
+                rect(4.35f, 11.5f, 5.85f, 17.75f)
+                rect(18.15f, 11.5f, 19.65f, 17.75f)
+                rect(2f, 12.35f, 3.5f, 17.05f)
+                rect(20.5f, 12.35f, 22f, 17.05f)
+            }
+        }.build()
+    }
+
+    private fun PathBuilder.rect(l: Float, t: Float, r: Float, b: Float) {
+        moveTo(l, t)
+        horizontalLineTo(r)
+        verticalLineTo(b)
+        horizontalLineTo(l)
+        close()
+    }
+
     /** A filled comma-like quote mark, 2.6 wide, its top left at ([x], [y]). */
     private fun PathBuilder.quoteMark(x: Float, y: Float) {
         moveTo(x, y)
@@ -95,3 +134,12 @@ internal object PlayerIcons {
         close()
     }
 }
+
+/** The icon for where the sound is going: earbuds for Bluetooth, headphones for a wire or USB. */
+internal val OutputRoute.icon: ImageVector
+    get() = when (this) {
+        OutputRoute.CAST -> Icons.Rounded.Cast
+        OutputRoute.BLUETOOTH -> PlayerIcons.Earbuds
+        OutputRoute.HEADPHONES, OutputRoute.USB -> PlayerIcons.Headphones
+        OutputRoute.PHONE -> Icons.Rounded.Smartphone
+    }

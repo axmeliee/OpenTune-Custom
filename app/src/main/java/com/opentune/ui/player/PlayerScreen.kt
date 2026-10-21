@@ -930,12 +930,7 @@ fun PlayerLayout(
                                     Box(Modifier.width(1.dp).fillMaxHeight().background(Color.White.copy(alpha = 0.16f)))
                                     Box(Modifier.width(76.dp), contentAlignment = Alignment.Center) {
                                         GlassToggle(
-                                            when (outputRoute) {
-                                                OutputRoute.CAST -> Icons.Rounded.Cast
-                                                OutputRoute.BLUETOOTH -> PlayerIcons.Earbuds
-                                                OutputRoute.HEADPHONES, OutputRoute.USB -> Icons.Rounded.Headphones
-                                                OutputRoute.PHONE -> Icons.Rounded.Smartphone
-                                            },
+                                            outputRoute.icon,
                                             "Audio output",
                                             // Headphones only change the icon; lit up is for casting, a session to notice.
                                             outputRoute == OutputRoute.CAST,

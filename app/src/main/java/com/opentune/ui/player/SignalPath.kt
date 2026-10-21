@@ -160,11 +160,7 @@ fun SignalPathDialog(format: AudioFormatInfo?, onDismiss: () -> Unit) {
             ),
         ),
         Stage(
-            when {
-                route == OutputRoute.CAST -> Icons.Rounded.Cast
-                route.isHeadset -> Icons.Rounded.Headphones
-                else -> Icons.Rounded.Speaker
-            },
+            if (route == OutputRoute.PHONE) Icons.Rounded.Speaker else route.icon,
             "Output",
             listOfNotNull(
                 "Device" to device,

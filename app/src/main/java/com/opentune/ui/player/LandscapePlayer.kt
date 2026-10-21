@@ -147,7 +147,7 @@ internal fun LandscapePlayer(
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Text(device, style = MaterialTheme.typography.labelLarge, color = scheme.primary, maxLines = 1, overflow = TextOverflow.Ellipsis)
                             Spacer(Modifier.width(4.dp))
-                            Icon(Icons.Rounded.Headphones, null, Modifier.size(14.dp), tint = scheme.primary)
+                            Icon(outputRoute.icon, null, Modifier.size(14.dp), tint = scheme.primary)
                         }
                         Text(song.title, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
                         Text(
@@ -177,11 +177,7 @@ internal fun LandscapePlayer(
                     val context = LocalContext.current
                     RoundIcon(Icons.Rounded.SpeakerGroup, "Choose where it plays", { openOutputSwitcher(context) })
                     RoundIcon(
-                        when {
-                            outputRoute == OutputRoute.CAST -> Icons.Rounded.Cast
-                            outputRoute.isHeadset -> Icons.Rounded.Headphones
-                            else -> Icons.Rounded.Smartphone
-                        },
+                        outputRoute.icon,
                         "Audio output",
                         { showOutput = true },
                         tint = if (outputRoute == OutputRoute.CAST) scheme.primary else scheme.onSurface,
