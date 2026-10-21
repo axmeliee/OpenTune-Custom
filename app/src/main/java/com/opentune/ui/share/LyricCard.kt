@@ -14,7 +14,6 @@ import android.text.Layout
 import android.text.StaticLayout
 import android.text.TextPaint
 import android.text.TextUtils
-import android.widget.Toast
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.Image
@@ -231,7 +230,7 @@ fun LyricCardSheet(song: Song, lines: List<String>, startAt: Int, onDismiss: () 
                     haptics.press()
                     scope.launch {
                         val saved = runCatching { ShareCard.saveImage(context, card, fileName) }.isSuccess
-                        Toast.makeText(context, if (saved) "Saved to Pictures/OpenTune" else "Couldn't save the card", Toast.LENGTH_SHORT).show()
+                        if (saved) com.opentune.data.Pills.done("Saved to Pictures/OpenTune", context) else com.opentune.data.Pills.error("Couldn't save the card", context)
                     }
                 },
             )

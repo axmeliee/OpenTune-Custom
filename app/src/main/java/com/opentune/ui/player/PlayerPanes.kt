@@ -354,7 +354,7 @@ fun ModesPill(shuffle: ShuffleMode, smartShuffleAvailable: Boolean, repeatMode: 
                 next == ShuffleMode.ON && smartShuffleAvailable && !smartHintShown -> { smartHintShown = true; "Shuffle on. Tap again for smart shuffle" }
                 shuffle == ShuffleMode.SMART -> "Shuffle off. Added songs removed"
                 else -> null
-            }?.let { android.widget.Toast.makeText(context, it, android.widget.Toast.LENGTH_SHORT).show() }
+            }?.let { com.opentune.data.Pills.info(it, context) }
             onShuffle()
         }
         VerticalDivider(Modifier.height(30.dp), color = Color.White.copy(alpha = 0.18f))

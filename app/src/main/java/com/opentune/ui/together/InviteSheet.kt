@@ -176,5 +176,5 @@ internal fun shareRoom(context: Context, code: RoomCode) {
 
 internal fun copyCode(context: Context, code: RoomCode, toast: Boolean = true) {
     context.getSystemService(ClipboardManager::class.java)?.setPrimaryClip(ClipData.newPlainText("OpenTune room", code.pretty))
-    if (toast) android.widget.Toast.makeText(context, "Code copied", android.widget.Toast.LENGTH_SHORT).show()
+    if (toast) com.opentune.data.Pills.done("Code copied", context)
 }

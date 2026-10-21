@@ -1,6 +1,5 @@
 package com.opentune.ui.browse
 
-import android.widget.Toast
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -59,7 +58,7 @@ internal fun rememberOwnPlaylist(c: Collection): OwnPlaylist? {
             } catch (e: Exception) {
                 DebugLog.w("OwnPlaylist", "Couldn't make ${c.browseId} ${to.apiValue}", e)
                 privacy = before
-                Toast.makeText(context, "Couldn't change who can see it", Toast.LENGTH_SHORT).show()
+                com.opentune.data.Pills.error("Couldn't change who can see it", context)
             }
         }
     }

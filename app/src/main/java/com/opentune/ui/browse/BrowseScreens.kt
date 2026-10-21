@@ -207,7 +207,7 @@ internal fun ShuffleButton(onShuffle: () -> Unit, onSmartShuffle: (() -> Unit)?,
     val context = androidx.compose.ui.platform.LocalContext.current
     val onLong: (() -> Unit)? = onSmartShuffle?.takeIf { smartAllowed && enabled }?.let { smart ->
         {
-            android.widget.Toast.makeText(context, "Smart shuffle: similar songs mixed in", android.widget.Toast.LENGTH_SHORT).show()
+            com.opentune.data.Pills.info("Smart shuffle: similar songs mixed in", context)
             smart()
         }
     }
@@ -381,7 +381,7 @@ private fun ListMoreSheet(c: com.opentune.data.Collection, isAlbum: Boolean, act
             com.opentune.ui.components.MenuRow(Icons.Filled.Download, "Download all") {
                 close()
                 c.songs.forEach { com.opentune.data.download.Downloads.enqueue(context, it) }
-                android.widget.Toast.makeText(context, "Downloading ${c.songs.size} songs", android.widget.Toast.LENGTH_SHORT).show()
+                com.opentune.data.Pills.done("Downloading ${c.songs.size} songs", context)
             }
             com.opentune.ui.components.MenuRow(Icons.Filled.Share, "Share") { close(); com.opentune.ui.share.ListShare.shareList(context, c.title, c.browseId) }
             com.opentune.ui.components.MenuRow(if (saved) Icons.Filled.BookmarkRemove else Icons.Filled.PushPin, if (saved) "Unpin" else "Pin") {

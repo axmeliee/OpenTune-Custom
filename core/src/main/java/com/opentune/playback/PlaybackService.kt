@@ -33,7 +33,6 @@ import androidx.media3.session.LibraryResult
 import com.opentune.data.radio.Radio
 import com.opentune.data.podcasts.Podcasts
 import com.opentune.data.sponsorblock.SponsorBlock
-import android.widget.Toast
 import android.os.Bundle
 import androidx.media3.session.SessionResult
 import androidx.media3.session.SessionCommand
@@ -1386,7 +1385,7 @@ class PlaybackService : MediaLibraryService() {
                 } else {
                     player.seekTo(segment.endMs)
                 }
-                Toast.makeText(this@PlaybackService, "Skipped ${SponsorBlock.CATEGORIES[segment.category]?.one ?: "a segment"}", Toast.LENGTH_SHORT).show()
+                com.opentune.data.Pills.done("Skipped ${SponsorBlock.CATEGORIES[segment.category]?.one ?: "a segment"}", this@PlaybackService)
             }
         }
     }

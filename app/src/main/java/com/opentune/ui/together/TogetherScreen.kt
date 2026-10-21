@@ -1,6 +1,5 @@
 package com.opentune.ui.together
 
-import android.widget.Toast
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.EnterTransition
@@ -1184,7 +1183,7 @@ private fun HoldToRecord(live: Boolean, modifier: Modifier, content: @Composable
     val recording by Together.recording.collectAsState()
     val haptics = com.opentune.ui.components.rememberHaptics()
     val ask = androidx.activity.compose.rememberLauncherForActivityResult(androidx.activity.result.contract.ActivityResultContracts.RequestPermission()) { granted ->
-        if (granted) Toast.makeText(context, "Now hold to record", Toast.LENGTH_SHORT).show()
+        if (granted) com.opentune.data.Pills.info("Now hold to record", context)
     }
     Box(
         modifier.pointerInput(live) {
@@ -1193,7 +1192,7 @@ private fun HoldToRecord(live: Boolean, modifier: Modifier, content: @Composable
                 // scroll, lets go (or is taken by the scroll) before this runs out.
                 val letGo = kotlinx.coroutines.withTimeoutOrNull(if (live) TALK_HOLD_MS else NOTE_HOLD_MS) { tryAwaitRelease() }
                 if (letGo != null) {
-                    if (letGo) Toast.makeText(context, if (live) "Hold to talk" else "Hold to record a voice note", Toast.LENGTH_SHORT).show()
+                    if (letGo) com.opentune.data.Pills.info(if (live) "Hold to talk" else "Hold to record a voice note", context)
                     return@detectTapGestures
                 }
                 val granted = androidx.core.content.ContextCompat.checkSelfPermission(context, android.Manifest.permission.RECORD_AUDIO) ==

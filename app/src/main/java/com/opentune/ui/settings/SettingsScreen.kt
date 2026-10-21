@@ -1181,7 +1181,7 @@ private fun settingsSections(
                                     append(" copied to Music/OpenTune")
                                     if (skipped > 0) append("; $skipped in a format other apps can't play, download them again to export")
                                 }
-                                if (copied > 0 || skipped > 0) android.widget.Toast.makeText(context, note, android.widget.Toast.LENGTH_LONG).show()
+                                if (copied > 0 || skipped > 0) com.opentune.data.Pills.done(note, context)
                             }
                         },
                         summary = if (com.opentune.data.download.DownloadExport.supported)

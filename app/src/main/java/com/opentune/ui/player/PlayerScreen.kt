@@ -3,7 +3,6 @@ package com.opentune.ui.player
 import android.content.ClipData
 import android.content.res.Configuration
 import android.content.ClipboardManager
-import android.widget.Toast
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.expandHorizontally
@@ -333,7 +332,7 @@ fun PlayerLayout(
     val syncLine: (Long) -> Unit = { lineStart ->
         val shift = lineStart - position()
         AppSettings.setLyricsOffset(current.videoId, shift)
-        Toast.makeText(context, "Lyrics moved %+.1f s for this song".format(shift / 1000f), Toast.LENGTH_SHORT).show()
+        com.opentune.data.Pills.info("Lyrics moved %+.1f s for this song".format(shift / 1000f), context)
     }
     // Lyrics take the screen: the controls go after LYRICS_FOCUS_MS untouched while
     // synced lyrics play on the lyrics view, and come back at the next touch.
@@ -350,7 +349,7 @@ fun PlayerLayout(
     }
     // What came of an "Upgrade quality" from the menu: switched, already the best, or not in time.
     LaunchedEffect(Unit) {
-        com.opentune.playback.PlaybackRequests.upgradeResult.collect { Toast.makeText(context, it, Toast.LENGTH_SHORT).show() }
+        com.opentune.playback.PlaybackRequests.upgradeResult.collect { com.opentune.data.Pills.info(it, context) }
     }
     // Swiping up through the lyrics slides the controls down out of the way;
     // swiping back down brings them up again. Only the finger's own scrolling
@@ -1018,7 +1017,7 @@ fun PlayerLayout(
                         scope.launch {
                             val log = LogExport.recent()
                             clipboard.setPrimaryClip(ClipData.newPlainText("OpenTune log", log))
-                            Toast.makeText(context, "Log copied", Toast.LENGTH_SHORT).show()
+                            com.opentune.data.Pills.done("Log copied", context)
                         }
                     }
                 },
