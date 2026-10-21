@@ -700,7 +700,7 @@ fun SeekBar(
                 Text(if (loading) "--:--" else formatTime(elapsedSeconds * 1000), modifier = Modifier.width(timeWidth),
                     style = timeStyle, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1)
                 // Raised a little, closer to the bar it describes than the times beside it.
-                quality?.let { Box(Modifier.weight(1f).offset(y = (-8).dp), contentAlignment = Alignment.Center) { it() } }
+                quality?.let { Box(Modifier.weight(1f).offset(y = (-14).dp), contentAlignment = Alignment.Center) { it() } }
                 Text(
                     when {
                         durationMs <= 0 -> "--:--"
@@ -715,7 +715,7 @@ fun SeekBar(
                 )
             }
         }
-        if (look.seekbarTime == com.opentune.data.settings.SeekbarTime.HIDDEN) quality?.let { Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) { it() } }
+        if (look.seekbarTime == com.opentune.data.settings.SeekbarTime.HIDDEN) quality?.let { Box(Modifier.fillMaxWidth().offset(y = (-6).dp), contentAlignment = Alignment.Center) { it() } }
     }
 }
 

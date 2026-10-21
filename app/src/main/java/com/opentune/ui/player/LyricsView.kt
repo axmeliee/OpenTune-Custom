@@ -670,8 +670,9 @@ private fun LyricLineView(
         Modifier
             .fillMaxWidth()
             .padding(vertical = cardPad / 5)
-            .clip(MaterialTheme.shapes.medium)
-            .background(card)
+            // The card is drawn in its shape, not clipped to it: a clip would cut a
+            // blurred line's soft edge into a hard box.
+            .background(card, MaterialTheme.shapes.medium)
             .combinedClickable(remember { MutableInteractionSource() }, indication = com.opentune.ui.components.FocusRing(MaterialTheme.shapes.medium), onLongClick = onLongClick, onClick = onClick)
             .padding(vertical = 10.dp, horizontal = cardPad)
             .graphicsLayer {
@@ -680,7 +681,8 @@ private fun LyricLineView(
                 this.alpha = alpha
                 transformOrigin = TransformOrigin(origin, 0.5f)
             }
-            .then(if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && blur > 0.dp) Modifier.blur(blur) else Modifier),
+            // Unbounded: the blur spreads past the line's bounds and fades out, with no edge to see.
+            .then(if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && blur > 0.dp) Modifier.blur(blur, androidx.compose.ui.draw.BlurredEdgeTreatment.Unbounded) else Modifier),
     ) {
         if (sweep) {
             // One crisp line: the whole active line stays readable and bright, sung words
