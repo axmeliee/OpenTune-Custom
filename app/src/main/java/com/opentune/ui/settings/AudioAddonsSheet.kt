@@ -175,7 +175,7 @@ internal fun AudioAddonsSheet(onDismiss: () -> Unit) {
             }
         }
     }
-    if (adding) AlertDialog(onDismissRequest = { if (!working) adding = false }, title = { Text("Add audio source") }, text = {
+    if (adding) AlertDialog(onDismissRequest = { if (!working) adding = false }, title = { com.opentune.ui.components.FrostBehind(enabled = !com.opentune.data.settings.AppSettings.ui.value.reduceBlur); Text("Add audio source") }, text = {
         Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
             Text("Paste a service root or manifest URL. OpenTune loads its capabilities without installing executable code.")
             OutlinedTextField(input, { input = it.take(2048) }, label = { Text("HTTPS addon URL") }, singleLine = true)

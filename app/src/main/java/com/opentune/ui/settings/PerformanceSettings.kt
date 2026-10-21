@@ -93,7 +93,7 @@ internal fun HighPerformanceRows(ui: InterfaceSettings) {
         AlertDialog(
             onDismissRequest = { askBattery = false },
             icon = { Icon(Icons.Rounded.BatteryChargingFull, null) },
-            title = { Text("Allow unrestricted battery use?") },
+            title = { com.opentune.ui.components.FrostBehind(enabled = !com.opentune.data.settings.AppSettings.ui.value.reduceBlur); Text("Allow unrestricted battery use?") },
             text = {
                 Text(
                     "Android slows down apps it saves battery on, so frames drop and the first scrolls stutter. " +

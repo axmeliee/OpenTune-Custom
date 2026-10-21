@@ -145,7 +145,13 @@ fun ContextMenu(anchor: Rect, onDismiss: () -> Unit, entries: List<MenuEntry>, p
         onDismissRequest = { close() },
         properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false),
     ) {
-        FrostBehind(enabled = !ui.reduceBlur)
+        // The screen behind frosted by the app itself; the window's blur only where that can't be done.
+        var frost by remember { mutableStateOf(if (ui.reduceBlur) Frost.FAILED else Frost.PENDING) }
+        FrostBehind(enabled = !ui.reduceBlur, standIn = frost != Frost.FAILED)
+        if (frost != Frost.FAILED) {
+            val got = ScreenFrost(shown = { shown }, veil = 0.5f)
+            LaunchedEffect(got) { frost = got }
+        }
         val view = LocalView.current
         val density = LocalDensity.current
         // Where this dialog's own window sits on the screen, to place the item where it was.

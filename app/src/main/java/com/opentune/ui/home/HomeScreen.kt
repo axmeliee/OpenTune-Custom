@@ -136,6 +136,8 @@ fun HomeScreen(
 
     if (historyOpen) {
         androidx.compose.material3.ModalBottomSheet(onDismissRequest = { historyOpen = false }) {
+            // Frosted behind, like the long-press menus and the other sheets.
+            com.opentune.ui.components.FrostBehind(enabled = !com.opentune.data.settings.AppSettings.ui.collectAsState().value.reduceBlur)
             if (recents.isEmpty()) Text("Your recently played songs will appear here", Modifier.padding(24.dp))
             else Recents(recents, ui.recentsAsGrid, actions) {
                 AppSettings.updateUi { it.copy(recentsAsGrid = !it.recentsAsGrid) }

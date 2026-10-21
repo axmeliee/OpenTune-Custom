@@ -169,13 +169,20 @@ fun FloatingCard(
             dismissOnClickOutside = dismissible,
         ),
     ) {
-        val frosted = FrostBehind(enabled = !ui.reduceBlur)
+        // The screen behind frosted by the app itself; the window's blur only where that can't be done.
+        var frost by remember { mutableStateOf(if (ui.reduceBlur) Frost.FAILED else Frost.PENDING) }
+        val windowFrost = FrostBehind(enabled = !ui.reduceBlur, standIn = frost != Frost.FAILED)
+        val frosted = windowFrost || frost == Frost.READY
         val dark = MaterialTheme.colorScheme.surface.luminance() <= 0.5f
         val shown by animateFloatAsState(
             if (open) 1f else 0f,
             if (still) snap() else if (open) spring(dampingRatio = 0.8f, stiffness = 360f) else tween(EXIT_MS.toInt()),
             label = "card",
         )
+        if (frost != Frost.FAILED) {
+            val got = ScreenFrost(shown = { shown })
+            LaunchedEffect(got) { frost = got }
+        }
         // A dialog's content sits outside the app's Surface, so it needs its own text colour.
         CompositionLocalProvider(LocalContentColor provides MaterialTheme.colorScheme.onSurface, LocalFloatingCard provides card) {
             BoxWithConstraints(
@@ -286,9 +293,14 @@ fun FloatingCard(
                                 // Glass: the blurred screen behind the window shows through
                                 // a film of the surface, lit a little along the top.
                                 Modifier
-                                    // Near solid: some phones say they blur behind a window and then
-                                    // don't, and a thinner film lets the page behind read through.
-                                    .background(MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = if (dark) 0.88f else 0.9f))
+                                    // Over the app's own frost the blur is certain, so the film can be
+                                    // thin glass. Over the window's it stays near solid: some phones say
+                                    // they blur behind a window and then don't, and the page would read through.
+                                    .background(
+                                        MaterialTheme.colorScheme.surfaceContainerHigh.copy(
+                                            alpha = if (frost == Frost.READY) (if (dark) 0.62f else 0.72f) else if (dark) 0.88f else 0.9f,
+                                        ),
+                                    )
                                     .background(Brush.verticalGradient(0f to Color.White.copy(alpha = if (dark) 0.07f else 0.18f), 0.35f to Color.Transparent))
                                     .border(1.dp, Brush.verticalGradient(listOf(Color.White.copy(alpha = if (dark) 0.22f else 0.6f), Color.White.copy(alpha = 0.04f))), shape)
                             } else {
@@ -493,13 +505,18 @@ fun SheetButton(
  * cross-window blur off (battery saver, some animations off) and back on.
  */
 @Composable
-internal fun FrostBehind(enabled: Boolean): Boolean {
+internal fun FrostBehind(
+    enabled: Boolean,
+    /** True while [ScreenFrost] frosts the screen itself: the window is left alone. */
+    standIn: Boolean = false,
+): Boolean {
     val view = LocalView.current
     val density = LocalDensity.current
     var blurring by remember { mutableStateOf(false) }
-    DisposableEffect(view, enabled) {
-        val window = (view.parent as? DialogWindowProvider)?.window
+    DisposableEffect(view, enabled, standIn) {
+        val window = (view.parent as? DialogWindowProvider)?.window?.takeIf { !standIn }
         var listener: java.util.function.Consumer<Boolean>? = null
+        if (standIn) blurring = false
         if (window != null) {
             window.setDimAmount(if (enabled) 0.35f else 0.55f)
             if (enabled && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
