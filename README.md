@@ -19,6 +19,7 @@
   <img src="https://img.shields.io/badge/Android-8.0%2B-3DDC84?logo=android&logoColor=white" alt="Android 8.0+">
   <img src="https://img.shields.io/badge/Kotlin-Compose-7F52FF?logo=kotlin&logoColor=white" alt="Kotlin and Jetpack Compose">
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-GPL--3.0-blue" alt="GPL-3.0"></a>
+  <a href="https://justshivv.github.io/Opentune/usage/"><img src="https://img.shields.io/endpoint?url=https%3A%2F%2Fopentune-usage.create-a-new-site-with-sites.workers.dev%2Fv1%2Fbadge%3Flabel%3Dactive%2520this%2520month&cacheSeconds=300" alt="Active installations this month"></a>
 </p>
 
 [![Get it on Orion Store](https://raw.githubusercontent.com/RookieEnough/Orion-Store/refs/heads/main/assets/orion-badge.png)](https://rookieenough.github.io/Orion-Data/redirect.html?id=opentune&icon=https%3A%2F%2Fjustshivv.github.io%2FOpentune%2Ficon-512.png)
@@ -571,6 +572,14 @@ transfers. Reinstalling or clearing app data creates a new ID. The server dedupl
 installations and merges cumulative play totals, so upload retries do not inflate counts.
 No hardware identifiers, accounts, song names or listening history are sent. Turn it off
 under Settings > About > Count this phone in usage numbers. Debug builds never count.
+
+The badge above and `GET /v1/public` expose only aggregate counts (total installations
+and daily, weekly and monthly active installations) with no sign-in; `GET /v1/badge`
+returns the same as a [Shields endpoint](https://shields.io/badges/endpoint-badge), so
+the README count refreshes itself. The full breakdown — versions, plays, downloads and
+per-day active numbers — stays behind the owner login on the usage dashboard. These are
+measured anonymous reports, not fraud-proof head counts, and there is no "active right
+now": the finest granularity is a calendar day.
 
 The website separately reports unique browsers requesting APKs and GitHub's raw APK
 download events. Neither means unique people or completed installs. Historical Abacus

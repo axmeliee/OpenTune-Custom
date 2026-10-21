@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { DatabaseSync } from 'node:sqlite';
 import { readFileSync } from 'node:fs';
-import worker, { ingest, summary, downloadSql, validateActivity } from './worker.mjs';
+import worker, { ingest, summary, downloadSql, validateActivity, publicCounts, shortCount, badge } from './worker.mjs';
 
 function database() {
   const sql = new DatabaseSync(':memory:'); sql.exec(readFileSync(new URL('./schema.sql',import.meta.url),'utf8'));
@@ -246,4 +246,62 @@ test('an email address can be the owner username',async()=>{
   const env={...loginEnv,USAGE_ADMIN_USERNAME:'owner@example.com'};
   const result=await worker.fetch(loginRequest('owner@example.com'),env);
   assert.equal(result.status,303);
+});
+
+test('public counts are aggregate only and match the dashboard figures',async()=>{
+  const db=database();
+  await ingest(db,body(3),now);
+  await ingest(db,{...body(1),installationId:id.replace(/1$/,'2')},now);
+  const counts=await publicCounts(db,now);
+  assert.equal(counts.installations,2);
+  assert.equal(counts.daily,2);
+  assert.equal(counts.monthly,2);
+  // No per-installation or version detail leaks out.
+  assert.deepEqual(Object.keys(counts).sort(),['asOf','daily','installations','monthly','timeZone','weekly']);
+});
+
+test('the public count and badge endpoints need no sign-in',async()=>{
+  const db=database(); await ingest(db,body(1),now);
+  const env={DB:db};
+  const open=await worker.fetch(new Request('https://example.test/v1/public'),env);
+  assert.equal(open.status,200);
+  assert.equal((await open.json()).installations,1);
+  const pill=await worker.fetch(new Request('https://example.test/v1/badge'),env);
+  assert.equal(pill.status,200);
+  const shield=await pill.json();
+  assert.equal(shield.schemaVersion,1);
+  assert.equal(shield.label,'active');
+  assert.equal(shield.message,'1');
+});
+
+test('the private dashboard data still needs a sign-in',async()=>{
+  const db=database(); await ingest(db,body(1),now);
+  const locked=await worker.fetch(new Request('https://example.test/v1/summary'),{DB:db});
+  assert.notEqual(locked.status,200);
+});
+
+test('updating an installation records one version change, never a new install',async()=>{
+  const db=database();
+  const install=(ver,rev)=>({installationId:id,days:[{day:'2026-10-09',version:ver,plays:1}],currentVersion:ver,versionRevision:rev});
+  await ingest(db,install('0.4.17',1),now);
+  await ingest(db,install('0.4.17',1),now);   // retry at the same revision: no change
+  await ingest(db,install('0.4.18',2),now);   // the update
+  const result=await summary(db,now);
+  assert.equal(result.totals.installs,1);                 // still one installation, not two
+  assert.equal(result.updates.total,1);                   // one update counted
+  assert.equal(result.updates.byVersion.length,1);
+  assert.equal(result.updates.byVersion[0].version,'0.4.18');
+  assert.equal(result.updates.byVersion[0].updates,1);
+  const current=Object.fromEntries(result.currentVersions.map(r=>[r.version,r.installations]));
+  assert.equal(current['0.4.18'],1);                      // the count moved to the new version
+  assert.equal(current['0.4.17']??0,0);
+});
+
+test('badge counts are shortened for display',()=>{
+  assert.equal(shortCount(42),'42');
+  assert.equal(shortCount(1234),'1.2k');
+  assert.equal(shortCount(42000),'42k');
+  assert.equal(shortCount(1_200_000),'1.2M');
+  assert.equal(badge({monthly:5300}).message,'5.3k');
+  assert.equal(badge({installations:900},new URLSearchParams('metric=installations')).label,'installs');
 });
