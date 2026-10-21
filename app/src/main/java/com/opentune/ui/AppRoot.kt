@@ -753,13 +753,18 @@ fun AppRoot(vm: PlayerViewModel) {
 
             AnimatedVisibility(
                 visible = sheetOpen && song != null,
-                // While the cover is growing into place, the player just fades in behind it.
+                // The cover grows in on open and shrinks back out on close; the player
+                // itself just fades behind it, leaving the morph to carry the motion.
                 enter = if (com.opentune.ui.components.PlayerMorph.expanding) fadeIn(tween(320)) else PageMotion.playerIn(chromeUi.playerMotion, chromeUi.reduceAnimation),
-                exit = PageMotion.playerOut(chromeUi.playerMotion, chromeUi.reduceAnimation),
+                exit = if (com.opentune.ui.components.PlayerMorph.collapsing) fadeOut(tween(360)) else PageMotion.playerOut(chromeUi.playerMotion, chromeUi.reduceAnimation),
             ) {
+                val closePlayer = {
+                    if (!chromeUi.reduceAnimation) com.opentune.ui.components.PlayerMorph.startClose()
+                    playerOpen = false
+                }
                 // Registered after the NavHost's own handler, so back closes the
                 // player first instead of popping the page behind it.
-                BackHandler(enabled = sheetOpen) { playerOpen = false }
+                BackHandler(enabled = sheetOpen) { closePlayer() }
                 // Once the player has slid fully over the page, the chrome under it is
                 // taken out: no second position loop or glass redrawn behind it.
                 val settled = transition.currentState == EnterExitState.Visible && transition.targetState == EnterExitState.Visible
@@ -768,7 +773,7 @@ fun AppRoot(vm: PlayerViewModel) {
                 DisposableEffect(Unit) { onDispose { playerCovers = false } }
                 PlayerScreen(
                     vm,
-                    onCollapse = { playerOpen = false },
+                    onCollapse = closePlayer,
                     onCovering = { still = it },
                     onTogether = { playerOpen = false; nav.navigate("together") },
                     onEqualizer = { playerOpen = false; nav.navigate("equalizer") },

@@ -392,8 +392,8 @@ fun ArtworkPane(
                         shadowElevation = 28.dp.toPx()
                         shape = androidx.compose.foundation.shape.RoundedCornerShape(28.dp)
                         clip = true
-                        // Hidden under the growing cover until the morph hands over.
-                        alpha = if (com.opentune.ui.components.PlayerMorph.expanding) 0f else 1f
+                        // Hidden under the morphing cover while it grows in or shrinks away.
+                        alpha = if (com.opentune.ui.components.PlayerMorph.expanding || com.opentune.ui.components.PlayerMorph.collapsing) 0f else 1f
                     },
                 shape = MaterialTheme.shapes.extraLarge,
                 imageModifier = Modifier.livingArt(isPlaying, moving),
