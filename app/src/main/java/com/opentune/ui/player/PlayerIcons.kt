@@ -75,14 +75,17 @@ internal object PlayerIcons {
                 path(fill = SolidColor(Color.Black)) {
                     headAround(x(8.1f), 8.15f, 3.35f, tipX, tipY, TIP_R + 0.4f)
                 }
-                // The neck: a point under the tip, curving down into the stem.
+                // The neck: its top edge runs along the gap round the tip, from
+                // where the gap meets the head out to a point under the tip,
+                // then it curves down into the stem and back up into the head.
                 path(fill = SolidColor(Color.Black)) {
-                    moveTo(x(5.3f), 11.75f)
-                    quadTo(x(6.6f), 11.55f, x(7.9f), 10.95f)
-                    lineTo(x(9.9f), 10.6f)
-                    quadTo(x(9.06f), 11.6f, x(9.06f), 12.8f)
-                    lineTo(x(6.08f), 12.8f)
-                    quadTo(x(6.08f), 12.05f, x(5.3f), 11.75f)
+                    moveTo(x(5.81f), 10.6f)
+                    arcTo(TIP_R + 0.4f, TIP_R + 0.4f, 0f, false, !mirror, x(4.74f), 10.76f)
+                    lineTo(x(4.75f), 11.2f)
+                    quadTo(x(6.08f), 11.5f, x(6.08f), 12.8f)
+                    lineTo(x(9.06f), 12.8f)
+                    quadTo(x(9.06f), 11.6f, x(9.9f), 10.6f)
+                    lineTo(x(8.0f), 10.0f)
                     close()
                 }
                 // The stem, square-ish at the foot.
