@@ -88,6 +88,7 @@ import androidx.compose.runtime.snapshotFlow
 import androidx.compose.runtime.withFrameMillis
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.zIndex
 import androidx.compose.ui.layout.boundsInRoot
 import androidx.compose.ui.layout.positionInRoot
 import androidx.compose.foundation.layout.offset
@@ -390,10 +391,12 @@ fun PlayerLayout(
     // mini player with the finger; let go short and it settles back with the card.
     LaunchedEffect(docked, state.ui.reduceAnimation) {
         if (docked || state.ui.reduceAnimation) return@LaunchedEffect
-        snapshotFlow { dragOffset }.collect { com.opentune.ui.components.PlayerMorph.dragClose(it) }
+        // When the whole player shrinks into the mini player, the cover goes with it instead.
+        snapshotFlow { dragOffset }.collect { if (!com.opentune.ui.components.PlayerMorph.sheetMorph) com.opentune.ui.components.PlayerMorph.dragClose(it) }
     }
     val scope = rememberCoroutineScope()
     val dismissPx = with(LocalDensity.current) { 140.dp.toPx() }
+    val cardCornerPx = with(LocalDensity.current) { 40.dp.toPx() }
     val backdrop = rememberLayerBackdrop()
     val style = state.ui.playerStyle
     val minimal = style == PlayerStyle.MINIMAL
@@ -518,7 +521,23 @@ fun PlayerLayout(
                             }
                             upPull = 0f
                         } else if (dragOffset > dismissPx || velocity > 2_000f) {
-                            // Leave the card as it is: the exit slide carries it away from here.
+                            val size = playerCoords?.takeIf { it.isAttached }?.size
+                            if (com.opentune.ui.components.PlayerMorph.sheetMorph && size != null) {
+                                // The card as drawn right now, handed to the shrink into the
+                                // mini player, which takes it from exactly here.
+                                val w = size.width.toFloat()
+                                val h = size.height.toFloat()
+                                val p = (dragOffset / (dismissPx * 2)).coerceIn(0f, 1f)
+                                val s = 1f - 0.12f * p
+                                val left = w * (1f - s) / 2f
+                                val top = dragOffset * 0.9f
+                                com.opentune.ui.components.PlayerMorph.handOff(
+                                    androidx.compose.ui.geometry.Rect(left, top, left + w * s, top + h * s),
+                                    cornerPx = cardCornerPx * p * s,
+                                )
+                                dragOffset = 0f
+                            }
+                            // Otherwise leave the card as it is: the exit slide carries it away from here.
                             actions.collapse()
                         } else {
                             settling = scope.launch {
@@ -771,18 +790,39 @@ fun PlayerLayout(
                             }
                             // Between lyrics and queue the new list slides up from below on a soft
                             // spring while the old one lifts a little and fades, under a still header.
-                            AnimatedContent(
-                                pane.takeIf { it != Pane.COVER } ?: Pane.LYRICS,
-                                transitionSpec = {
-                                    if (state.ui.reduceAnimation) fadeIn(tween(0)) togetherWith fadeOut(tween(0))
-                                    else (slideInVertically(spring(dampingRatio = 0.9f, stiffness = 360f)) { it } + fadeIn(tween(260))) togetherWith
-                                        (slideOutVertically(tween(300, easing = FastOutSlowInEasing)) { -it / 6 } + fadeOut(tween(220)))
-                                },
-                                label = "list",
-                                modifier = Modifier.weight(1f).fillMaxWidth(),
-                            ) { list ->
-                                Column(Modifier.fillMaxSize()) {
-                                    if (list == Pane.LYRICS) {
+                            // Both stay composed once shown, and only their layers move: switching
+                            // never builds a list (or scrolls the lyrics to their line) mid-slide.
+                            val list = pane.takeIf { it != Pane.COVER } ?: Pane.LYRICS
+                            val toQueue = remember { androidx.compose.animation.core.Animatable(if (list == Pane.QUEUE) 1f else 0f) }
+                            LaunchedEffect(list, state.ui.reduceAnimation) {
+                                val target = if (list == Pane.QUEUE) 1f else 0f
+                                if (state.ui.reduceAnimation) toQueue.snapTo(target)
+                                else toQueue.animateTo(target, spring(dampingRatio = 1f, stiffness = 320f, visibilityThreshold = 0.001f))
+                            }
+                            var lyricsBuilt by remember { mutableStateOf(list == Pane.LYRICS) }
+                            var queueBuilt by remember { mutableStateOf(list == Pane.QUEUE) }
+                            if (list == Pane.LYRICS) lyricsBuilt = true else queueBuilt = true
+                            // The other one is built a moment after this view opens, out of sight,
+                            // so the first switch to it is as smooth as the rest.
+                            LaunchedEffect(Unit) { delay(700); lyricsBuilt = true; queueBuilt = true }
+                            Box(Modifier.weight(1f).fillMaxWidth()) {
+                                for (shown in listOf(Pane.LYRICS, Pane.QUEUE)) {
+                                    if (!(if (shown == Pane.LYRICS) lyricsBuilt else queueBuilt)) continue
+                                    val queueSide = shown == Pane.QUEUE
+                                    Column(
+                                        Modifier.fillMaxSize()
+                                            // The one in view is on top, and takes the touches.
+                                            .zIndex(if (shown == list) 1f else 0f)
+                                            .graphicsLayer {
+                                                val q = toQueue.value
+                                                val inView = if (queueSide) q else 1f - q
+                                                alpha = inView
+                                                // Coming in from below; going out, lifting a little.
+                                                val arriving = shown == list
+                                                translationY = if (arriving) size.height * 0.22f * (1f - inView) else -size.height * 0.06f * (1f - inView)
+                                            },
+                                    ) {
+                                    if (shown == Pane.LYRICS) {
                                         LyricsView(
                                             state.lyrics,
                                             lyricsPosition,
@@ -809,6 +849,7 @@ fun PlayerLayout(
                                             onMove = actions.moveIndex,
                                             modifier = Modifier.weight(1f).fillMaxWidth(),
                                         )
+                                    }
                                     }
                                 }
                             }
@@ -867,7 +908,12 @@ fun PlayerLayout(
                 Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                     GlassToggle(Icons.Rounded.Lyrics, "Lyrics", pane == Pane.LYRICS, { toggle(Pane.LYRICS) })
                     Box(Modifier.weight(1f), contentAlignment = Alignment.Center) {
-                        AnimatedContent(pane == Pane.QUEUE, label = "pill") { inQueue ->
+                        // A crossfade at the final size: no width animated a frame at a time under the controls.
+                        AnimatedContent(
+                            pane == Pane.QUEUE,
+                            transitionSpec = { (fadeIn(tween(220)) togetherWith fadeOut(tween(150))) using androidx.compose.animation.SizeTransform(clip = false) { _, _ -> androidx.compose.animation.core.snap() } },
+                            label = "pill",
+                        ) { inQueue ->
                             if (inQueue) {
                                 ModesPill(state.shuffleMode, state.smartShuffleAvailable, state.repeatMode, actions.toggleShuffle, actions.cycleRepeat)
                             } else {
@@ -883,7 +929,8 @@ fun PlayerLayout(
                                             else -> Icons.Rounded.Smartphone
                                         },
                                         "Audio output",
-                                        outputRoute != OutputRoute.PHONE,
+                                        // Headphones only change the icon; lit up is for casting, a session to notice.
+                                        outputRoute == OutputRoute.CAST,
                                         { showOutput = true },
                                     )
                                 }

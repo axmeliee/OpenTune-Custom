@@ -176,7 +176,7 @@ internal fun LandscapePlayer(
                         },
                         "Audio output",
                         { showOutput = true },
-                        tint = if (outputRoute != OutputRoute.PHONE) scheme.primary else scheme.onSurface,
+                        tint = if (outputRoute == OutputRoute.CAST) scheme.primary else scheme.onSurface,
                     )
                     if (showOutput) com.opentune.ui.cast.AudioOutputSheet(
                         onDismiss = { showOutput = false },

@@ -758,6 +758,7 @@ fun MiniPlayer(
     if (inline) {
         Box(
             modifier
+                .then(with(com.opentune.ui.components.PlayerMorph) { Modifier.miniBarLanding(round = true) })
                 .glass(CircleShape, tint)
                 .pullToOpen(round = true, onOpen = onClick)
                 .clickable(onClick = onClick)
@@ -777,6 +778,7 @@ fun MiniPlayer(
         shape = shape,
         color = Color.Transparent,
         modifier = modifier
+            .then(with(com.opentune.ui.components.PlayerMorph) { Modifier.miniBarLanding(round = false) })
             .graphicsLayer { translationX = offsetX.value }
             .glass(shape, tint)
             .pullToOpen(round = false, onOpen = onClick)
@@ -865,7 +867,8 @@ private fun Modifier.pullToOpen(round: Boolean, onOpen: () -> Unit): Modifier {
 
 /** The mini player's cover steps aside while the flying copy of it is pulled up. */
 private fun Modifier.hiddenWhilePulled(): Modifier = graphicsLayer {
-    alpha = if (com.opentune.ui.components.PlayerMorph.pulling > 0f) 0f else 1f
+    // When the whole player is pulled up instead, the mini player keeps its cover under the card.
+    alpha = if (com.opentune.ui.components.PlayerMorph.pulling > 0f && !com.opentune.ui.components.PlayerMorph.sheetMorph) 0f else 1f
 }
 
 /** A circle that fills clockwise from the top as [progress] goes 0 to 1. */

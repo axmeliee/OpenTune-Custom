@@ -71,6 +71,43 @@ object PlayerMorph {
     /** On the mini player's cover, so a flight knows where it starts and lands. */
     fun Modifier.miniLanding(): Modifier = onGloballyPositioned { miniCover = it.boundsInRoot() }
 
+    // ---- The whole player out of the mini player and back (see [PlayerSheet]) ----
+
+    /** Where the whole mini player sits, for the player to grow out of and shrink back into. */
+    internal var miniBar by mutableStateOf<Rect?>(null)
+    /** Whether that mini player is the round, folded one. */
+    internal var miniBarRound = false
+
+    /** On the mini player itself, outside any swipe offset. */
+    fun Modifier.miniBarLanding(round: Boolean): Modifier = onGloballyPositioned {
+        miniBar = it.boundsInRoot()
+        miniBarRound = round
+    }
+
+    /**
+     * True while the whole player is the thing that moves: it grows out of the
+     * mini player as one card, cover and all, and shrinks back into it. The
+     * cover's own flight above is then not used.
+     */
+    var sheetMorph by mutableStateOf(false)
+    /** How far a pull up had taken the card when the player was let open. */
+    internal var sheetAt by mutableFloatStateOf(0f)
+    /** Where the player's card was when a drag down let go, in the root, and its corner in px. */
+    internal var cardFrom by mutableStateOf<Rect?>(null)
+    internal var cardCornerPx = 0f
+
+    /** The player opens from the mini player, carrying on from any pull. */
+    fun openSheet() {
+        sheetAt = pulling
+        pulling = 0f
+    }
+
+    /** A drag down let the player go at [card]: the shrink starts from there. */
+    fun handOff(card: Rect, cornerPx: Float) {
+        cardFrom = card
+        cardCornerPx = cornerPx
+    }
+
     /** On the full player's cover, so a flight knows where it lands and leaves from. */
     fun Modifier.playerLanding(): Modifier = onGloballyPositioned { r ->
         val b = r.boundsInRoot()
@@ -118,7 +155,12 @@ object PlayerMorph {
         val from = miniCover ?: return
         this.round = round
         val to = lastPlayerCover
-        val travel = if (to != null) (from.top - to.top).coerceAtLeast(1f) else screenHeight * 0.6f
+        val travel = when {
+            // The whole card follows: its top goes from the mini player's to the screen's.
+            sheetMorph -> (miniBar ?: from).top.coerceAtLeast(1f)
+            to != null -> (from.top - to.top).coerceAtLeast(1f)
+            else -> screenHeight * 0.6f
+        }
         pulling = (px / travel).coerceIn(0f, 1f)
     }
 

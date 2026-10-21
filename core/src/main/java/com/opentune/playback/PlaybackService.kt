@@ -680,9 +680,21 @@ class PlaybackService : MediaLibraryService() {
         }
 
         override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
+            // The same song put onto its better stream: the swap that did it is
+            // still running, waiting to bring the volume back up. A new upgrade
+            // check here used to cancel it and leave every song after silent.
+            val swap = mediaItem != null && mediaItem.mediaId == swappingTo
             updateExternalStats()
             applyLoudness()
-            scheduleUpgrade()
+            if (!swap) scheduleUpgrade()
+            // Nothing but a blend or a swap turns the main player down; outside
+            // one, a new song always starts at full level.
+            (mediaSession?.player as? ExoPlayer)?.let { p ->
+                if (!swap && !swapRamping && crossfade?.blending != true && p.volume < 1f) {
+                    Log.w(TAG, "Player volume was left at ${p.volume}; back to full")
+                    p.volume = 1f
+                }
+            }
             watchSegments(mediaItem)
             // A podcast episode picks up where it was left.
             mediaItem?.mediaId?.let(Podcasts::resumeAt)?.let { at ->
@@ -1099,24 +1111,35 @@ class PlaybackService : MediaLibraryService() {
         // The queue may have moved on, or a blend begun, while it loaded.
         if (player.currentMediaItemIndex != index || player.currentMediaItem?.mediaId != id || crossfade?.blending == true) return false
         val smooth = player.isPlaying && !BitPerfectUsb.active
-        val level = player.volume
-        if (smooth) rampVolume(player, 0f, SWAP_DIP_MS)
-        val position = player.currentPosition
-        swappingTo = id
-        // If the player updates the item in place there's no transition to clear this.
-        scope.launch { delay(2_000); if (swappingTo == id) swappingTo = null }
-        player.replaceMediaItem(index, next)
-        updateExternalStats()
-        applyLoudness()
-        if (player.currentMediaItemIndex != index || player.currentPosition < position - 1_000) player.seekTo(index, position)
-        if (smooth) {
-            // Back up once the new stream is sounding, to the level it was at.
-            kotlinx.coroutines.withTimeoutOrNull(3_000) { while (player.playbackState != Player.STATE_READY || !player.isPlaying) delay(30) }
-            rampVolume(player, level, SWAP_RISE_MS)
+        // Outside a blend (ruled out above) the main player plays at full level.
+        val level = 1f
+        swapRamping = smooth
+        try {
+            if (smooth) rampVolume(player, 0f, SWAP_DIP_MS)
+            val position = player.currentPosition
+            swappingTo = id
+            // If the player updates the item in place there's no transition to clear this.
+            scope.launch { delay(2_000); if (swappingTo == id) swappingTo = null }
+            player.replaceMediaItem(index, next)
+            updateExternalStats()
+            applyLoudness()
+            if (player.currentMediaItemIndex != index || player.currentPosition < position - 1_000) player.seekTo(index, position)
+            if (smooth) {
+                // Back up once the new stream is sounding.
+                kotlinx.coroutines.withTimeoutOrNull(3_000) { while (player.playbackState != Player.STATE_READY || !player.isPlaying) delay(30) }
+                rampVolume(player, level, SWAP_RISE_MS)
+            }
+            Log.d(TAG, "Swapped $id to its upgraded stream at ${position}ms")
+            return true
+        } finally {
+            swapRamping = false
+            // Cancelled or failed between the dip and the rise: never leave the music silent.
+            if (smooth && crossfade?.blending != true && player.volume < level) player.volume = level
         }
-        Log.d(TAG, "Swapped $id to its upgraded stream at ${position}ms")
-        return true
     }
+
+    /** True while a swap has the volume dipped, so nothing else puts it back mid-ramp. */
+    private var swapRamping = false
 
     private fun updateExternalStats() {
         val item = mediaSession?.player?.currentMediaItem
