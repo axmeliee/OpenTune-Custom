@@ -56,6 +56,10 @@ import androidx.compose.material.icons.rounded.Lyrics
 import androidx.compose.material.icons.rounded.FormatQuote
 import androidx.compose.material.icons.rounded.Translate
 import androidx.compose.material.icons.rounded.Sync
+import androidx.compose.material.icons.rounded.Close
+import androidx.compose.material.icons.rounded.IosShare
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.layout.width
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.AssistChipDefaults
 import androidx.compose.material3.Icon
@@ -127,6 +131,12 @@ fun LyricsView(
     // The song and its lines as they were when sharing began, so a song
     // change while the sheet is open can't mix one song's words with another's.
     var sharing by remember { mutableStateOf<Pair<com.opentune.data.model.Song, List<String>>?>(null) }
+    // Synced lines picked for a lyric card, by index; picking starts with a
+    // long press on a line (or the share button) and ends with Cancel or Share.
+    val syncedLines = ((state as? LyricsState.Found)?.lyrics as? Lyrics.Synced)?.lines
+    val selection = remember(syncedLines) { androidx.compose.runtime.mutableStateListOf<Int>() }
+    // The picked lines handed to the card sheet, frozen when Share was pressed.
+    var sharingPicked by remember { mutableStateOf<Pair<com.opentune.data.model.Song, List<String>>?>(null) }
     Box(modifier) {
         when (state) {
             is LyricsState.Loading -> Column(Modifier.padding(top = 20.dp), verticalArrangement = Arrangement.spacedBy(18.dp)) {
@@ -140,7 +150,17 @@ fun LyricsView(
             }
             is LyricsState.Found -> when (val lyrics = state.lyrics) {
                 is Lyrics.Synced ->
-                    if (synced) SyncedLyrics(lyrics.lines, position, onSeek, blur, lyrics.source, onSyncLine, playing, seeks)
+                    if (synced) SyncedLyrics(
+                        lyrics.lines, position, onSeek, blur, lyrics.source, onSyncLine, playing, seeks,
+                        selection = selection.takeIf { shareSong != null },
+                        onShareSelection = shareSong?.let { song ->
+                            {
+                                val picked = selection.sorted().mapNotNull { lyrics.lines.getOrNull(it)?.text?.trim()?.takeIf(String::isNotEmpty) }
+                                if (picked.isNotEmpty()) sharingPicked = song to picked
+                                selection.clear()
+                            }
+                        },
+                    )
                     else PlainLyrics(lyrics.lines.joinToString("\n") { it.text }, lyrics.source, note = null)
                 is Lyrics.Plain -> PlainLyrics(lyrics.text, lyrics.source)
             }
@@ -174,12 +194,63 @@ fun LyricsView(
                     LyricActionButton(Icons.Rounded.FormatQuote, "Share lyrics") {
                         haptics.tick()
                         val now = position()
-                        startAt = if (found is Lyrics.Synced) timed.indexOfLast { it.second <= now } else -1
-                        sharing = shareSong to lines
+                        if (found is Lyrics.Synced && synced) {
+                            // Start picking on the page itself, from the line being sung.
+                            selection.clear()
+                            selection.add(found.lines.indexOfLast { it.startMs <= now }.coerceAtLeast(0))
+                        } else {
+                            startAt = if (found is Lyrics.Synced) timed.indexOfLast { it.second <= now } else -1
+                            sharing = shareSong to lines
+                        }
                     }
                     sharing?.let { (song, shared) -> com.opentune.ui.share.LyricCardSheet(song, shared, startAt = startAt, onDismiss = { sharing = null }) }
                 }
             }
+        }
+        sharingPicked?.let { (song, picked) ->
+            com.opentune.ui.share.LyricCardSheet(song, picked, startAt = 0, onDismiss = { sharingPicked = null }, pickable = false)
+        }
+    }
+}
+
+/**
+ * The bar floating over the lyrics while lines are being picked for a card:
+ * Cancel and Share, and with one line picked a way to line the lyrics up
+ * with it (what a long press used to do).
+ */
+@Composable
+private fun SelectionBar(count: Int, onCancel: () -> Unit, onShare: () -> Unit, onSync: (() -> Unit)?, modifier: Modifier = Modifier) {
+    Row(
+        modifier
+            .clip(RoundedCornerShape(30.dp))
+            .background(Color(0xF0141416))
+            .padding(8.dp),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        if (onSync != null) {
+            Box(
+                Modifier.size(52.dp).clip(CircleShape).background(Color.White.copy(alpha = 0.10f)).clickable(onClick = onSync),
+                contentAlignment = Alignment.Center,
+            ) { Icon(Icons.Rounded.Sync, "Line the lyrics up with this line", tint = Color.White) }
+        }
+        Row(
+            Modifier.height(52.dp).width(130.dp).clip(RoundedCornerShape(24.dp)).background(Color.White.copy(alpha = 0.12f)).clickable(onClick = onCancel),
+            horizontalArrangement = Arrangement.Center,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Icon(Icons.Rounded.Close, null, tint = Color.White, modifier = Modifier.size(20.dp))
+            Spacer(Modifier.width(8.dp))
+            Text("Cancel", color = Color.White, style = MaterialTheme.typography.titleMedium)
+        }
+        Row(
+            Modifier.height(52.dp).width(130.dp).clip(RoundedCornerShape(24.dp)).background(Color.White).clickable(enabled = count > 0, onClick = onShare),
+            horizontalArrangement = Arrangement.Center,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Icon(Icons.Rounded.IosShare, null, tint = Color.Black, modifier = Modifier.size(20.dp))
+            Spacer(Modifier.width(8.dp))
+            Text("Share", color = Color.Black, style = MaterialTheme.typography.titleMedium, fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold)
         }
     }
 }
@@ -248,11 +319,17 @@ private fun SyncedLyrics(
     onSyncLine: ((Long) -> Unit)? = null,
     playing: () -> Boolean = { true },
     seeks: () -> Long = { 0L },
+    /** Lines picked for a lyric card, by index; null where there's no song to share. */
+    selection: androidx.compose.runtime.snapshots.SnapshotStateList<Int>? = null,
+    onShareSelection: (() -> Unit)? = null,
 ) {
     val ui by AppSettings.ui.collectAsState()
     val reduced = ui.reduceAnimation || !android.animation.ValueAnimator.areAnimatorsEnabled()
     val animation = if (reduced) LyricsAnimation.MINIMAL else ui.lyricsAnimation
     val listState = rememberLazyListState()
+    val selecting = selection?.isNotEmpty() == true
+    val haptics = com.opentune.ui.components.rememberHaptics()
+    androidx.activity.compose.BackHandler(enabled = selecting) { selection?.clear() }
     val romanize = AppSettings.lyrics.collectAsState().value.romanize
     val romanized by androidx.compose.runtime.produceState<List<String?>>(emptyList(), lines, romanize) {
         value = if (!romanize) emptyList() else kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Default) { Romanizer.lines(lines.map { it.text }) }
@@ -290,8 +367,10 @@ private fun SyncedLyrics(
     LaunchedEffect(listState) {
         listState.interactionSource.interactions.collect { if (it is DragInteraction.Start) following = false }
     }
-    LaunchedEffect(following, listState.isScrollInProgress) {
-        if (!following && !listState.isScrollInProgress) {
+    // While lines are being picked the list holds still under the finger.
+    LaunchedEffect(selecting) { if (selecting) following = false }
+    LaunchedEffect(following, listState.isScrollInProgress, selecting) {
+        if (!following && !listState.isScrollInProgress && !selecting) {
             delay(RESUME_FOLLOW_MS)
             following = true
         }
@@ -324,20 +403,38 @@ private fun SyncedLyrics(
                     is LyricRow.Line -> {
                         val i = row.index
                         val line = row.line
+                        val picked = selection?.contains(i)
                         LyricLineView(
                             line = line,
                             distance = i - activeLine,
-                            isActive = r == activeRow,
+                            isActive = r == activeRow && !selecting,
                             animation = animation,
                             blurEnabled = blur && following,
                             position = clock,
                             romanized = romanized.getOrNull(i),
                             duet = duet,
+                            selected = if (selecting) picked == true else null,
                             onClick = {
-                                onSeek(line.startMs)
-                                following = true
+                                if (selecting && selection != null) {
+                                    // Tap to add or drop a line, up to the card's limit.
+                                    when {
+                                        i in selection -> selection.remove(i)
+                                        selection.size < com.opentune.ui.share.LyricCard.MAX_LINES -> selection.add(i)
+                                        else -> { haptics.pattern(com.opentune.ui.components.Haptics.Pattern.OFF); return@LyricLineView }
+                                    }
+                                    haptics.tick()
+                                } else {
+                                    onSeek(line.startMs)
+                                    following = true
+                                }
                             },
-                            onLongClick = onSyncLine?.let { sync -> { sync(line.startMs); following = true } },
+                            // A long press starts picking lines to share; without a song to
+                            // share, it lines the lyrics up with this line as before.
+                            onLongClick = when {
+                                selection != null -> { { if (!selecting) { haptics.press(); selection.add(i) } } }
+                                onSyncLine != null -> { { onSyncLine(line.startMs); following = true } }
+                                else -> null
+                            },
                         )
                     }
                     is LyricRow.Gap -> GapDots(
@@ -350,7 +447,7 @@ private fun SyncedLyrics(
         }
 
         AnimatedVisibility(
-            visible = !following,
+            visible = !following && !selecting,
             enter = fadeIn(),
             exit = fadeOut(),
             modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 8.dp),
@@ -360,6 +457,22 @@ private fun SyncedLyrics(
                 label = { Text("Back to the music") },
                 leadingIcon = { Icon(Icons.Rounded.Sync, null, Modifier.size(18.dp)) },
                 colors = AssistChipDefaults.assistChipColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHighest),
+            )
+        }
+        AnimatedVisibility(
+            visible = selecting,
+            enter = fadeIn() + androidx.compose.animation.slideInVertically { it },
+            exit = fadeOut() + androidx.compose.animation.slideOutVertically { it },
+            modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 12.dp),
+        ) {
+            val only = selection?.singleOrNull()
+            SelectionBar(
+                count = selection?.size ?: 0,
+                onCancel = { haptics.tick(); selection?.clear(); following = true },
+                onShare = { haptics.press(); onShareSelection?.invoke(); following = true },
+                onSync = if (only != null && onSyncLine != null) {
+                    { lines.getOrNull(only)?.let { onSyncLine(it.startMs) }; selection.clear(); following = true }
+                } else null,
             )
         }
     }
@@ -493,25 +606,42 @@ private fun LyricLineView(
     onLongClick: (() -> Unit)? = null,
     romanized: String? = null,
     duet: Boolean = false,
+    /** While lines are being picked to share: whether this one is. Null otherwise. */
+    selected: Boolean? = null,
 ) {
     val motion = motionOf(animation)
     val bright = MaterialTheme.colorScheme.onSurface
     val dim = bright.copy(alpha = 0.45f)
+    val picking = selected != null
     val scale by animateFloatAsState(
-        if (isActive) motion.activeScale else motion.inactiveScale,
+        if (isActive || picking) motion.activeScale else motion.inactiveScale,
         // Critically damped: the line settles into size without overshooting, which read as a bounce.
         spring(dampingRatio = 1f, stiffness = Spring.StiffnessMediumLow),
         label = "lineScale",
     )
     val alpha by animateFloatAsState(
-        if (isActive) 1f else (motion.inactiveAlpha - 0.06f * (minOf(abs(distance), 5) - 1) - if (distance < 0) 0.1f else 0f).coerceAtLeast(0.18f),
+        when {
+            picking -> if (selected == true) 1f else 0.6f
+            isActive -> 1f
+            else -> (motion.inactiveAlpha - 0.06f * (minOf(abs(distance), 5) - 1) - if (distance < 0) 0.1f else 0f).coerceAtLeast(0.18f)
+        },
         tween(if (animation == LyricsAnimation.MINIMAL) 200 else 400),
         label = "lineAlpha",
     )
     val blur by animateDpAsState(
-        if (!blurEnabled || isActive) 0.dp else (minOf(abs(distance), 6) * motion.blurPerLine).dp,
+        if (!blurEnabled || isActive || picking) 0.dp else (minOf(abs(distance), 6) * motion.blurPerLine).dp,
         tween(500),
         label = "lineBlur",
+    )
+    // Picking lines, each sits on its own card, the picked ones a shade lighter.
+    val card by androidx.compose.animation.animateColorAsState(
+        when (selected) {
+            null -> Color.Transparent
+            true -> bright.copy(alpha = 0.16f)
+            false -> bright.copy(alpha = 0.06f)
+        },
+        tween(220),
+        label = "lineCard",
     )
     val ui by AppSettings.ui.collectAsState()
     val centred = ui.lyricsAlign == LyricsAlign.CENTER
@@ -552,12 +682,15 @@ private fun LyricLineView(
         }
     }
     val sweep = isActive && line.words.isNotEmpty()
+    val cardPad by animateDpAsState(if (picking) 14.dp else 0.dp, tween(220), label = "cardPad")
     Column(
         Modifier
             .fillMaxWidth()
+            .padding(vertical = cardPad / 5)
             .clip(MaterialTheme.shapes.medium)
+            .background(card)
             .combinedClickable(remember { MutableInteractionSource() }, indication = com.opentune.ui.components.FocusRing(MaterialTheme.shapes.medium), onLongClick = onLongClick, onClick = onClick)
-            .padding(vertical = 10.dp)
+            .padding(vertical = 10.dp, horizontal = cardPad)
             .graphicsLayer {
                 scaleX = scale
                 scaleY = scale
@@ -701,7 +834,7 @@ private fun Credit(source: String) {
         color = MaterialTheme.colorScheme.onSurfaceVariant,
     )
     Text(
-        "Out of time? Long-press the line being sung to line them up.",
+        "Long-press a line to share it on a card. Out of time? Pick the line being sung and tap sync.",
         style = MaterialTheme.typography.labelSmall,
         color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
         modifier = Modifier.padding(top = 4.dp),

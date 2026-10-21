@@ -19,6 +19,7 @@ import android.graphics.Shader
 import android.graphics.Typeface
 import android.text.TextPaint
 import android.text.TextUtils
+import androidx.compose.ui.graphics.asAndroidPath
 import androidx.core.content.FileProvider
 import coil3.imageLoader
 import coil3.request.ImageRequest
@@ -76,8 +77,9 @@ object ShareCard {
     /**
      * Hands [bitmap] to the share sheet with [text], through the app's
      * FileProvider; just the text if there's no picture or it can't be saved.
+     * With no [text], only the picture goes.
      */
-    suspend fun sendImage(context: Context, bitmap: Bitmap?, fileName: String, text: String, label: String) {
+    suspend fun sendImage(context: Context, bitmap: Bitmap?, fileName: String, text: String?, label: String) {
         val uri = bitmap?.let { b ->
             runCatching {
                 withContext(Dispatchers.IO) {
@@ -90,7 +92,9 @@ object ShareCard {
                 }
             }.onFailure { Log.w(TAG, "couldn't save the picture", it) }.getOrNull()
         }
-        val send = Intent(Intent.ACTION_SEND).putExtra(Intent.EXTRA_TEXT, text)
+        if (uri == null && text == null) return
+        val send = Intent(Intent.ACTION_SEND)
+        if (text != null) send.putExtra(Intent.EXTRA_TEXT, text)
         if (uri != null) {
             send.setType("image/png")
                 .putExtra(Intent.EXTRA_STREAM, uri)
@@ -301,12 +305,47 @@ object ShareCard {
         if (playing) drawPause(c, card.centerX(), controlsY, button * 0.4f) else drawPlay(c, card.centerX() + button * 0.06f, controlsY, button * 0.4f)
         drawSkip(c, card.centerX() + step, controlsY, button * 0.38f, forward = true)
 
-        // Under it all, quietly: where it came from.
-        val brand = TextPaint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.argb(150, 255, 255, 255); textSize = w * 0.022f; typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD); letterSpacing = 0.14f }
-        val word = "OPENTUNE"
-        c.drawText(word, (w - brand.measureText(word)) / 2f, w - w * 0.06f, brand)
+        // Under it all: where it came from, the app's mark and name.
+        val brandH = w * 0.034f
+        drawBrand(c, (w + brandWidth(brandH)) / 2f, w - w * 0.055f, brandH, Color.argb(200, 255, 255, 255))
         return out
     }
+
+    private fun brandPaint(height: Float, colour: Int) = TextPaint(Paint.ANTI_ALIAS_FLAG).apply {
+        color = colour
+        textSize = height * 0.82f
+        typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
+    }
+
+    /** How wide [drawBrand] draws at [height]: the mark, a gap and the name. */
+    internal fun brandWidth(height: Float): Float = height * MARK_ASPECT + height * 0.35f + brandPaint(height, Color.WHITE).measureText(BRAND)
+
+    /**
+     * The OpenTune mark and name, [height] tall, ending at [right] and centred
+     * on [centerY], in [colour]. On every card, so a shared picture says where it's from.
+     */
+    internal fun drawBrand(c: Canvas, right: Float, centerY: Float, height: Float, colour: Int) {
+        val text = brandPaint(height, colour)
+        val textW = text.measureText(BRAND)
+        c.drawText(BRAND, right - textW, centerY - (text.ascent() + text.descent()) / 2f, text)
+        val markW = height * MARK_ASPECT
+        val left = right - textW - height * 0.35f - markW
+        val path = com.opentune.ui.components.markPath().asAndroidPath()
+        val s = height / (MARK_BOTTOM - MARK_TOP)
+        c.save()
+        c.translate(left - MARK_LEFT * s, centerY - height / 2f - MARK_TOP * s)
+        c.scale(s, s)
+        c.drawPath(path, Paint(Paint.ANTI_ALIAS_FLAG).apply { color = colour })
+        c.restore()
+    }
+
+    private const val BRAND = "OpenTune"
+    // Where the mark sits in the icon's 108-unit square.
+    private const val MARK_LEFT = 27.8f
+    private const val MARK_RIGHT = 80.3f
+    private const val MARK_TOP = 34.9f
+    private const val MARK_BOTTOM = 73.1f
+    private const val MARK_ASPECT = (MARK_RIGHT - MARK_LEFT) / (MARK_BOTTOM - MARK_TOP)
 
     /**
      * The cover shrunk to a few dozen pixels and box-blurred three times

@@ -43,6 +43,7 @@ import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.aspectRatio
@@ -697,7 +698,8 @@ fun SeekBar(
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
                 Text(if (loading) "--:--" else formatTime(elapsedSeconds * 1000), modifier = Modifier.width(timeWidth),
                     style = timeStyle, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1)
-                quality?.let { Box(Modifier.weight(1f), contentAlignment = Alignment.Center) { it() } }
+                // Raised a little, closer to the bar it describes than the times beside it.
+                quality?.let { Box(Modifier.weight(1f).offset(y = (-8).dp), contentAlignment = Alignment.Center) { it() } }
                 Text(
                     when {
                         durationMs <= 0 -> "--:--"

@@ -50,11 +50,11 @@ class LyricCardSheetTest {
         }
         compose.mainClock.advanceTimeBy(1_500)
         compose.waitForIdle()
-        compose.onNodeWithText("1 of 5 lines picked").assertIsDisplayed()
+        compose.onNodeWithText("1 of 6 lines picked").assertIsDisplayed()
         compose.onNodeWithText(lines[2]).assertIsDisplayed().performClick()
         compose.mainClock.advanceTimeBy(500)
         compose.waitForIdle()
-        compose.onNodeWithText("2 of 5 lines picked").assertIsDisplayed()
+        compose.onNodeWithText("2 of 6 lines picked").assertIsDisplayed()
 
         val back = compose.activity.window.decorView
         val bitmap = Bitmap.createBitmap(back.width, back.height, Bitmap.Config.ARGB_8888)

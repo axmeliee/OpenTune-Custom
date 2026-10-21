@@ -9,6 +9,26 @@ import kotlinx.coroutines.flow.asStateFlow
  * asked for to making sound.
  */
 object NerdStats {
+    /**
+     * What the player itself reports about the decode and output stages: the
+     * codec it opened, the PCM it hands on, and the AudioTrack it plays through.
+     */
+    data class Pipeline(
+        val decoderName: String? = null,
+        /** The decoder's PCM out, as "16-bit PCM", "24-bit PCM" or "Float32". */
+        val decoderOutput: String? = null,
+        val outputSampleRateHz: Int? = null,
+        /** The AudioTrack's encoding, the same way. */
+        val outputEncoding: String? = null,
+        val outputChannels: Int? = null,
+        val bufferMs: Int? = null,
+        val bufferFrames: Int? = null,
+        val offload: Boolean = false,
+    )
+    private val _pipeline = MutableStateFlow(Pipeline())
+    val pipeline = _pipeline.asStateFlow()
+    fun onPipeline(change: (Pipeline) -> Pipeline) { _pipeline.value = change(_pipeline.value) }
+
     private val _upgrading = MutableStateFlow<String?>(null)
     val upgrading = _upgrading.asStateFlow()
     fun onUpgrade(mediaId: String?) { _upgrading.value = mediaId }

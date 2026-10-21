@@ -14,16 +14,17 @@ import org.robolectric.annotation.GraphicsMode
 @GraphicsMode(GraphicsMode.Mode.NATIVE)
 @Config(sdk = [35], application = android.app.Application::class)
 class LyricCardTest {
-    @Test fun drawsEachLook() {
+    @Test fun drawsAPostAndAStory() {
         val lines = listOf("I've been running through the night", "chasing every light I see", "and I won't stop until the morning")
-        LyricCard.Look.entries.forEach { look ->
-            val card = LyricCard.draw(coverArt(), lines, "Blinding Lights", "The Weeknd", look)
+        for (story in listOf(false, true)) {
+            val card = LyricCard.draw(coverArt(), lines, "Blinding Lights", "The Weeknd", story)
             assertEquals(LyricCard.WIDTH, card.width)
-            assertEquals(LyricCard.HEIGHT, card.height)
-            File("build/screenshots/share/lyrics-${look.name.lowercase()}.png").apply { parentFile!!.mkdirs() }.outputStream().use { card.compress(Bitmap.CompressFormat.PNG, 100, it) }
+            // A post is 4:5; a story is 9:16.
+            assertEquals(if (story) LyricCard.STORY_HEIGHT else LyricCard.HEIGHT, card.height)
+            File("build/screenshots/share/lyrics-${if (story) "story" else "post"}.png").apply { parentFile!!.mkdirs() }.outputStream().use { card.compress(Bitmap.CompressFormat.PNG, 100, it) }
         }
-        // Five long lines still fit, smaller.
-        val long = List(5) { "A much longer line of the song that goes on and on for a while" }
-        LyricCard.draw(null, long, "Song", "Artist", LyricCard.Look.COLOUR).compress(Bitmap.CompressFormat.PNG, 100, File("build/screenshots/share/lyrics-long.png").outputStream())
+        // Six long lines still fit, smaller.
+        val long = List(LyricCard.MAX_LINES) { "A much longer line of the song that goes on and on for a while" }
+        LyricCard.draw(null, long, "Song", "Artist").compress(Bitmap.CompressFormat.PNG, 100, File("build/screenshots/share/lyrics-long.png").outputStream())
     }
 }

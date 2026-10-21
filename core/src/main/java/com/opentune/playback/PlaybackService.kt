@@ -226,6 +226,7 @@ class PlaybackService : MediaLibraryService() {
         player.trackSelectionParameters = player.trackSelectionParameters.buildUpon()
             .setPreferredAudioMimeTypes("audio/flac", "audio/alac", "audio/raw").build()
         player.addListener(playerListener)
+        player.addAnalyticsListener(PipelineTelemetry)
 
         val effects = SoundEffects(player)
         soundEffects = effects
