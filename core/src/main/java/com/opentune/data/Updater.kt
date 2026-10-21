@@ -7,7 +7,6 @@ import android.content.Intent
 import android.content.pm.PackageInstaller
 import android.os.Build
 import android.provider.Settings
-import android.widget.Toast
 import androidx.core.content.IntentCompat
 import androidx.core.net.toUri
 import com.opentune.core.BuildConfig
@@ -182,7 +181,7 @@ object Updater {
                         PackageInstaller.STATUS_FAILURE_STORAGE -> "Not enough space for the update"
                         else -> "Update failed${message?.let { ": $it" } ?: ""}"
                     }
-                    Toast.makeText(context, text, Toast.LENGTH_LONG).show()
+                    Pills.error(text, context)
                 }
             }
         }

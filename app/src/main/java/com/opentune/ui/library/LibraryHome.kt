@@ -160,7 +160,7 @@ fun LibraryScreen(contentPadding: PaddingValues, actions: SongActions, nav: Libr
                 try {
                     val sync = PlaylistSync.refresh()
                     runCatching { MusicRepository.libraryPlaylists() }.onFailure {
-                        android.widget.Toast.makeText(context, "Couldn't refresh your YouTube Music playlists", android.widget.Toast.LENGTH_SHORT).show()
+                        com.opentune.data.Pills.error("Couldn't refresh your YouTube Music playlists", context)
                     }
                     sync.join()
                 } finally {

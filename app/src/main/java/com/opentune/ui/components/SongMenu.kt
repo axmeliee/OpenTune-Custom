@@ -373,6 +373,7 @@ fun AddToPlaylistDialog(song: Song, onDone: () -> Unit, onDismiss: () -> Unit) {
                     items(playlists, key = { it.id }) { p ->
                         MenuRow(Icons.AutoMirrored.Rounded.QueueMusic, "${p.name} · ${p.songs.size}") {
                             LibraryStore.addToPlaylist(p.id, song)
+                            com.opentune.data.Pills.done("Added to ${p.name}", context)
                             onDone()
                         }
                     }
@@ -388,8 +389,8 @@ fun AddToPlaylistDialog(song: Song, onDone: () -> Unit, onDismiss: () -> Unit) {
                         items(accountPlaylists, key = { "yt:${it.playlistId}" }) { p ->
                             MenuRow(Icons.AutoMirrored.Rounded.QueueMusic, p.title) {
                                 PlaylistSync.addToAccountPlaylist(p.playlistId, song) { ok ->
-                                    val text = if (ok) "Added to ${p.title}" else "Couldn't add it to ${p.title}"
-                                    android.widget.Toast.makeText(context, text, android.widget.Toast.LENGTH_SHORT).show()
+                                    if (ok) com.opentune.data.Pills.done("Added to ${p.title}", context)
+                                    else com.opentune.data.Pills.error("Couldn't add it to ${p.title}", context)
                                 }
                                 onDone()
                             }
@@ -400,7 +401,11 @@ fun AddToPlaylistDialog(song: Song, onDone: () -> Unit, onDismiss: () -> Unit) {
         },
         confirmButton = {
             if (naming) {
-                SheetButton("Create", onClick = { LibraryStore.createPlaylist(name, song, privacy.takeIf { online && saveOnline }); onDone() })
+                SheetButton("Create", onClick = {
+                    LibraryStore.createPlaylist(name, song, privacy.takeIf { online && saveOnline })
+                    com.opentune.data.Pills.done("Added to ${name.trim().ifEmpty { "New playlist" }}", context)
+                    onDone()
+                })
             }
         },
         dismissButton = { SheetButton("Cancel", onClick = onDismiss, closes = true) },

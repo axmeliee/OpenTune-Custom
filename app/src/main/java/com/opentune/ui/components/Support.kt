@@ -2,7 +2,6 @@ package com.opentune.ui.components
 
 import android.content.Context
 import android.content.Intent
-import android.widget.Toast
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -58,7 +57,7 @@ object Support {
         try {
             context.startActivity(Intent.createChooser(view, "Send with").addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
         } catch (e: android.content.ActivityNotFoundException) {
-            Toast.makeText(context, "No UPI app on this phone. You can send it to $UPI_ID from another one.", Toast.LENGTH_LONG).show()
+            com.opentune.data.Pills.error("No UPI app on this phone. You can send it to $UPI_ID from another one.", context)
         }
     }
 

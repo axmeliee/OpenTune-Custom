@@ -219,13 +219,14 @@ fun SettingsScreen(
     onSignIn: () -> Unit = {},
     onOpenDownloads: () -> Unit = {},
     onOpenSpotify: () -> Unit = {},
+    onOpenDevices: () -> Unit = {},
 ) {
     var query by rememberSaveable { mutableStateOf("") }
     var openKey by rememberSaveable { mutableStateOf<String?>(null) }
     val signedIn by AccountStore.signedIn.collectAsState()
     val account by AccountStore.account.collectAsState()
     val updatePending = com.opentune.ui.components.updatePending()
-    val sections = settingsSections(onOpenEqualizer, onOpenReplay, onOpenWrapped, onSignIn, onOpenDownloads, onOpenSpotify)
+    val sections = settingsSections(onOpenEqualizer, onOpenReplay, onOpenWrapped, onSignIn, onOpenDownloads, onOpenSpotify, onOpenDevices)
     val placed = remember(sections) { place(sections) }
     val open = SETTINGS_CATEGORIES.firstOrNull { it.key == openKey }
     androidx.activity.compose.BackHandler(enabled = open != null) { openKey = null }
@@ -401,6 +402,7 @@ private fun settingsSections(
     onSignIn: () -> Unit,
     onOpenDownloads: () -> Unit,
     onOpenSpotify: () -> Unit,
+    onOpenDevices: () -> Unit,
 ): List<Section> {
     val signedIn by AccountStore.signedIn.collectAsState()
     val account by AccountStore.account.collectAsState()
@@ -413,8 +415,6 @@ private fun settingsSections(
     var listenBrainzDialog by remember { mutableStateOf(false) }
     var sponsorBlockDialog by remember { mutableStateOf(false) }
     var update by remember { mutableStateOf<UpdateCheck.Release?>(null) }
-    var showPlatforms by remember { mutableStateOf(false) }
-    var showPairing by remember { mutableStateOf(false) }
     var showWhatsNew by remember { mutableStateOf(false) }
     var supportDialog by remember { mutableStateOf(false) }
     val pendingUpdate by UpdateCheck.pending.collectAsState()
@@ -450,8 +450,6 @@ private fun settingsSections(
     val metered = remember { AppSettings.onMeteredNetwork() }
     var qualityDialog by remember { mutableStateOf<Boolean?>(null) } // true = Wi-Fi, false = mobile
     var audioAddons by remember { mutableStateOf(false) }
-    if (showPlatforms) PlatformsPage { showPlatforms = false }
-    if (showPairing) com.opentune.ui.account.ReceiveSessionSheet { showPairing = false }
     if (audioAddons) AudioAddonsSheet { audioAddons = false }
     var folderDialog by remember { mutableStateOf(false) }
     var cacheBytes by remember { mutableLongStateOf(0L) }
@@ -687,8 +685,8 @@ private fun settingsSections(
                         NavRow("Add another account", onSignIn, summary = "Sign in to a second YouTube Music account and switch between them", icon = Icons.Rounded.PersonAdd)
                     }
                 } else null,
-                Entry("Sign in with your phone", "tv qr pairing youtube music") {
-                    NavRow("Sign in with your phone", { showPairing = true }, summary = "Scan a QR code from a signed-in phone on the same Wi-Fi", icon = Icons.Rounded.AccountCircle)
+                Entry("Link a device", "tv television web browser computer cast speaker chromecast watch wear together qr pairing sign in with your phone platforms") {
+                    NavRow("Link a device", onOpenDevices, summary = "Sign in your TV, the web player, speakers and more", icon = Icons.Rounded.Devices)
                 },
                 if (signedIn) {
                     Entry("Sign out", "logout account") {
@@ -1181,7 +1179,7 @@ private fun settingsSections(
                                     append(" copied to Music/OpenTune")
                                     if (skipped > 0) append("; $skipped in a format other apps can't play, download them again to export")
                                 }
-                                if (copied > 0 || skipped > 0) android.widget.Toast.makeText(context, note, android.widget.Toast.LENGTH_LONG).show()
+                                if (copied > 0 || skipped > 0) com.opentune.data.Pills.done(note, context)
                             }
                         },
                         summary = if (com.opentune.data.download.DownloadExport.supported)
@@ -1388,9 +1386,6 @@ private fun settingsSections(
                         summary = "Shares a random installation ID, app version, active dates and daily play totals. No hardware ID, account or song names. Reinstalls get a new ID; updates keep it.",
                         icon = Icons.Rounded.Info,
                     )
-                },
-                Entry("OpenTune on Web & TV", "web browser android tv television platforms qr") {
-                    NavRow("OpenTune on Web & TV", { showPlatforms = true }, summary = "Listen on another screen and pair your TV", icon = Icons.Rounded.Devices)
                 },
                 Entry("OpenTune community", "github discord community addons developer") { CommunityBanner() },
                 Entry("Support OpenTune", "donate upi pay money tip support developer") {

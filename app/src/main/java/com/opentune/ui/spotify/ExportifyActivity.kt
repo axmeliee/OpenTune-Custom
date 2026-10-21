@@ -25,7 +25,6 @@ import android.widget.ImageButton
 import android.widget.LinearLayout
 import android.widget.ProgressBar
 import android.widget.TextView
-import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.OnBackPressedCallback
 import androidx.activity.enableEdgeToEdge
@@ -81,7 +80,7 @@ class ExportifyActivity : ComponentActivity() {
             setOnClickListener {
                 // The way out if the in-app page won't sign in: export in a real browser, then pick the CSV.
                 runCatching { startActivity(Intent(Intent.ACTION_VIEW, EXPORTIFY.toUri())) }
-                Toast.makeText(this@ExportifyActivity, "Export there, then pick the file with \"CSV file\"", Toast.LENGTH_LONG).show()
+                com.opentune.data.Pills.info("Export there, then pick the file with \"CSV file\"", this@ExportifyActivity)
                 finish()
             }
         }
@@ -246,7 +245,7 @@ class ExportifyActivity : ComponentActivity() {
             }
             progress.visibility = View.GONE
             if (playlists.isEmpty()) {
-                Toast.makeText(this@ExportifyActivity, "That file had no songs in it", Toast.LENGTH_SHORT).show()
+                com.opentune.data.Pills.error("That file had no songs in it", this@ExportifyActivity)
             } else {
                 ExportedPlaylists.hand(playlists)
                 finish()

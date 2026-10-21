@@ -4,7 +4,6 @@ import android.Manifest
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.provider.Settings
-import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.clickable
@@ -48,17 +47,16 @@ fun RingtoneDialog(song: Song, onDismiss: () -> Unit) {
         scope.launch {
             val result = runCatching { Ringtones.set(context, song, kind) }
             busy = false
-            Toast.makeText(
-                context,
-                result.fold({ "${song.title} is your ${kind.label.lowercase()}" }, { "Couldn't set it: ${it.message}" }),
-                Toast.LENGTH_SHORT,
-            ).show()
+            result.fold(
+                { com.opentune.data.Pills.done("${song.title} is your ${kind.label.lowercase()}", context) },
+                { com.opentune.data.Pills.error("Couldn't set it: ${it.message}", context) },
+            )
             onDismiss()
         }
     }
 
     val storage = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
-        if (granted) apply() else Toast.makeText(context, "Storage access is needed to save the ringtone", Toast.LENGTH_SHORT).show()
+        if (granted) apply() else com.opentune.data.Pills.error("Storage access is needed to save the ringtone", context)
     }
     fun proceed() {
         if (Ringtones.needsStoragePermission &&
@@ -71,7 +69,7 @@ fun RingtoneDialog(song: Song, onDismiss: () -> Unit) {
     }
     val systemSettings = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) {
         if (Ringtones.allowed(context)) proceed()
-        else Toast.makeText(context, "OpenTune needs \"Modify system settings\" to change the ringtone", Toast.LENGTH_LONG).show()
+        else com.opentune.data.Pills.error("OpenTune needs \"Modify system settings\" to change the ringtone", context)
     }
 
     FloatingDialog(

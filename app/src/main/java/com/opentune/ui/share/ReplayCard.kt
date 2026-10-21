@@ -15,7 +15,6 @@ import android.graphics.Shader
 import android.graphics.Typeface
 import android.text.TextPaint
 import android.text.TextUtils
-import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.Crossfade
@@ -489,11 +488,11 @@ fun ReplayShareSheet(summary: ReplaySummary, period: String, onDismiss: () -> Un
             val saved = runCatching { ShareCard.saveImage(context, b, ReplayCard.fileName(System.currentTimeMillis())) }
                 .onFailure { Log.w("ReplayCard", "couldn't save the card", it) }.isSuccess
             saving = false
-            Toast.makeText(context, if (saved) "Saved to Pictures/OpenTune" else "Couldn't save the picture", Toast.LENGTH_SHORT).show()
+            if (saved) com.opentune.data.Pills.done("Saved to Pictures/OpenTune", context) else com.opentune.data.Pills.error("Couldn't save the picture", context)
         }
     }
     val storage = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
-        if (granted) save() else Toast.makeText(context, "Storage access is needed to save the picture", Toast.LENGTH_SHORT).show()
+        if (granted) save() else com.opentune.data.Pills.error("Storage access is needed to save the picture", context)
     }
 
     FloatingCard(

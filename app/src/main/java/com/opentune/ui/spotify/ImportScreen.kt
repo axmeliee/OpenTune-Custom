@@ -4,7 +4,6 @@ import android.content.ClipboardManager
 import android.content.Intent
 import android.net.Uri
 import android.provider.OpenableColumns
-import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
@@ -196,7 +195,7 @@ fun ImportScreen(
     fun pasteFromClipboard() {
         val clip = context.getSystemService(ClipboardManager::class.java)?.primaryClip
         val pasted = clip?.takeIf { it.itemCount > 0 }?.getItemAt(0)?.coerceToText(context)?.toString()
-        if (pasted.isNullOrBlank()) Toast.makeText(context, "Nothing to paste", Toast.LENGTH_SHORT).show() else text = pasted
+        if (pasted.isNullOrBlank()) com.opentune.data.Pills.info("Nothing to paste", context) else text = pasted
     }
 
     LazyColumn(contentPadding = contentPadding, modifier = Modifier.fillMaxSize()) {
@@ -291,7 +290,7 @@ fun ImportScreen(
                                         val song = runCatching { PlaylistImport.match(f.c.tracks.first()) }.getOrNull()
                                         playing = false
                                         if (song != null) actions.playAll(listOf(song), 0, false, "From Spotify")
-                                        else Toast.makeText(context, "Couldn't find this song on YouTube Music", Toast.LENGTH_SHORT).show()
+                                        else com.opentune.data.Pills.error("Couldn't find this song on YouTube Music", context)
                                     }
                                 },
                                 modifier = Modifier.weight(1f),
