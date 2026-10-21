@@ -593,6 +593,15 @@ fun AppRoot(vm: PlayerViewModel) {
                             onSignIn = { nav.navigate("login") },
                             onOpenDownloads = { nav.navigate("downloads") },
                             onOpenSpotify = { nav.navigate("import") },
+                            onOpenDevices = { nav.navigate("devices") },
+                        )
+                    }
+                    composable("devices") {
+                        com.opentune.ui.settings.LinkDeviceScreen(
+                            content,
+                            onBack = { nav.popBackStack() },
+                            onSignIn = { nav.navigate("login") },
+                            onTogether = { nav.navigate("together") },
                         )
                     }
                     composable("login") { LoginScreen(onDone = { nav.popBackStack() }) }
@@ -829,11 +838,15 @@ fun AppRoot(vm: PlayerViewModel) {
 }
 
 private fun NavHostController.openBrowse(browseId: String, type: BrowseType = MusicRepository.typeOf(browseId)) {
-    val id = Uri.encode(browseId)
-    // A podcast show has its own page.
-    if (browseId.startsWith("MPSP")) return navigate("podcast/$id")
-    when (type) {
-        BrowseType.ARTIST -> navigate("artist/$id")
-        else -> navigate("collection/$id")
+    val route = when {
+        // A podcast show has its own page.
+        browseId.startsWith("MPSP") -> "podcast/{id}"
+        type == BrowseType.ARTIST -> "artist/{id}"
+        else -> "collection/{id}"
     }
+    // Already on that page (a second tap while the first was still finding it):
+    // stay, so back doesn't have to go through the same page twice.
+    val here = currentBackStackEntry
+    if (here?.destination?.route == route && here.arguments?.getString("id") == browseId) return
+    navigate(route.replace("{id}", Uri.encode(browseId)))
 }

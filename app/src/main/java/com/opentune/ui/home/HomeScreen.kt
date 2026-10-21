@@ -46,6 +46,9 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.LaunchedEffect
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.flowOf
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.platform.LocalLayoutDirection
@@ -107,7 +110,9 @@ fun HomeScreen(
     val more = remember(moreAll, hideExplicit, hidden) { hidden.shelves(ContentFilter.shelves(moreAll, hideExplicit)) }
     val records by History.records.collectAsState()
     val recents = remember(records, hideExplicit) { ContentFilter.songs(History.recents(records, 100), hideExplicit) }
-    var historyOpen by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf(false) }
+    // Not saved with the page: a page opened from inside it (an artist, from a
+    // song's menu) is left with one back press, not one that brings the list up again.
+    var historyOpen by remember { mutableStateOf(false) }
     val first = (state as? UiState.Success<List<HomeShelf>>)?.data?.let { hidden.shelves(ContentFilter.shelves(it, hideExplicit)) }.orEmpty()
     val allShelves = first + more
     val feed = remember(allShelves) { arrangeHomeShelves(allShelves) }
@@ -134,7 +139,18 @@ fun HomeScreen(
         }
     }
 
+    val page = androidx.lifecycle.compose.LocalLifecycleOwner.current.lifecycle
+    val app = LocalActivityLifecycle()
     if (historyOpen) {
+        // Going to another page from inside the list closes it at once, rather
+        // than leaving it over the new page while Home slides away. The app
+        // merely going to the background leaves it open.
+        LaunchedEffect(page, app) {
+            val resumed = androidx.lifecycle.Lifecycle.State.RESUMED
+            combine(page.currentStateFlow, app?.currentStateFlow ?: flowOf(resumed)) { p, a -> a.isAtLeast(resumed) && !p.isAtLeast(resumed) }
+                .first { it }
+            historyOpen = false
+        }
         androidx.compose.material3.ModalBottomSheet(onDismissRequest = { historyOpen = false }) {
             // Frosted behind, like the long-press menus and the other sheets.
             com.opentune.ui.components.FrostBehind(enabled = !com.opentune.data.settings.AppSettings.ui.collectAsState().value.reduceBlur)
@@ -494,3 +510,11 @@ private fun MixCard(mix: com.opentune.data.history.DailyMixes.Mix, onClick: () -
     }
 }
 
+
+/** The activity's own lifecycle, apart from the page's (which also stops when another page covers it). */
+@Composable
+private fun LocalActivityLifecycle(): androidx.lifecycle.Lifecycle? {
+    var c: android.content.Context? = androidx.compose.ui.platform.LocalContext.current
+    while (c is android.content.ContextWrapper && c !is androidx.lifecycle.LifecycleOwner) c = c.baseContext
+    return (c as? androidx.lifecycle.LifecycleOwner)?.lifecycle
+}

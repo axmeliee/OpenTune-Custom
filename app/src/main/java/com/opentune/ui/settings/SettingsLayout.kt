@@ -33,8 +33,11 @@ internal val FOLDED_GROUPS = mapOf("Seek bar" to 2)
 /** Where every setting lives. A setting not named here lands under "More" on its section's page. */
 internal val SETTINGS_CATEGORIES = listOf(
     SettingsCategory(
-        "account", "Account", "YouTube Music sign-in", Icons.Rounded.Person,
-        listOf("YouTube Music" to listOf("YouTube Music account", "Sign in with your phone", "Sign out")),
+        "account", "Account", "YouTube Music sign-in and your other devices", Icons.Rounded.Person,
+        listOf(
+            "YouTube Music" to listOf("YouTube Music account", "Sign out"),
+            "Other devices" to listOf("Link a device"),
+        ),
     ),
     SettingsCategory(
         "audio", "Audio", "Quality, loudness, effects and output", Icons.Rounded.GraphicEq,
@@ -116,7 +119,7 @@ internal val SETTINGS_CATEGORIES = listOf(
         "about", "About", "Updates, source code and diagnostics", Icons.Rounded.Info,
         listOf(
             "Updates" to listOf("What's new", "Check for updates", "Check for updates automatically"),
-            "OpenTune" to listOf("OpenTune community", "OpenTune on Web & TV", "Show the welcome again", "Support OpenTune", "Star on GitHub", "Count this phone in usage numbers", "Source code", "Export diagnostics"),
+            "OpenTune" to listOf("OpenTune community", "Show the welcome again", "Support OpenTune", "Star on GitHub", "Count this phone in usage numbers", "Source code", "Export diagnostics"),
         ),
     ),
 )
