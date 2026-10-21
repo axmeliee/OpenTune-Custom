@@ -236,6 +236,13 @@ internal object LyricsQuality {
      * value. Null when the two don't line up well enough to say.
      */
     internal fun shiftBetween(target: Lyrics.Synced, reference: Lyrics.Synced): Long? {
+        val diffs = matchedDiffs(target, reference) ?: return null
+        val middle = median(diffs)
+        return middle.takeIf { median(diffs.map { abs(it - middle) }) <= MAX_SPREAD_MS }
+    }
+
+    /** How much later [reference] puts each line both share, matched in order; null when too few match to say. */
+    private fun matchedDiffs(target: Lyrics.Synced, reference: Lyrics.Synced): List<Long>? {
         val ref = reference.lines.map { key(it.text) to it.startMs }
         val diffs = mutableListOf<Long>()
         var from = 0
@@ -247,10 +254,65 @@ internal object LyricsQuality {
             diffs += ref[hit].second - line.startMs
             from = hit + 1
         }
-        if (diffs.size < MIN_MATCHED || diffs.size * 4 < target.lines.size) return null
-        val middle = median(diffs)
-        return middle.takeIf { median(diffs.map { abs(it - middle) }) <= MAX_SPREAD_MS }
+        return diffs.takeIf { it.size >= MIN_MATCHED && it.size * 4 >= target.lines.size }
     }
+
+    /**
+     * How unevenly [reference] times the lines it shares with [target], once
+     * any steady shift between them is taken out: the typical distance of a
+     * line from that shift. Null when too few lines match to say.
+     */
+    internal fun spreadAgainst(target: Lyrics.Synced, reference: Lyrics.Synced): Long? {
+        val diffs = matchedDiffs(target, reference) ?: return null
+        val middle = median(diffs)
+        return median(diffs.map { abs(it - middle) })
+    }
+
+    /**
+     * Whether [chosen]'s word timings can be trusted word by word on this
+     * track. Not when its recording is a little off this one's length (the
+     * lines may fit, the words drift), when many of its lines have words out
+     * of order or spread evenly (made up from the line, not timed), or when
+     * every other source timed to this cut places its lines unevenly against
+     * these. Lit a line at a time instead, an error is far harder to see.
+     */
+    fun wordsTrusted(chosen: Lyrics.Synced, references: List<Lyrics.Synced>, durationMs: Long): Boolean {
+        if (durationMs > 0 && chosen.recordingMs > 0 && abs(chosen.recordingMs - durationMs) > WORD_CUT_MS) return false
+        val worded = chosen.lines.filter { it.wordSynced && it.words.size >= 2 }
+        if (worded.isEmpty()) return true
+        if (worded.count(::wordsShaky) * 10 > worded.size * 3) return false
+        val sameCut = references.filter { durationMs <= 0 || it.recordingMs <= 0 || abs(it.recordingMs - durationMs) <= ANCHOR_MS }
+        val spreads = sameCut.mapNotNull { spreadAgainst(chosen, it) }
+        return spreads.isEmpty() || spreads.any { it <= WORD_SPREAD_MS }
+    }
+
+    /** Words out of order, one held impossibly long mid-line, or all the same length: not really timed. */
+    private fun wordsShaky(line: LyricLine): Boolean {
+        val w = line.words
+        if (w.zipWithNext().any { (a, b) -> b.startMs < a.startMs - OUT_OF_ORDER_MS }) return true
+        if (w.dropLast(1).any { it.endMs - it.startMs > LONG_WORD_MS }) return true
+        if (w.size >= 3) {
+            val lengths = w.map { it.endMs - it.startMs }
+            if (lengths.max() - lengths.min() <= EVEN_MS) return true
+        }
+        return false
+    }
+
+    /** [lyrics] lit a line at a time: each word-timed line keeps its own start and end, its words spread across them. */
+    fun asLines(lyrics: Lyrics.Synced): Lyrics.Synced = lyrics.copy(
+        lines = lyrics.lines.map { l ->
+            if (!l.wordSynced) l else l.copy(words = LrcParser.spreadWords(l.text, l.startMs, l.endMs), wordSynced = false)
+        },
+    )
+
+    /** A recording further than this from the track's length has lines that fit and words that drift. */
+    private const val WORD_CUT_MS = 2_000L
+    /** Lines placed further than this from the steady shift, typically, aren't timed closely enough for words. */
+    private const val WORD_SPREAD_MS = 450L
+    private const val OUT_OF_ORDER_MS = 50L
+    private const val LONG_WORD_MS = 5_000L
+    /** Word lengths all within this of each other: spread from the line, not timed. */
+    private const val EVEN_MS = 15L
 
     /**
      * The offset to play [chosen] at (added to the position, as the
