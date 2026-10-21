@@ -88,6 +88,10 @@ import androidx.compose.runtime.snapshotFlow
 import androidx.compose.runtime.withFrameMillis
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.layout.boundsInRoot
+import androidx.compose.ui.layout.positionInRoot
+import androidx.compose.foundation.layout.offset
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.graphics.drawscope.withTransform
 import androidx.compose.ui.draw.clip
@@ -294,6 +298,12 @@ fun PlayerLayout(
     var paneName by rememberSaveable { mutableStateOf(if (initialLyrics) Pane.LYRICS.name else Pane.COVER.name) }
     val pane = Pane.valueOf(paneName)
     fun toggle(p: Pane) { paneName = if (pane == p) Pane.COVER.name else p.name }
+    // The cover between the lyrics or queue header and the full cover: tap the
+    // small one and it grows into the big one (the lyrics make way); swipe up on
+    // the big one and it goes back into the header of the view it came from.
+    var returnPane by rememberSaveable { mutableStateOf<String?>(null) }
+    var smallCover by remember { mutableStateOf<androidx.compose.ui.geometry.Rect?>(null) }
+    val flight = remember { PaneFlight() }
     var showRemix by remember { mutableStateOf(false) }
     var showCast by remember { mutableStateOf(false) }
     var showOutput by remember { mutableStateOf(false) }
@@ -376,6 +386,12 @@ fun PlayerLayout(
     LaunchedEffect(Unit) {
         snapshotFlow { dragOffset == 0f }.distinctUntilChanged().collect { covering(it) }
     }
+    // The cover leaves the card as it's dragged down and shrinks toward the
+    // mini player with the finger; let go short and it settles back with the card.
+    LaunchedEffect(docked, state.ui.reduceAnimation) {
+        if (docked || state.ui.reduceAnimation) return@LaunchedEffect
+        snapshotFlow { dragOffset }.collect { com.opentune.ui.components.PlayerMorph.dragClose(it) }
+    }
     val scope = rememberCoroutineScope()
     val dismissPx = with(LocalDensity.current) { 140.dp.toPx() }
     val backdrop = rememberLayerBackdrop()
@@ -393,6 +409,41 @@ fun PlayerLayout(
     // full-screen cover can run down to the title on any screen height.
     var playerCoords by remember { mutableStateOf<androidx.compose.ui.layout.LayoutCoordinates?>(null) }
     var coverBottomPx by remember { androidx.compose.runtime.mutableFloatStateOf(0f) }
+
+    // Only the plain square cover flies; the vinyl, cassette and other designs just change view.
+    val flies = !state.ui.reduceAnimation && !docked && !landscape &&
+        style != PlayerStyle.VINYL && style != PlayerStyle.CASSETTE && style != PlayerStyle.HALO &&
+        style != PlayerStyle.POLAROID && style != PlayerStyle.LYRICS_FIRST &&
+        !(state.ui.fullScreenCover && (style == PlayerStyle.CLASSIC || style == PlayerStyle.MINIMAL))
+    fun expandCover() {
+        returnPane = pane.name
+        val from = smallCover
+        if (flies && from != null) flight.start(from, toSmall = false)
+        paneName = Pane.COVER.name
+    }
+    fun collapseCover() {
+        val back = returnPane?.let { runCatching { Pane.valueOf(it) }.getOrNull() }?.takeIf { it != Pane.COVER } ?: Pane.QUEUE
+        val from = com.opentune.ui.components.PlayerMorph.playerCover?.let(com.opentune.ui.components.PlayerMorph::scaled)
+        smallCover = null
+        if (flies && from != null) flight.start(from, toSmall = true)
+        paneName = back.name
+        returnPane = null
+    }
+    // Flies the cover to wherever its new place turns out to be, once that's laid out.
+    LaunchedEffect(flight.runs) {
+        if (flight.runs == 0) return@LaunchedEffect
+        try {
+            flight.t.snapTo(0f)
+            var tries = 0
+            while (flight.target(smallCover) == null && tries++ < 30) delay(16)
+            if (flight.target(smallCover) == null) return@LaunchedEffect
+            flight.t.animateTo(1f, tween(440, easing = androidx.compose.animation.core.CubicBezierEasing(0.2f, 0f, 0f, 1f)))
+        } finally {
+            flight.end()
+        }
+    }
+    var upPull by remember { androidx.compose.runtime.mutableFloatStateOf(0f) }
+    val upPx = with(LocalDensity.current) { 64.dp.toPx() }
 
     PlayerTheme(seed = rememberArtworkSeed(current.thumbnailUrl), settings = theme) {
         Box(
@@ -415,12 +466,17 @@ fun PlayerLayout(
                     orientation = Orientation.Vertical,
                     enabled = !docked,
                     state = rememberDraggableState { delta ->
+                        // Upward, with the card at rest: a swipe up on the cover, counted on its own.
+                        if (delta < 0f && dragOffset == 0f) upPull += delta
                         dragOffset = (dragOffset + delta).coerceAtLeast(0f)
                     },
                     // A finger landing on the card mid-spring takes hold of it where it is.
-                    onDragStarted = { settling?.cancel() },
+                    onDragStarted = { settling?.cancel(); upPull = 0f },
                     onDragStopped = { velocity ->
-                        if (dragOffset > dismissPx || velocity > 2_000f) {
+                        if (pane == Pane.COVER && style != PlayerStyle.LYRICS_FIRST && dragOffset == 0f && (upPull < -upPx || velocity < -1_500f)) {
+                            // Swiped up on the cover: it goes back up into the lyrics or queue header.
+                            collapseCover()
+                        } else if (dragOffset > dismissPx || velocity > 2_000f) {
                             // Leave the card as it is: the exit slide carries it away from here.
                             actions.collapse()
                         } else {
@@ -658,7 +714,15 @@ fun PlayerLayout(
                             TitleRow(current, isLiked, onLike = { LibraryStore.setLiked(current, !isLiked) }, onMore = { showMenu = true })
                         } else {
                             Row(Modifier.fillMaxWidth().padding(vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-                                Artwork(current.thumbnailUrl.artworkAt(ROW_ART_PX), Modifier.size(64.dp), RoundedCornerShape(10.dp))
+                                Artwork(
+                                    current.thumbnailUrl.artworkAt(ROW_ART_PX),
+                                    Modifier.size(64.dp)
+                                        .onGloballyPositioned { smallCover = it.boundsInRoot() }
+                                        .graphicsLayer { alpha = if (flight.active) 0f else 1f }
+                                        .clip(RoundedCornerShape(10.dp))
+                                        .clickable(onClickLabel = "Show the cover") { expandCover() },
+                                    RoundedCornerShape(10.dp),
+                                )
                                 Spacer(Modifier.width(14.dp))
                                 TitleRow(current, isLiked, onLike = { LibraryStore.setLiked(current, !isLiked) }, onMore = { showMenu = true }, compact = true)
                             }
@@ -787,6 +851,28 @@ fun PlayerLayout(
                 }
             }
             }
+            // The cover on its way between the header and the full cover, over the rest.
+            if (flight.active) {
+                val from = flight.from
+                val to = flight.target(smallCover)
+                val origin = playerCoords?.takeIf { it.isAttached }?.positionInRoot() ?: androidx.compose.ui.geometry.Offset.Zero
+                if (from != null && to != null) {
+                    val t = flight.t.value
+                    fun lerp(a: Float, b: Float) = a + (b - a) * t
+                    val density = LocalDensity.current
+                    val small = 10f
+                    val big = 28f
+                    val corner = (if (flight.toSmall) lerp(big, small) else lerp(small, big)).dp
+                    Artwork(
+                        current.thumbnailUrl.artworkAt(com.opentune.data.model.PLAYER_ART_PX),
+                        Modifier
+                            .offset { androidx.compose.ui.unit.IntOffset((lerp(from.left, to.left) - origin.x).toInt(), (lerp(from.top, to.top) - origin.y).toInt()) }
+                            .size(with(density) { lerp(from.width, to.width).toDp() }, with(density) { lerp(from.height, to.height).toDp() })
+                            .shadow(with(density) { (if (flight.toSmall) 24f * (1f - t) else 24f * t).toDp() }, RoundedCornerShape(corner)),
+                        RoundedCornerShape(corner),
+                    )
+                }
+            }
         }
 
         // Winding down for the night: the whole player dims with the music.
@@ -898,9 +984,15 @@ private fun LyricsOffsetDialog(videoId: String, autoMs: Long, onDismiss: () -> U
 @Composable
 private fun RowScope.TitleRow(song: Song, liked: Boolean, onLike: () -> Unit, onMore: () -> Unit, compact: Boolean = false) {
     Column(Modifier.weight(1f)) {
-        MarqueeText(song.title, Modifier.fillMaxWidth(), style = if (compact) MaterialTheme.typography.titleLarge else MaterialTheme.typography.headlineSmall)
-        // Tapping the artist opens their page.
-        val viewArtist = LocalSongMenu.current?.viewArtist
+        // Tapping the title opens its album, and the artist opens their page.
+        val menu = LocalSongMenu.current
+        val album = song.albumId?.takeIf { menu != null && !song.videoId.startsWith("local:") }
+        MarqueeText(
+            song.title,
+            Modifier.fillMaxWidth().then(if (album != null) Modifier.clickable(onClickLabel = "Open album") { menu?.openAlbum?.invoke(album) } else Modifier),
+            style = if (compact) MaterialTheme.typography.titleLarge else MaterialTheme.typography.headlineSmall,
+        )
+        val viewArtist = menu?.viewArtist
         com.opentune.ui.components.SubtitleLine(
             song.artist,
             explicit = song.isExplicit == true,
@@ -1103,4 +1195,40 @@ private fun Modifier.focusIn(animate: Boolean): Modifier {
     return this
         .graphicsLayer { val s = 0.96f + 0.04f * v.value; scaleX = s; scaleY = s }
         .then(if (blur > 0.2f) Modifier.blur(blur.dp) else Modifier)
+}
+
+
+/**
+ * The cover flying between the small one in the lyrics or queue header and the
+ * full cover. [from] is where it left; it lands on the small cover when
+ * [toSmall], on the full one otherwise, wherever that has been laid out.
+ */
+private class PaneFlight {
+    var from by mutableStateOf<androidx.compose.ui.geometry.Rect?>(null)
+        private set
+    var toSmall by mutableStateOf(false)
+        private set
+    var active by mutableStateOf(false)
+        private set
+    /** Bumped for each flight, so the runner starts again. */
+    var runs by mutableStateOf(0)
+        private set
+    val t = androidx.compose.animation.core.Animatable(0f)
+
+    fun start(from: androidx.compose.ui.geometry.Rect, toSmall: Boolean) {
+        this.from = from
+        this.toSmall = toSmall
+        active = true
+        com.opentune.ui.components.PlayerMorph.flying = true
+        runs++
+    }
+
+    fun target(small: androidx.compose.ui.geometry.Rect?): androidx.compose.ui.geometry.Rect? =
+        if (toSmall) small else com.opentune.ui.components.PlayerMorph.playerCover?.let(com.opentune.ui.components.PlayerMorph::scaled)
+
+    fun end() {
+        active = false
+        from = null
+        com.opentune.ui.components.PlayerMorph.flying = false
+    }
 }

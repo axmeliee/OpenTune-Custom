@@ -44,6 +44,7 @@ import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.offset
+import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.aspectRatio
@@ -394,7 +395,7 @@ fun ArtworkPane(
                         shape = androidx.compose.foundation.shape.RoundedCornerShape(28.dp)
                         clip = true
                         // Hidden under the morphing cover while it grows in or shrinks away.
-                        alpha = if (com.opentune.ui.components.PlayerMorph.expanding || com.opentune.ui.components.PlayerMorph.collapsing) 0f else 1f
+                        alpha = if (com.opentune.ui.components.PlayerMorph.coverAway) 0f else 1f
                     },
                 shape = MaterialTheme.shapes.extraLarge,
                 imageModifier = Modifier.livingArt(isPlaying, moving),
@@ -758,12 +759,13 @@ fun MiniPlayer(
         Box(
             modifier
                 .glass(CircleShape, tint)
+                .pullToOpen(round = true, onOpen = onClick)
                 .clickable(onClick = onClick)
                 .padding(4.dp),
             contentAlignment = Alignment.Center,
         ) {
             ProgressRing(progress, accent, track, stroke = 3.dp, modifier = Modifier.matchParentSize())
-            Artwork(song.thumbnailUrl.artworkAt(ROW_ART_PX), with(com.opentune.ui.components.PlayerMorph) { Modifier.padding(4.dp).fillMaxSize().miniLanding() }, CircleShape)
+            Artwork(song.thumbnailUrl.artworkAt(ROW_ART_PX), with(com.opentune.ui.components.PlayerMorph) { Modifier.padding(4.dp).fillMaxSize().miniLanding().hiddenWhilePulled() }, CircleShape)
             if (isBuffering) CircularProgressIndicator(Modifier.matchParentSize(), strokeWidth = 3.dp, color = accent)
         }
         return
@@ -777,6 +779,7 @@ fun MiniPlayer(
         modifier = modifier
             .graphicsLayer { translationX = offsetX.value }
             .glass(shape, tint)
+            .pullToOpen(round = false, onOpen = onClick)
             .pointerInput(Unit) {
                 detectHorizontalDragGestures(
                     onDragEnd = {
@@ -796,7 +799,7 @@ fun MiniPlayer(
         Row(Modifier.fillMaxSize().padding(start = 10.dp, end = 6.dp), verticalAlignment = Alignment.CenterVertically) {
             AnimatedContent(song, transitionSpec = { fadeIn(tween(300)) togetherWith fadeOut(tween(200)) }, label = "mini", modifier = Modifier.weight(1f)) { s ->
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Artwork(s.thumbnailUrl.artworkAt(ROW_ART_PX), with(com.opentune.ui.components.PlayerMorph) { Modifier.size(44.dp).miniLanding() }, RoundedCornerShape(12.dp))
+                    Artwork(s.thumbnailUrl.artworkAt(ROW_ART_PX), with(com.opentune.ui.components.PlayerMorph) { Modifier.size(44.dp).miniLanding().hiddenWhilePulled() }, RoundedCornerShape(12.dp))
                     Column(Modifier.padding(start = 12.dp)) {
                         Text(s.title, maxLines = 1, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
                         com.opentune.ui.components.SubtitleLine(s.artist, explicit = s.isExplicit == true, style = MaterialTheme.typography.bodySmall)
@@ -814,6 +817,50 @@ fun MiniPlayer(
             }
         }
     }
+}
+
+/**
+ * Swiping the mini player up opens the player, the cover growing out of it
+ * with the finger as it goes (see [com.opentune.ui.components.PlayerMorph.pullOpen]).
+ * Far enough and it opens, the flight finishing from there; short of that it
+ * settles back. With motion reduced it just opens past the line.
+ */
+@Composable
+private fun Modifier.pullToOpen(round: Boolean, onOpen: () -> Unit): Modifier {
+    val reduce = com.opentune.data.settings.AppSettings.ui.collectAsState().value.reduceAnimation
+    val scope = rememberCoroutineScope()
+    val pull = remember { Animatable(0f) }
+    val density = LocalDensity.current
+    val screenH = with(density) { androidx.compose.ui.platform.LocalConfiguration.current.screenHeightDp.dp.toPx() }
+    val openPx = with(density) { 90.dp.toPx() }
+    val open by androidx.compose.runtime.rememberUpdatedState(onOpen)
+    val morph = com.opentune.ui.components.PlayerMorph
+    fun settle() = scope.launch {
+        pull.animateTo(0f, spring(dampingRatio = 0.85f, stiffness = 500f)) { if (!reduce) morph.pullOpen(value, round, screenH) }
+        morph.endPull()
+    }
+    return pointerInput(round, reduce) {
+        detectVerticalDragGestures(
+            onDragEnd = {
+                if (pull.value >= openPx || morph.pulling >= 0.25f) {
+                    open()
+                    scope.launch { pull.snapTo(0f) }
+                } else settle()
+            },
+            onDragCancel = { settle() },
+        ) { change, dy ->
+            change.consume()
+            scope.launch {
+                pull.snapTo((pull.value - dy).coerceAtLeast(0f))
+                if (!reduce) morph.pullOpen(pull.value, round, screenH)
+            }
+        }
+    }
+}
+
+/** The mini player's cover steps aside while the flying copy of it is pulled up. */
+private fun Modifier.hiddenWhilePulled(): Modifier = graphicsLayer {
+    alpha = if (com.opentune.ui.components.PlayerMorph.pulling > 0f) 0f else 1f
 }
 
 /** A circle that fills clockwise from the top as [progress] goes 0 to 1. */

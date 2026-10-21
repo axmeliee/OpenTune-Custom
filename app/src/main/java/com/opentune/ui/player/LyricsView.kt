@@ -661,27 +661,10 @@ private fun LyricLineView(
     // A word's trailing space is left out, and a word that still runs across a
     // wrap gets one box per row: a single box for the word that ends the first
     // row would span both rows edge to edge and dim the whole line until sung.
-    val wordBoxes = remember(layout, line) {
-        val l = layout ?: return@remember emptyList()
-        var start = 0
-        line.words.map { w ->
-            val end = (start + w.text.length).coerceAtMost(text.length)
-            var visibleEnd = end
-            while (visibleEnd > start && text[visibleEnd - 1].isWhitespace()) visibleEnd--
-            val boxes = if (visibleEnd <= start) emptyList() else {
-                val first = l.getLineForOffset(start)
-                val last = l.getLineForOffset(visibleEnd - 1)
-                (first..last).mapNotNull { row ->
-                    val from = maxOf(start, l.getLineStart(row))
-                    val to = minOf(visibleEnd, l.getLineEnd(row, visibleEnd = true))
-                    if (to > from) l.getPathForRange(from, to).getBounds() else null
-                }
-            }
-            start = end
-            boxes
-        }
-    }
-    val sweep = isActive && line.words.isNotEmpty()
+    val wordBoxes = remember(layout, line) { wordBoxesOf(layout, line, text) }
+    // Words light one by one only where the source timed them. A line timed as a
+    // whole lights all at once, on time, rather than sweeping on guessed word times.
+    val sweep = isActive && line.wordSynced && line.words.isNotEmpty()
     val cardPad by animateDpAsState(if (picking) 14.dp else 0.dp, tween(220), label = "cardPad")
     Column(
         Modifier
@@ -741,6 +724,58 @@ private fun LyricLineView(
             )
         }
     }
+}
+
+/** Where each of [line]'s words sits in [layout] of [text]: one box per row a word covers, trailing space left out. */
+private fun wordBoxesOf(layout: TextLayoutResult?, line: LyricLine, text: String): List<List<Rect>> {
+    val l = layout ?: return emptyList()
+    var start = 0
+    return line.words.map { w ->
+        val end = (start + w.text.length).coerceAtMost(text.length)
+        var visibleEnd = end
+        while (visibleEnd > start && text[visibleEnd - 1].isWhitespace()) visibleEnd--
+        // Past the last row shown (an ellipsized preview), there's nothing to light.
+        val shown = if (l.lineCount > 0) l.getLineEnd(l.lineCount - 1, visibleEnd = true) else 0
+        visibleEnd = minOf(visibleEnd, shown)
+        val boxes = if (visibleEnd <= start) emptyList() else {
+            val first = l.getLineForOffset(start)
+            val last = l.getLineForOffset(visibleEnd - 1)
+            (first..last).mapNotNull { row ->
+                val from = maxOf(start, l.getLineStart(row))
+                val to = minOf(visibleEnd, l.getLineEnd(row, visibleEnd = true))
+                if (to > from) l.getPathForRange(from, to).getBounds() else null
+            }
+        }
+        start = end
+        boxes
+    }
+}
+
+/**
+ * One line lit as it's sung, for the player's one-line preview: word by word
+ * where the source timed the words, the whole line at once where it only timed
+ * lines, and dimmed through an instrumental break after it.
+ */
+@Composable
+internal fun SungLine(line: LyricLine, position: () -> Long, style: androidx.compose.ui.text.TextStyle, modifier: Modifier = Modifier) {
+    val bright = MaterialTheme.colorScheme.onSurface
+    val text = remember(line) { if (line.words.isEmpty()) line.text else line.words.joinToString("") { it.text }.trim() }
+    var layout by remember { mutableStateOf<TextLayoutResult?>(null) }
+    val boxes = remember(layout, line) { wordBoxesOf(layout, line, text) }
+    Text(
+        text,
+        style = style,
+        color = bright,
+        maxLines = 1,
+        overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+        onTextLayout = { layout = it },
+        modifier = modifier
+            .graphicsLayer { compositingStrategy = CompositingStrategy.Offscreen }
+            .drawWithContent {
+                drawContent()
+                if (line.wordSynced) sweepDim(line, boxes, position(), 0.55f)
+            },
+    )
 }
 
 /**
