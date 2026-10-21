@@ -257,7 +257,7 @@ private fun MenuCard(entries: List<MenuEntry>, onPick: (MenuEntry) -> Unit) {
         Modifier
             .shadow(18.dp, shape)
             .clip(shape)
-            .background(c.surfaceContainerLow.copy(alpha = 0.97f), shape)
+            .background(c.surfaceContainerLow, shape)
             .border(1.dp, c.onSurface.copy(alpha = 0.08f), shape)
             .pointerInput(Unit) { detectTapGestures { } }
             .verticalScroll(rememberScrollState()),

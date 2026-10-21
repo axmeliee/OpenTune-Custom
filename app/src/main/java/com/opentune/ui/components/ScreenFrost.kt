@@ -19,8 +19,6 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.BlurredEdgeTreatment
-import androidx.compose.ui.draw.blur
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.FilterQuality
 import androidx.compose.ui.graphics.ImageBitmap
@@ -32,7 +30,6 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.IntSize
-import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.DialogWindowProvider
 import kotlin.coroutines.resume
 import kotlinx.coroutines.Dispatchers
@@ -73,20 +70,20 @@ internal fun ScreenFrost(shown: () -> Float, veil: Float = 0.42f): Frost {
         val window = activity?.window ?: return@LaunchedEffect
         val decor = window.decorView
         if (decor.width <= 0 || decor.height <= 0) { state = Frost.FAILED; return@LaunchedEffect }
-        val full = runCatching { Bitmap.createBitmap(decor.width, decor.height, Bitmap.Config.ARGB_8888) }.getOrNull()
+        // Copied straight into a small bitmap (PixelCopy scales to fit), so a
+        // popup opening never holds a full-screen copy in memory as it animates.
+        val w = (decor.width / SHRINK).coerceAtLeast(1)
+        val h = (decor.height / SHRINK).coerceAtLeast(1)
+        val small = runCatching { Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888) }.getOrNull()
             ?: run { state = Frost.FAILED; return@LaunchedEffect }
         val copied = suspendCancellableCoroutine { cont ->
             runCatching {
-                PixelCopy.request(window, full, { result -> if (cont.isActive) cont.resume(result == PixelCopy.SUCCESS) }, Handler(Looper.getMainLooper()))
+                PixelCopy.request(window, small, { result -> if (cont.isActive) cont.resume(result == PixelCopy.SUCCESS) }, Handler(Looper.getMainLooper()))
             }.onFailure { if (cont.isActive) cont.resume(false) }
         }
-        if (!copied) { full.recycle(); state = Frost.FAILED; return@LaunchedEffect }
-        // Shrunk to a few dozen pixels a side: drawn back up smoothly, that alone is a soft blur.
-        val small = withContext(Dispatchers.Default) {
-            val w = (full.width / SHRINK).coerceAtLeast(1)
-            val h = (full.height / SHRINK).coerceAtLeast(1)
-            Bitmap.createScaledBitmap(full, w, h, true).also { full.recycle() }
-        }
+        if (!copied) { small.recycle(); state = Frost.FAILED; return@LaunchedEffect }
+        // Blurred once, off the main thread: every frame after only draws it.
+        withContext(Dispatchers.Default) { boxBlur(small, BLUR_RADIUS, BLUR_PASSES) }
         shot = small.asImageBitmap()
         state = Frost.READY
     }
@@ -102,9 +99,7 @@ internal fun ScreenFrost(shown: () -> Float, veil: Float = 0.42f): Frost {
                 val inWindow = c.positionInWindow()
                 offset = IntOffset(app[0] - mine[0] - inWindow.x.toInt(), app[1] - mine[1] - inWindow.y.toInt())
             }
-            .graphicsLayer { alpha = shown().coerceIn(0f, 1f) }
-            // On top of the shrinking, where the phone can (Android 12+).
-            .blur(BLUR, BlurredEdgeTreatment.Rectangle),
+            .graphicsLayer { alpha = shown().coerceIn(0f, 1f) },
     ) {
         val decor = activity?.window?.decorView
         if (image != null && decor != null) {
@@ -112,7 +107,7 @@ internal fun ScreenFrost(shown: () -> Float, veil: Float = 0.42f): Frost {
                 image,
                 dstOffset = offset,
                 dstSize = IntSize(decor.width, decor.height),
-                filterQuality = FilterQuality.Medium,
+                filterQuality = FilterQuality.High,
             )
         }
         drawRect(Color.Black.copy(alpha = veil))
@@ -126,6 +121,47 @@ private tailrec fun Context.findActivity(): Activity? = when (this) {
     else -> null
 }
 
+/**
+ * Box-blurs [bitmap] in place, [passes] times over a box [radius] pixels
+ * either side, rows then columns. Three passes come out close to a gaussian.
+ * On a copy a tenth of the screen's size this takes a few milliseconds.
+ */
+internal fun boxBlur(bitmap: Bitmap, radius: Int, passes: Int) {
+    val w = bitmap.width
+    val h = bitmap.height
+    if (w < 2 || h < 2 || radius < 1) return
+    val px = IntArray(w * h)
+    bitmap.getPixels(px, 0, w, 0, 0, w, h)
+    val tmp = IntArray(maxOf(w, h))
+    repeat(passes) {
+        for (y in 0 until h) blurLine(px, y * w, 1, w, radius, tmp)
+        for (x in 0 until w) blurLine(px, x, w, h, radius, tmp)
+    }
+    bitmap.setPixels(px, 0, w, 0, 0, w, h)
+}
+
+/** One row or column of [px], [n] long from [start] in steps of [step], box-blurred with edges held. */
+private fun blurLine(px: IntArray, start: Int, step: Int, n: Int, radius: Int, tmp: IntArray) {
+    var a = 0; var r = 0; var g = 0; var b = 0
+    fun at(i: Int) = px[start + i.coerceIn(0, n - 1) * step]
+    for (i in -radius..radius) {
+        val c = at(i)
+        a += c ushr 24; r += (c shr 16) and 0xFF; g += (c shr 8) and 0xFF; b += c and 0xFF
+    }
+    val size = 2 * radius + 1
+    for (i in 0 until n) {
+        tmp[i] = ((a / size) shl 24) or ((r / size) shl 16) or ((g / size) shl 8) or (b / size)
+        val out = at(i - radius)
+        val inn = at(i + radius + 1)
+        a += (inn ushr 24) - (out ushr 24)
+        r += ((inn shr 16) and 0xFF) - ((out shr 16) and 0xFF)
+        g += ((inn shr 8) and 0xFF) - ((out shr 8) and 0xFF)
+        b += (inn and 0xFF) - (out and 0xFF)
+    }
+    for (i in 0 until n) px[start + i * step] = tmp[i]
+}
+
 /** The copy is this many times smaller a side than the screen. */
-private const val SHRINK = 10
-private val BLUR = 18.dp
+private const val SHRINK = 8
+private const val BLUR_RADIUS = 4
+private const val BLUR_PASSES = 3

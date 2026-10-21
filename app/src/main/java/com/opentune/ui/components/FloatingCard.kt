@@ -286,7 +286,13 @@ fun FloatingCard(
                             scaleY = s
                             alpha = shown.coerceIn(0f, 1f)
                         }
-                        .shadow(if (frosted) 12.dp else 32.dp, shape, ambientColor = MaterialTheme.colorScheme.scrim, spotColor = MaterialTheme.colorScheme.scrim)
+                        // No drop shadow under glass: Android draws it under the whole card, a
+                        // little lower and inset, and through thin glass its edges read as
+                        // straight lines inside the card. The veil behind sets the card apart.
+                        .then(
+                            if (frost == Frost.READY) Modifier
+                            else Modifier.shadow(if (frosted) 12.dp else 32.dp, shape, ambientColor = MaterialTheme.colorScheme.scrim, spotColor = MaterialTheme.colorScheme.scrim),
+                        )
                         .clip(shape)
                         .then(
                             if (frosted) {
