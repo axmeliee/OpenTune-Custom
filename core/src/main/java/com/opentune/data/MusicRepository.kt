@@ -21,6 +21,7 @@ import com.opentune.data.reco.Recommendations
 import com.opentune.data.releases.NewReleases
 import com.opentune.data.settings.AppSettings
 import com.opentune.data.settings.Recommender
+import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.awaitAll
@@ -109,14 +110,18 @@ object MusicRepository {
         return saved.first
     }
 
-    /** Pull-to-refresh invalidates recommendations, while retaining visible content. */
-    fun refreshHomeRecommendations() {
-        homeMoreJob?.cancel()
-        extrasCache.clear()
-        seedCache = null
-    }
+    private val homeRefreshRequested = java.util.concurrent.atomic.AtomicBoolean(false)
+
+    /** Keep visible content until refreshed recommendations arrive. */
+    fun refreshHomeRecommendations() { homeRefreshRequested.set(true) }
 
     suspend fun home(): List<HomeShelf> = io {
+        if (homeRefreshRequested.getAndSet(false)) {
+            // Join before invalidating, so an older load cannot repopulate stale caches.
+            homeMoreJob?.cancelAndJoin()
+            extrasCache.clear()
+            seedCache = null
+        }
         val response = Innertube.browse("FEmusic_home")
         val first = InnertubeParser.parseHome(response).filter { it.items.isNotEmpty() }
         homeMoreJob?.cancel()

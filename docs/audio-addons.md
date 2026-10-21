@@ -6,9 +6,9 @@ This branch replaces the fixed SpotiFLAC sources, verification grants and regist
 
 Open **Settings → Audio → Audio add-ons**, paste a service root or its `manifest.json` URL, and select **Add URL**. Enable sources and use **Move up / Move down** to set the lookup order. Private path/query parameters are preserved locally and excluded from Android backup. Remove deletes the configuration, not saved music.
 
-Use **Max** playback quality, or enable **Lossless below Max**, to check add-ons in the background. Normal playback starts first. Lossless quality compares eligible matching lossless copies and selects the highest bit-depth/sample-rate score; equal quality preserves source order. Direct FLAC and HLS initialization headers provide measured metadata where available. Signal path shows lookup failures and the format reported by the decoder.
+Use **Lossless** playback quality, or enable **Lossless at other quality levels**, to check add-ons in the background. Normal playback starts first. Lossless quality compares eligible matching lossless copies and selects the highest bit-depth/sample-rate score; equal quality preserves source order. Direct FLAC and HLS initialization headers provide measured metadata where available. Signal path shows lookup failures and the format reported by the decoder.
 
-For downloads, choose **Max** in Download quality. The same priority order is used. A source must permit downloads and provide a direct audio file; segmented HLS/DASH sources are skipped for file downloads. If no eligible file is available, normal download sources remain available. A FLAC label cannot guarantee a lossless Bluetooth output.
+For downloads, choose **Lossless** in Download quality. The same priority order is used. A source must permit downloads and provide a direct audio file; segmented HLS/DASH sources are skipped for file downloads. If no eligible file is available, normal download sources remain available. A FLAC label cannot guarantee a lossless Bluetooth output.
 
 ## Protocol and failure behavior
 
@@ -43,9 +43,11 @@ known timestamp-bugged vendor FLAC decoders, following BitChord's workaround.
 Actual file precision is read from STREAMINFO, including MP4 initialization
 blocks; a float output buffer does not earn a Hi-Res label.
 
-Max-quality searches compare eligible copies before swapping. A deliberate
+Lossless-quality searches compare eligible copies before swapping. A deliberate
 refresh cannot replace a playing lossless rendition with an equal or lower
 quality score. A playback error, disabled source, revoked output permission or
 expired upstream URL can still require fallback; uninterrupted playback cannot
 be guaranteed by a third-party addon. Cached metadata expiry alone no longer
 invalidates an actively pinned stream.
+
+The Sources screen has grab handles for drag reordering, plus Move up/down actions. Source order survives restarts. Settings → About → OpenTune on Web & TV explains the browser preview and local TV QR pairing. The community invitation appears at most once every 30 days, after five days of use, with a permanent opt-out.

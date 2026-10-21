@@ -32,7 +32,8 @@ export function matches(wanted: Recording, candidate: CatalogTrack): boolean {
   if (!wanted.duration || candidate.duration <= 0 || Math.abs(wanted.duration - candidate.duration) > 3) return false;
   const artists = (s: string) => s.split(/,| & | feat\.? | featuring | ft\.? /i).map(normal).filter(Boolean);
   const credit = artists(candidate.artist);
-  return normal(wanted.title) === normal(candidate.title) && artists(wanted.artist).every(a => credit.includes(a));
+  const requested = artists(wanted.artist);
+  return normal(wanted.title) === normal(candidate.title) && requested.length > 0 && requested.every(a => credit.includes(a));
 }
 export function qualityParams(manifest: Manifest): Record<string, string> {
   const params: Record<string, string> = {};

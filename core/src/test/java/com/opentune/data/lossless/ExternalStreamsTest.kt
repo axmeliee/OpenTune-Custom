@@ -44,5 +44,17 @@ class ExternalStreamsTest {
         assertNull(ExternalStreams.get("song", "old"))
         assertNull(ExternalStreams.get("song", "new"))
     }
+    @Test fun failureOfOldStreamKeepsTheNewCandidate() {
+        AppSettings.init(RuntimeEnvironment.getApplication())
+        AppSettings.updatePlayback { it.copy(wifiQuality = AudioQuality.MAX, mobileQuality = AudioQuality.MAX, losslessUnmeteredOnly = false, jioSaavnQuality = true) }
+        val old = ExternalStreams.Rendition("race-old", "https://cdn.example/old", "JioSaavn", false, System.nanoTime() / 1_000_000)
+        val next = old.copy(key = "race-new", lossless = true)
+        ExternalStreams.remember("race", old)
+        ExternalStreams.remember("race", next)
+        ExternalStreams.failed("race", old.key)
+        assertNull(ExternalStreams.get("race", old.key))
+        assertEquals(next, ExternalStreams.cached("race"))
+        assertEquals(next.url, ExternalStreams.resolve("race", next.key))
+    }
 }
 

@@ -1358,7 +1358,7 @@ class PlaybackService : MediaLibraryService() {
         if (uri != null && (isUpgradedUri(uri) || externalStreamKeyOf(uri) != null)) {
             Log.w(TAG, "Upgraded stream for $mediaId failed (${error.errorCodeName}); back to the one it started on")
             StreamResolver.dropUpgrade(mediaId)
-            if (externalStreamKeyOf(uri) != null) ExternalStreams.failed(mediaId)
+            externalStreamKeyOf(uri)?.let { ExternalStreams.failed(mediaId, it) }
             val index = player.currentMediaItemIndex
             val position = player.currentPosition
             swappingTo = mediaId

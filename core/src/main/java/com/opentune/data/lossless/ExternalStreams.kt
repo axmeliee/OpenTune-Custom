@@ -125,11 +125,15 @@ object ExternalStreams {
         // Keep currently playing rendition keys valid until the player swaps sources.
     }
 
-    fun failed(videoId: String) {
-        val addon = renditions.remove(videoId)?.addonId
+    fun failed(videoId: String, key: String? = null) {
+        // A lookup may have finished while an older rendition was playing.
+        // Invalidate the stream that actually failed, not the new candidate.
+        val failed = if (key == null) renditions.remove(videoId) else get(videoId, key)
+        if (key != null && renditions[videoId]?.key == key) renditions.remove(videoId)
+        val addon = failed?.addonId
         if (addon != null) com.opentune.data.addons.AddonResolver.failed(addon, videoId)
-        pinned.entries.removeIf { it.value.first == videoId }
-        if (addon == null) failedUntil[videoId] = now() + TTL
+        pinned.entries.removeIf { it.value.first == videoId && (key == null || it.key == key) }
+        if (addon == null && renditions[videoId] == null) failedUntil[videoId] = now() + TTL
         report(videoId, if (addon != null) "The selected add-on failed during playback; using fallback audio and trying the next add-on." else "The selected external stream failed during playback; using YouTube temporarily.")
     }
 
