@@ -88,6 +88,7 @@ import androidx.compose.runtime.snapshotFlow
 import androidx.compose.runtime.withFrameMillis
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.graphics.drawscope.withTransform
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
@@ -334,6 +335,31 @@ fun PlayerLayout(
         delay(LYRICS_FOCUS_MS)
         controlsAway = true
     }
+    // What came of an "Upgrade quality" from the menu: switched, already the best, or not in time.
+    LaunchedEffect(Unit) {
+        com.opentune.playback.PlaybackRequests.upgradeResult.collect { Toast.makeText(context, it, Toast.LENGTH_SHORT).show() }
+    }
+    // Swiping up through the lyrics slides the controls down out of the way;
+    // swiping back down brings them up again. Only the finger's own scrolling
+    // counts, past a short distance, so the list's glide to the next line doesn't.
+    var scrolledAway by remember { mutableStateOf(false) }
+    LaunchedEffect(pane) { if (pane != Pane.LYRICS) scrolledAway = false }
+    val swipePx = with(LocalDensity.current) { 24.dp.toPx() }
+    val lyricsScroll = remember(swipePx) {
+        object : androidx.compose.ui.input.nestedscroll.NestedScrollConnection {
+            private var run = 0f
+            override fun onPreScroll(available: androidx.compose.ui.geometry.Offset, source: androidx.compose.ui.input.nestedscroll.NestedScrollSource): androidx.compose.ui.geometry.Offset {
+                if (source != androidx.compose.ui.input.nestedscroll.NestedScrollSource.UserInput) return androidx.compose.ui.geometry.Offset.Zero
+                val dy = available.y
+                if ((run > 0f && dy < 0f) || (run < 0f && dy > 0f)) run = 0f
+                run += dy
+                if (run <= -swipePx) { scrolledAway = true; run = 0f }
+                else if (run >= swipePx) { scrolledAway = false; run = 0f }
+                return androidx.compose.ui.geometry.Offset.Zero
+            }
+        }
+    }
+    val controlsHidden = controlsAway || (scrolledAway && pane == Pane.LYRICS)
     val liked by LibraryStore.liked.collectAsState()
     val isLiked = liked.any { it.videoId == current.videoId }
     val device = rememberOutputDeviceName()
@@ -469,7 +495,7 @@ fun PlayerLayout(
                                 state.lyrics,
                                 lyricsPosition,
                                 onSeek = { actions.seekTo((it - offsetMs).coerceAtLeast(0)) },
-                                modifier = Modifier.fillMaxSize().focusIn(!state.ui.reduceAnimation),
+                                modifier = Modifier.fillMaxSize().nestedScroll(lyricsScroll).focusIn(!state.ui.reduceAnimation),
                                 synced = state.ui.syncedLyrics,
                                 blur = state.ui.blurLyrics,
                                 shareSong = current,
@@ -583,7 +609,7 @@ fun PlayerLayout(
                                 state.lyrics,
                                 lyricsPosition,
                                 onSeek = { actions.seekTo((it - offsetMs).coerceAtLeast(0)) },
-                                modifier = Modifier.weight(1f).fillMaxWidth(),
+                                modifier = Modifier.weight(1f).fillMaxWidth().nestedScroll(lyricsScroll),
                                 synced = state.ui.syncedLyrics,
                                 blur = state.ui.blurLyrics,
                                 shareSong = current,
@@ -641,7 +667,7 @@ fun PlayerLayout(
                                     state.lyrics,
                                     lyricsPosition,
                                     onSeek = { actions.seekTo((it - offsetMs).coerceAtLeast(0)) },
-                                    modifier = Modifier.weight(1f).fillMaxWidth().focusIn(!state.ui.reduceAnimation),
+                                    modifier = Modifier.weight(1f).fillMaxWidth().nestedScroll(lyricsScroll).focusIn(!state.ui.reduceAnimation),
                                     synced = state.ui.syncedLyrics,
                                     blur = state.ui.blurLyrics,
                                 shareSong = current,
@@ -681,7 +707,7 @@ fun PlayerLayout(
                 // Lyrics with nothing in the way: a few seconds untouched while they
                 // play, and the controls slide down out of sight.
                 AnimatedVisibility(
-                    !controlsAway,
+                    !controlsHidden,
                     enter = expandVertically(spring(dampingRatio = 0.9f, stiffness = 380f), expandFrom = Alignment.Top) + slideInVertically(spring(dampingRatio = 0.9f, stiffness = 380f)) { it / 2 } + fadeIn(tween(220)),
                     exit = shrinkVertically(tween(520, easing = FastOutSlowInEasing), shrinkTowards = Alignment.Top) + slideOutVertically(tween(520, easing = FastOutSlowInEasing)) { it / 2 } + fadeOut(tween(360)),
                 ) {
@@ -754,7 +780,7 @@ fun PlayerLayout(
                 }
                 }
                 // Where the controls went: a faint handle, and a swipe or touch brings them back.
-                AnimatedVisibility(controlsAway, enter = fadeIn(tween(400)), exit = fadeOut(tween(150))) {
+                AnimatedVisibility(controlsHidden, enter = fadeIn(tween(400)), exit = fadeOut(tween(150))) {
                     Box(Modifier.fillMaxWidth().padding(top = 10.dp, bottom = 14.dp), contentAlignment = Alignment.Center) {
                         Box(Modifier.size(width = 44.dp, height = 5.dp).clip(CircleShape).background(MaterialTheme.colorScheme.onSurface.copy(alpha = 0.3f)))
                     }

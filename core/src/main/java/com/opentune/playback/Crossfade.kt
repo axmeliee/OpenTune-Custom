@@ -52,6 +52,9 @@ class Crossfade(
 
     private val fadeMs: Long get() = AppSettings.playback.value.crossfadeSeconds * 1000L
 
+    /** True while two songs are blending, when nothing else should move the main player's volume. */
+    val blending: Boolean get() = tail != null
+
     private val listener = object : Player.Listener {
         override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
             if (!handingOver && tail != null) bail()

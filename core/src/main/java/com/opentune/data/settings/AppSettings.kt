@@ -568,6 +568,7 @@ enum class LyricsAnimation(val label: String, val summary: String) {
 /** Where lyrics can come from. */
 @Serializable
 enum class LyricsSource(val label: String, val summary: String) {
+    LRC_RED("lrc.red", "Word-by-word lyrics filed by recording, as BitChord uses them first"),
     LRCLIB("LRCLIB", "Community lyrics, line by line and sometimes word by word"),
     LYRICSPLUS("LyricsPlus", "Word-by-word lyrics from the servers behind YouLyPlus, as Echo Music uses them"),
     BETTERLYRICS("Better Lyrics", "Word-by-word lyrics from Better Lyrics, for songs its listeners have already looked up"),
@@ -595,9 +596,16 @@ data class LyricsSettings(
     /** Per-song source picked from the player's "Lyrics source"; the others aren't asked first. */
     val chosen: Map<String, LyricsSource> = emptyMap(),
 ) {
-    /** The saved order, with any source added since appended at the end. */
+    /**
+     * The saved order, with any source added since appended at the end; lrc.red,
+     * the most exact of them, goes in first when a saved order hasn't met it yet.
+     */
     val ordered: List<LyricsSourceEntry>
-        get() = sources.distinctBy { it.source } + LyricsSource.entries.filter { s -> sources.none { it.source == s } }.map(::LyricsSourceEntry)
+        get() {
+            val missing = LyricsSource.entries.filter { s -> sources.none { it.source == s } }.map(::LyricsSourceEntry)
+            val (front, back) = missing.partition { it.source == LyricsSource.LRC_RED }
+            return front + sources.distinctBy { it.source } + back
+        }
 }
 
 val DEFAULT_LYRICS_SOURCES = LyricsSource.entries.map(::LyricsSourceEntry)

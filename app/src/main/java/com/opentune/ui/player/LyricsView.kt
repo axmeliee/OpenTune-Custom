@@ -712,7 +712,7 @@ private fun LyricLineView(
                     .fillMaxWidth()
                     // Its own layer, so dimming the unsung words doesn't punch through what's behind.
                     .graphicsLayer { compositingStrategy = CompositingStrategy.Offscreen }
-                    .drawWithContent { drawContent(); sweepDim(line, wordBoxes, position(), 0.3f) },
+                    .drawWithContent { drawContent(); sweepDim(line, wordBoxes, position(), 0.4f) },
             )
         } else {
             Text(
@@ -751,7 +751,8 @@ private fun LyricLineView(
  * Done at draw time, so the line isn't measured again every frame.
  */
 private fun DrawScope.sweepDim(line: LyricLine, boxes: List<List<Rect>>, positionMs: Long, removal: Float) {
-    val feather = 14.dp.toPx()
+    // A wide soft edge, as BitChord's: the light eases across each word rather than wiping it.
+    val feather = 26.dp.toPx()
     line.words.forEachIndexed { i, word ->
         val pieces = boxes.getOrNull(i) ?: return@forEachIndexed
         if (pieces.isEmpty()) return@forEachIndexed
