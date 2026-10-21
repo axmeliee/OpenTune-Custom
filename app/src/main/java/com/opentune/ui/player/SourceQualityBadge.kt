@@ -1,5 +1,7 @@
 package com.opentune.ui.player
 
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
@@ -55,14 +57,15 @@ internal fun SourceQualityBadge(mediaId: String, format: AudioFormatInfo?, onCli
     val ui by com.opentune.data.settings.AppSettings.ui.collectAsState()
     val phase = if (ui.reduceAnimation || !isHighestQuality(source, format)) null else rememberInfiniteTransition(label = "quality light")
         .animateFloat(-1f, 2f, infiniteRepeatable(tween(3200, easing = LinearEasing)), label = "quality sweep")
-    TextButton(onClick = onClick, modifier = modifier.heightIn(min = 40.dp).semantics { contentDescription = "$label. Open signal path" },
+    TextButton(onClick = onClick, modifier = modifier.widthIn(max = 280.dp).fillMaxWidth().heightIn(min = 40.dp).semantics { contentDescription = "$label. Open signal path" },
         colors = ButtonDefaults.textButtonColors(contentColor = colors.onSurfaceVariant),
         contentPadding = PaddingValues(horizontal = 6.dp, vertical = 4.dp)) {
         Icon(if (isHighestQuality(source, format)) androidx.compose.material.icons.Icons.Rounded.GraphicEq else androidx.compose.material.icons.Icons.Rounded.Headphones,
             null, Modifier.size(16.dp))
         Spacer(Modifier.width(5.dp))
         Text(label, style = MaterialTheme.typography.labelMedium,
-            modifier = Modifier.graphicsLayer { compositingStrategy = androidx.compose.ui.graphics.CompositingStrategy.Offscreen }.drawWithCache {
+            textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+            modifier = Modifier.weight(1f).graphicsLayer { compositingStrategy = androidx.compose.ui.graphics.CompositingStrategy.Offscreen }.drawWithCache {
                 onDrawWithContent {
                     drawContent()
                     phase?.value?.let { progress ->

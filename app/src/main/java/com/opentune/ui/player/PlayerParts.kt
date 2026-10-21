@@ -49,6 +49,7 @@ import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.material.icons.Icons
@@ -676,19 +677,33 @@ fun SeekBar(
         val elapsedSeconds by remember(durationMs) {
             derivedStateOf { ((dragFraction?.times(durationMs)?.toLong() ?: position()) / 1000) }
         }
-        if (look.seekbarTime != com.opentune.data.settings.SeekbarTime.HIDDEN) Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-            Text(if (loading) "--:--" else formatTime(elapsedSeconds * 1000), style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            quality?.let { Box(Modifier.weight(1f), contentAlignment = Alignment.Center) { it() } }
-            // Time left, as Apple Music shows it, or the song's length.
-            Text(
-                when {
-                    durationMs <= 0 -> "--:--"
-                    look.seekbarTime == com.opentune.data.settings.SeekbarTime.TOTAL -> formatTime(durationMs)
-                    else -> "-" + formatTime((durationMs - elapsedSeconds * 1000).coerceAtLeast(0))
-                },
-                style = MaterialTheme.typography.labelMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
+        if (look.seekbarTime != com.opentune.data.settings.SeekbarTime.HIDDEN) {
+            val timeStyle = MaterialTheme.typography.labelMedium.copy(fontFeatureSettings = "tnum")
+            val measurer = androidx.compose.ui.text.rememberTextMeasurer()
+            val density = LocalDensity.current
+            // Reserve identical, stable side columns using the whole track's length.
+            // Seconds changing width must never push the quality label sideways.
+            val timeWidth = remember(durationMs, timeStyle, density) {
+                val sample = if (durationMs > 0) "-" + formatTime(durationMs) else "--:--"
+                with(density) { (measurer.measure(sample, timeStyle).size.width + 8.dp.roundToPx()).toDp() }
+            }
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                Text(if (loading) "--:--" else formatTime(elapsedSeconds * 1000), modifier = Modifier.width(timeWidth),
+                    style = timeStyle, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1)
+                quality?.let { Box(Modifier.weight(1f), contentAlignment = Alignment.Center) { it() } }
+                Text(
+                    when {
+                        durationMs <= 0 -> "--:--"
+                        look.seekbarTime == com.opentune.data.settings.SeekbarTime.TOTAL -> formatTime(durationMs)
+                        else -> "-" + formatTime((durationMs - elapsedSeconds * 1000).coerceAtLeast(0))
+                    },
+                    modifier = Modifier.width(timeWidth),
+                    style = timeStyle,
+                    textAlign = androidx.compose.ui.text.style.TextAlign.End,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                )
+            }
         }
         if (look.seekbarTime == com.opentune.data.settings.SeekbarTime.HIDDEN) quality?.let { Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) { it() } }
     }
@@ -733,7 +748,7 @@ fun MiniPlayer(
     if (inline) {
         Box(
             modifier
-                .clip(CircleShape).background(MaterialTheme.colorScheme.surfaceContainerHigh)
+                .glass(CircleShape, tint)
                 .clickable(onClick = onClick)
                 .padding(4.dp),
             contentAlignment = Alignment.Center,
@@ -752,7 +767,7 @@ fun MiniPlayer(
         color = Color.Transparent,
         modifier = modifier
             .graphicsLayer { translationX = offsetX.value }
-            .clip(shape).background(MaterialTheme.colorScheme.surfaceContainerHigh)
+            .glass(shape, tint)
             .pointerInput(Unit) {
                 detectHorizontalDragGestures(
                     onDragEnd = {
