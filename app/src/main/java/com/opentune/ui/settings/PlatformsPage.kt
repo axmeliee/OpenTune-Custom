@@ -39,7 +39,7 @@ internal fun PlatformsPage(onDismiss: () -> Unit) {
                         Icon(Icons.Rounded.Language, null, Modifier.size(36.dp))
                         Text("In your browser", style = MaterialTheme.typography.headlineSmall)
                         Text("Browse, search and listen on a computer. The web player uses a companion browser extension for YouTube Music playback. Your library stays in that browser.")
-                        Text("Preview · available when this update's website is published", style = MaterialTheme.typography.labelMedium)
+                        Text("Web preview · companion extension required", style = MaterialTheme.typography.labelMedium)
                         FilledTonalButton(onClick = { open("https://justshivv.github.io/Opentune/player/") }) { Text("Open web player") }
                     }
                 }

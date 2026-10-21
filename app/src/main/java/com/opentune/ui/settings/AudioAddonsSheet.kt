@@ -1,5 +1,13 @@
 package com.opentune.ui.settings
 
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.snap
+import androidx.compose.animation.core.spring
+import androidx.compose.foundation.background
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.zIndex
+import kotlin.math.roundToInt
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.ui.input.pointer.pointerInput
@@ -32,6 +40,10 @@ import kotlinx.coroutines.launch
 internal fun AudioAddonsSheet(onDismiss: () -> Unit) {
     val addons by AddonStore.addons.collectAsState()
     val playback by AppSettings.playback.collectAsState()
+    val ui by AppSettings.ui.collectAsState()
+    val rowHeights = remember { mutableStateMapOf<String, Int>() }
+    var draggingKey by remember { mutableStateOf<String?>(null) }
+    var draggedTop by remember { mutableFloatStateOf(0f) }
     val scope = rememberCoroutineScope()
     var input by remember { mutableStateOf("") }
     var adding by remember { mutableStateOf(false) }
@@ -54,9 +66,30 @@ internal fun AudioAddonsSheet(onDismiss: () -> Unit) {
                     Column {
                         addons.forEachIndexed { index, addon ->
                           key(addon.key) {
-                            var rowHeight by remember { mutableStateOf(100) }
+                            val top = addons.take(index).sumOf { rowHeights[it.key] ?: 100 }.toFloat()
+                            val dragging = draggingKey == addon.key
+                            val visualTop by animateFloatAsState(
+                                targetValue = if (dragging) draggedTop else top,
+                                animationSpec = if (dragging || ui.reduceAnimation) snap() else spring(dampingRatio = 1f, stiffness = 450f),
+                                label = "Source position",
+                            )
+                            val lift by animateFloatAsState(
+                                if (dragging) 1f else 0f,
+                                animationSpec = if (ui.reduceAnimation) snap() else spring(dampingRatio = 1f),
+                                label = "Source lift",
+                            )
+                            Column(Modifier.fillMaxWidth()
+                                .onSizeChanged { rowHeights[addon.key] = it.height }
+                                .zIndex(if (dragging) 1f else 0f)
+                                .offset { IntOffset(0, ((if (dragging) draggedTop else visualTop) - top).roundToInt()) }
+                                .graphicsLayer {
+                                    shadowElevation = 10.dp.toPx() * lift
+                                    shape = RoundedCornerShape(16.dp)
+                                    clip = false
+                                }
+                                .background(if (dragging) MaterialTheme.colorScheme.surfaceContainerHighest else MaterialTheme.colorScheme.surfaceContainer, RoundedCornerShape(16.dp))) {
                             val blocked = addon.manifest.outputRequired && !AddonStore.outputAllowed()
-                            Row(Modifier.fillMaxWidth().onSizeChanged { rowHeight = it.height }.clickable { expanded = if (expanded == addon.key) null else addon.key }.padding(horizontal = 16.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                            Row(Modifier.fillMaxWidth().clickable { expanded = if (expanded == addon.key) null else addon.key }.padding(horizontal = 16.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                                 Text("${index + 1}", color = MaterialTheme.colorScheme.onSurfaceVariant)
                                 Icon(Icons.Rounded.Extension, null, tint = if (addon.enabled && !blocked) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant)
                                 Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
@@ -74,20 +107,33 @@ internal fun AudioAddonsSheet(onDismiss: () -> Unit) {
                                         )
                                     }
                                     .pointerInput(addon.key) {
-                                        var travel = 0f
                                         detectVerticalDragGestures(
-                                            onDragStart = { travel = 0f; expanded = null },
-                                            onDragEnd = { travel = 0f },
-                                            onDragCancel = { travel = 0f },
+                                            onDragStart = {
+                                                val current = AddonStore.addons.value
+                                                draggedTop = current.takeWhile { it.key != addon.key }.sumOf { rowHeights[it.key] ?: 100 }.toFloat()
+                                                draggingKey = addon.key
+                                            },
+                                            onDragEnd = { draggingKey = null },
+                                            onDragCancel = { draggingKey = null },
                                         ) { change, distance ->
                                             change.consume()
-                                            travel += distance
-                                            val step = rowHeight.coerceAtLeast(1).toFloat()
-                                            while (kotlin.math.abs(travel) >= step) {
-                                                val direction = if (travel > 0) 1 else -1
-                                                AddonStore.move(addon.key, direction)
-                                                travel -= direction * step
+                                            val current = AddonStore.addons.value
+                                            val from = current.indexOfFirst { it.key == addon.key }
+                                            if (from < 0) return@detectVerticalDragGestures
+                                            val height = rowHeights[addon.key] ?: 100
+                                            val total = current.sumOf { rowHeights[it.key] ?: 100 }
+                                            draggedTop = (draggedTop + distance).coerceIn(0f, (total - height).coerceAtLeast(0).toFloat())
+                                            val center = draggedTop + height / 2f
+                                            var cursor = 0f
+                                            var target = from
+                                            current.forEachIndexed { position, item ->
+                                                val itemHeight = rowHeights[item.key] ?: 100
+                                                val middle = cursor + itemHeight / 2f
+                                                if (position < from && center < middle) target = minOf(target, position)
+                                                if (position > from && center > middle) target = maxOf(target, position)
+                                                cursor += itemHeight
                                             }
+                                            if (target != from) AddonStore.move(addon.key, target - from)
                                         }
                                     }.padding(12.dp))
                             }
@@ -108,6 +154,7 @@ internal fun AudioAddonsSheet(onDismiss: () -> Unit) {
                                 }
                             }
                             HorizontalDivider(Modifier.padding(horizontal = 20.dp), color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = .4f))
+                            }
                           }
                         }
                         Row(Modifier.padding(20.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {

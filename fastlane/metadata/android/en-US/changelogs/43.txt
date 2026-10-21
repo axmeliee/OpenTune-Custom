@@ -1,0 +1,7 @@
+• Add your own lossless audio sources and reorder them with animated drag handles
+• Community sources managed through the private dashboard
+• Compact, steady quality labels and restored mini-player glass
+• Improved FLAC playback and background quality upgrades
+• Fresh Home recommendations, community links and Web & TV guide
+• YouTube Music sign-in on TV using your phone
+• Browser player preview with companion extension

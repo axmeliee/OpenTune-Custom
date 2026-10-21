@@ -65,7 +65,7 @@ internal fun SourceQualityBadge(mediaId: String, format: AudioFormatInfo?, onCli
         Spacer(Modifier.width(5.dp))
         Text(label, style = MaterialTheme.typography.labelMedium,
             textAlign = androidx.compose.ui.text.style.TextAlign.Center,
-            modifier = Modifier.weight(1f).graphicsLayer { compositingStrategy = androidx.compose.ui.graphics.CompositingStrategy.Offscreen }.drawWithCache {
+            modifier = Modifier.graphicsLayer { compositingStrategy = androidx.compose.ui.graphics.CompositingStrategy.Offscreen }.drawWithCache {
                 onDrawWithContent {
                     drawContent()
                     phase?.value?.let { progress ->

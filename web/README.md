@@ -17,7 +17,7 @@ pnpm --filter @opentune/extension icons
 pnpm build:site
 ```
 
-The test command downloads checksum-verified JSON fixtures from the pinned upstream commit if absent. There are no production API calls during those tests. `app/dist/` contains the site and packaged extensions under `downloads/`. The preview workflow uploads it as an artifact. Pages builds it only after a future merge to main; this feature branch does not deploy or release it.
+The test command downloads checksum-verified JSON fixtures from the pinned upstream commit if absent. There are no production API calls during those tests. `app/dist/` contains the site and packaged extensions under `downloads/`. The preview workflow uploads it as an artifact. GitHub Pages builds and publishes it at https://justshivv.github.io/Opentune/player/ on updates to main.
 
 For development run `pnpm dev` and `pnpm dev:ext`. The app uses a hash router so refreshing a nested route works on GitHub Pages. The production base is `/Opentune/player/`; set `OPENTUNE_WEB_BASE=/` for another root deployment and adjust extension allowed origins/paths deliberately.
 
