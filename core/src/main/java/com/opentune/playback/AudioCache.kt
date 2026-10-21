@@ -31,6 +31,16 @@ object AudioCache {
 
     fun usedBytes(context: Context): Long = runCatching { get(context).cacheSpace }.getOrDefault(0L)
 
+    /** Whether any of [videoId]'s audio is kept here, in any quality or from any source. */
+    fun holds(context: Context, videoId: String): Boolean =
+        runCatching { get(context).keys.any { videoId in it } }.getOrDefault(false)
+
+    /** Drops [videoId]'s kept audio, every copy of it; it's fetched again the next time it plays. */
+    fun remove(context: Context, videoId: String) {
+        val c = get(context)
+        c.keys.filter { videoId in it }.forEach { runCatching { c.removeResource(it) } }
+    }
+
     fun clear(context: Context) {
         val c = get(context)
         c.keys.toList().forEach { runCatching { c.removeResource(it) } }

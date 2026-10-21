@@ -232,6 +232,23 @@ fun AppRoot(vm: PlayerViewModel) {
             else -> item.toSong()?.let { vm.play(it, "Home") }
         }
     } }
+    // A long press on an album or playlist card: its songs are fetched when an action needs them.
+    val collectionMenu = remember(nav, vm) {
+        fun withSongs(id: String, use: (List<com.opentune.data.model.Song>) -> Unit) {
+            uiScope.launch {
+                val songs = runCatching { MusicRepository.collection(id).songs }.getOrNull().orEmpty()
+                if (songs.isEmpty()) snackbar.showSnackbar("Couldn't load its songs just now") else use(songs)
+            }
+        }
+        com.opentune.ui.components.CollectionMenuActions(
+            play = { id, title, shuffle -> withSongs(id) { vm.playAll(it, 0, shuffle, title) } },
+            // Last first, so the list plays next in its own order.
+            playNext = { id -> withSongs(id) { songs -> songs.asReversed().forEach(vm::playNext); uiScope.launch { snackbar.showSnackbar("${songs.size} songs play next") } } },
+            addToQueue = { id -> withSongs(id) { songs -> songs.forEach(vm::addToQueue); uiScope.launch { snackbar.showSnackbar("${songs.size} songs added to the queue") } } },
+            downloadAll = { id -> withSongs(id) { songs -> songs.forEach { com.opentune.data.download.Downloads.enqueue(appContext.applicationContext, it) }; uiScope.launch { snackbar.showSnackbar("Downloading ${songs.size} songs") } } },
+            open = { id, type -> playerOpen = false; nav.openBrowse(id, type) },
+        )
+    }
     // `song` is read when a menu action runs, so the menu doesn't need rebuilding as songs change.
     val songMenu = remember(nav, vm) { SongMenuActions(
         playNext = vm::playNext,
@@ -451,6 +468,7 @@ fun AppRoot(vm: PlayerViewModel) {
     CompositionLocalProvider(
         LocalHazeState provides haze,
         LocalSongMenu provides songMenu,
+        com.opentune.ui.components.LocalCollectionMenu provides collectionMenu,
         LocalChromeScroll provides chromeScroll,
         // iOS-style rubber band at the ends of every list.
         LocalOverscrollFactory provides RubberBandOverscrollFactory,

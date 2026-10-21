@@ -45,6 +45,8 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import com.opentune.ui.components.menuAnchor
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalFocusManager
@@ -60,6 +62,7 @@ import com.opentune.data.model.SearchFilter
 import com.opentune.data.model.SearchResult
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import com.opentune.data.model.Song
 import com.opentune.data.model.UiState
 import com.opentune.data.model.artworkAt
@@ -298,13 +301,37 @@ private fun TopResult(song: Song, onPlay: () -> Unit) {
     }
 }
 
+@OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
 @Composable
 private fun BrowseRow(item: BrowseItem, onClick: () -> Unit) {
+    // Albums and playlists open their long-press menu, lifted out where the row is.
+    val list = if (item.type == BrowseType.ALBUM || item.type == BrowseType.PLAYLIST)
+        com.opentune.ui.components.MenuList(item.browseId, item.title, item.subtitle, item.thumbnailUrl, item.type) else null
+    val anchor = remember { com.opentune.ui.components.MenuAnchor() }
+    val view = androidx.compose.ui.platform.LocalView.current
+    val haptics = com.opentune.ui.components.rememberHaptics()
+    var menuOpen by remember { androidx.compose.runtime.mutableStateOf(false) }
+    val at = anchor.rect
+    val round = item.type == BrowseType.ARTIST
+    if (menuOpen && list != null && at != null) {
+        com.opentune.ui.components.CollectionContextMenu(list, at, onDismiss = { menuOpen = false }) {
+            Row(Modifier.fillMaxSize().padding(horizontal = 14.dp), verticalAlignment = Alignment.CenterVertically) {
+                Artwork(item.thumbnailUrl.artworkAt(ROW_ART_PX), Modifier.size(52.dp), shape = MaterialTheme.shapes.small)
+                Spacer(Modifier.width(14.dp))
+                Column(Modifier.weight(1f)) {
+                    Text(item.title, maxLines = 1, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.bodyLarge, fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold)
+                    com.opentune.ui.components.SubtitleLine(item.subtitle, explicit = item.explicit)
+                }
+            }
+        }
+    }
     Row(
-        Modifier.fillMaxWidth().clickable(onClick = onClick).padding(horizontal = 16.dp, vertical = 6.dp),
+        Modifier.fillMaxWidth()
+            .then(if (list != null) Modifier.menuAnchor(anchor, view) else Modifier)
+            .combinedClickable(onClick = onClick, onLongClick = list?.let { { haptics.press(); menuOpen = true } })
+            .padding(horizontal = 16.dp, vertical = 6.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        val round = item.type == BrowseType.ARTIST
         Artwork(
             item.thumbnailUrl.artworkAt(ROW_ART_PX),
             Modifier.size(52.dp),
@@ -330,3 +357,4 @@ private fun BrowseRow(item: BrowseItem, onClick: () -> Unit) {
         }
     }
 }
+

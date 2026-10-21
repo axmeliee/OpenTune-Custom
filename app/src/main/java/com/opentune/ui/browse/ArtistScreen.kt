@@ -111,6 +111,7 @@ import com.opentune.ui.share.ListShare
 import com.opentune.ui.theme.animated
 import com.opentune.ui.theme.rememberArtworkSeed
 import com.opentune.ui.type
+import com.opentune.ui.cardMenu
 
 /**
  * An artist's page: their photo across the top, fading into a page tinted
@@ -501,7 +502,7 @@ private fun ArtistShelf(shelf: HomeShelf, onItemClick: (ShelfItem) -> Unit, onSh
             horizontalArrangement = Arrangement.spacedBy(4.dp),
         ) {
             items(shelf.items) { item ->
-                ItemCard(item.title, item.subtitle, item.thumbnailUrl, item.type(), onClick = { onItemClick(item) }, width = SHELF_CARD_WIDTH, explicit = item.explicit)
+                ItemCard(item.title, item.subtitle, item.thumbnailUrl, item.type(), onClick = { onItemClick(item) }, width = SHELF_CARD_WIDTH, explicit = item.explicit, menu = item.cardMenu())
             }
         }
     }
@@ -608,6 +609,7 @@ fun ArtistItemsScreen(
                                 modifier = Modifier.fillMaxWidth(),
                                 width = Dp.Unspecified,
                                 explicit = item.explicit,
+                                menu = item.cardMenu(),
                             )
                         }
                     }

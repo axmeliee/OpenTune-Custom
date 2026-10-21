@@ -82,6 +82,7 @@ import com.opentune.ui.components.SongListItem
 import com.opentune.ui.rememberLoader
 import com.opentune.ui.toSong
 import com.opentune.ui.type
+import com.opentune.ui.cardMenu
 
 @OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
 @Composable
@@ -253,7 +254,7 @@ private fun Recents(songs: List<Song>, asGrid: Boolean, actions: SongActions, on
                     contentPadding = PaddingValues(horizontal = 10.dp),
                 ) {
                     itemsIndexed(songs, key = { _, song -> song.videoId }) { i, song ->
-                        ItemCard(song.title, song.artist, song.thumbnailUrl, null, onClick = { actions.playAll(songs, i, false, "Recents") }, explicit = song.isExplicit == true)
+                        ItemCard(song.title, song.artist, song.thumbnailUrl, null, onClick = { actions.playAll(songs, i, false, "Recents") }, explicit = song.isExplicit == true, menu = com.opentune.ui.components.CardMenu.ForSong(song))
                     }
                 }
             } else {
@@ -332,7 +333,7 @@ fun HomeShelfView(shelf: HomeShelf, onItemClick: (ShelfItem) -> Unit, modifier: 
         } else {
             if (covers == null) {
                 Shelf(title = shelf.title, subtitle = shelf.subtitle, items = shelf.items) { item ->
-                    ItemCard(item.title, item.subtitle, item.thumbnailUrl, item.type(), onClick = { onItemClick(item) }, explicit = item.explicit)
+                    ItemCard(item.title, item.subtitle, item.thumbnailUrl, item.type(), onClick = { onItemClick(item) }, explicit = item.explicit, menu = item.cardMenu())
                 }
             } else {
                 // By place in the shelf, since a shelf can hold the same item twice.
@@ -352,6 +353,7 @@ fun HomeShelfView(shelf: HomeShelf, onItemClick: (ShelfItem) -> Unit, modifier: 
                         explicit = item.explicit,
                         imageModifier = motion.art,
                         onArtLoaded = motion.onArtLoaded,
+                        menu = item.cardMenu(),
                     )
                 }
             }

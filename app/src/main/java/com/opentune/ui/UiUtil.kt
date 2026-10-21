@@ -43,6 +43,18 @@ fun ShelfItem.toSong(): Song? = videoId?.let {
 
 fun ShelfItem.type(): BrowseType? = browseId?.let(MusicRepository::typeOf)
 
+/** What a long press on this card opens: an album's or playlist's menu, or a song's. Artists have none. */
+fun ShelfItem.cardMenu(): com.opentune.ui.components.CardMenu? {
+    val type = type()
+    val id = browseId
+    return when {
+        id != null && (type == BrowseType.ALBUM || type == BrowseType.PLAYLIST) ->
+            com.opentune.ui.components.CardMenu.ForList(com.opentune.ui.components.MenuList(id, title, subtitle, thumbnailUrl, type))
+        id == null -> toSong()?.let { com.opentune.ui.components.CardMenu.ForSong(it) }
+        else -> null
+    }
+}
+
 /**
  * What screens loaded recently, by loader key, so going back to a page shows
  * it at once instead of a spinner. Entries are only a head start: anything
