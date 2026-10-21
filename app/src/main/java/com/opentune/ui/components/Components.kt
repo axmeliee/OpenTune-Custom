@@ -73,6 +73,7 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.text.withLink
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import coil3.compose.AsyncImage
@@ -175,6 +176,47 @@ fun SubtitleLine(
             Spacer(Modifier.width(6.dp))
             Text(text, Modifier.weight(1f, fill = false), maxLines = 1, overflow = TextOverflow.Ellipsis, style = style, color = color)
         }
+    }
+}
+
+/** Between the names in a line of artists: commas, "&", " x ", "and", "feat.", "ft.", "with". */
+private val ARTIST_JOINS = Regex("""\s*,\s*|\s+&\s+|\s+x\s+|\s+and\s+|\s+(?:feat\.?|ft\.?|featuring|with)\s+""", RegexOption.IGNORE_CASE)
+
+/**
+ * A song's artists on one line, each name its own link: tapping a name opens
+ * that artist's page, not just the first one's. Names cut off at the end of
+ * the line can't be reached, so only the ones shown can be tapped.
+ */
+@Composable
+fun ArtistLinks(
+    artists: String,
+    onArtist: ((String) -> Unit)?,
+    explicit: Boolean,
+    modifier: Modifier = Modifier,
+    style: TextStyle = MaterialTheme.typography.bodyMedium,
+    color: Color = MaterialTheme.colorScheme.onSurfaceVariant,
+) {
+    if (onArtist == null) { SubtitleLine(artists, explicit, modifier, style, color); return }
+    val text = remember(artists, onArtist) {
+        androidx.compose.ui.text.buildAnnotatedString {
+            var at = 0
+            fun name(end: Int) {
+                val n = artists.substring(at, end)
+                val trimmed = n.trim()
+                if (trimmed.isEmpty()) { append(n); return }
+                withLink(androidx.compose.ui.text.LinkAnnotation.Clickable(trimmed) { onArtist(trimmed) }) { append(n) }
+            }
+            ARTIST_JOINS.findAll(artists).forEach { m ->
+                name(m.range.first)
+                append(m.value)
+                at = m.range.last + 1
+            }
+            name(artists.length)
+        }
+    }
+    Row(modifier, verticalAlignment = Alignment.CenterVertically) {
+        if (explicit) { ExplicitBadge(color = color); Spacer(Modifier.width(6.dp)) }
+        Text(text, Modifier.weight(1f, fill = false), maxLines = 1, overflow = TextOverflow.Ellipsis, style = style, color = color)
     }
 }
 

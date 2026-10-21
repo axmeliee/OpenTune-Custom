@@ -275,7 +275,17 @@ fun LyricPreview(lyrics: LyricsState, position: () -> Long, onOpen: () -> Unit, 
     }
     val alpha by androidx.compose.animation.core.animateFloatAsState(if (resting) 0.5f else 1f, label = "previewRest")
     Row(modifier.clip(RoundedCornerShape(10.dp)).clickable(onClick = onOpen).padding(vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
-        androidx.compose.animation.AnimatedContent(current, transitionSpec = { fadeIn(tween(220)) togetherWith fadeOut(tween(160)) }, label = "previewLine", modifier = Modifier.weight(1f, fill = false)) { l ->
+        // Each new line flips in: up from below while the last one goes up and out.
+        androidx.compose.animation.AnimatedContent(
+            current,
+            transitionSpec = {
+                (androidx.compose.animation.slideInVertically(androidx.compose.animation.core.spring(dampingRatio = 0.9f, stiffness = 420f)) { it } + fadeIn(tween(240))) togetherWith
+                    (androidx.compose.animation.slideOutVertically(tween(260)) { -it } + fadeOut(tween(200))) using
+                    androidx.compose.animation.SizeTransform(clip = true)
+            },
+            label = "previewLine",
+            modifier = Modifier.weight(1f, fill = false),
+        ) { l ->
             SungLine(l, pos, MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold), Modifier.graphicsLayer { this.alpha = alpha })
         }
         Icon(Icons.AutoMirrored.Rounded.KeyboardArrowRight, "Open lyrics", Modifier.size(22.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)

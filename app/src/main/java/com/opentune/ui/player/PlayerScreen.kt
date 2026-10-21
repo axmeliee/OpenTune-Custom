@@ -632,8 +632,10 @@ fun PlayerLayout(
 
                 // Cover mode: the art fills the space and the title sits below it.
                 // Lyrics and queue: a compact header, then the list.
+                // Lyrics and queue share one layout (the header stays put and only the
+                // list below it changes), so the outer change is cover against list.
                 AnimatedContent(
-                    pane,
+                    if (pane == Pane.COVER) Pane.COVER else Pane.LYRICS,
                     transitionSpec = {
                         when {
                             state.ui.reduceAnimation -> fadeIn(tween(0)) togetherWith fadeOut(tween(0))
@@ -726,33 +728,48 @@ fun PlayerLayout(
                                 Spacer(Modifier.width(14.dp))
                                 TitleRow(current, isLiked, onLike = { LibraryStore.setLiked(current, !isLiked) }, onMore = { showMenu = true }, compact = true)
                             }
-                            if (p == Pane.LYRICS) {
-                                LyricsView(
-                                    state.lyrics,
-                                    lyricsPosition,
-                                    onSeek = { actions.seekTo((it - offsetMs).coerceAtLeast(0)) },
-                                    modifier = Modifier.weight(1f).fillMaxWidth().nestedScroll(lyricsScroll).focusIn(!state.ui.reduceAnimation),
-                                    synced = state.ui.syncedLyrics,
-                                    blur = state.ui.blurLyrics,
-                                shareSong = current,
-                                    onSyncLine = syncLine,
-                                    playing = lyricsPlaying,
-                                    seeks = lyricsSeeks,
-                                )
-                            } else {
-                                Text("Queue", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, modifier = Modifier.padding(vertical = 8.dp))
-                                QueuePane(
-                                    queue = state.queue,
-                                    currentIndex = state.currentIndex,
-                                    upNext = state.upNext,
-                                    isPlaying = state.isPlaying,
-                                    shuffle = state.shuffle,
-                                    smartShuffle = state.shuffleMode == com.opentune.playback.ShuffleMode.SMART,
-                                    onPlayIndex = actions.playIndex,
-                                    onRemoveIndex = actions.removeIndex,
-                                    onMove = actions.moveIndex,
-                                    modifier = Modifier.weight(1f).fillMaxWidth(),
-                                )
+                            // Between lyrics and queue the new list slides up from below on a soft
+                            // spring while the old one lifts a little and fades, under a still header.
+                            AnimatedContent(
+                                pane.takeIf { it != Pane.COVER } ?: Pane.LYRICS,
+                                transitionSpec = {
+                                    if (state.ui.reduceAnimation) fadeIn(tween(0)) togetherWith fadeOut(tween(0))
+                                    else (slideInVertically(spring(dampingRatio = 0.9f, stiffness = 360f)) { it } + fadeIn(tween(260))) togetherWith
+                                        (slideOutVertically(tween(300, easing = FastOutSlowInEasing)) { -it / 6 } + fadeOut(tween(220)))
+                                },
+                                label = "list",
+                                modifier = Modifier.weight(1f).fillMaxWidth(),
+                            ) { list ->
+                                Column(Modifier.fillMaxSize()) {
+                                    if (list == Pane.LYRICS) {
+                                        LyricsView(
+                                            state.lyrics,
+                                            lyricsPosition,
+                                            onSeek = { actions.seekTo((it - offsetMs).coerceAtLeast(0)) },
+                                            modifier = Modifier.weight(1f).fillMaxWidth().nestedScroll(lyricsScroll).focusIn(!state.ui.reduceAnimation),
+                                            synced = state.ui.syncedLyrics,
+                                            blur = state.ui.blurLyrics,
+                                            shareSong = current,
+                                            onSyncLine = syncLine,
+                                            playing = lyricsPlaying,
+                                            seeks = lyricsSeeks,
+                                        )
+                                    } else {
+                                        Text("Queue", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, modifier = Modifier.padding(vertical = 8.dp))
+                                        QueuePane(
+                                            queue = state.queue,
+                                            currentIndex = state.currentIndex,
+                                            upNext = state.upNext,
+                                            isPlaying = state.isPlaying,
+                                            shuffle = state.shuffle,
+                                            smartShuffle = state.shuffleMode == com.opentune.playback.ShuffleMode.SMART,
+                                            onPlayIndex = actions.playIndex,
+                                            onRemoveIndex = actions.removeIndex,
+                                            onMove = actions.moveIndex,
+                                            modifier = Modifier.weight(1f).fillMaxWidth(),
+                                        )
+                                    }
+                                }
                             }
                         }
                     }
@@ -992,12 +1009,13 @@ private fun RowScope.TitleRow(song: Song, liked: Boolean, onLike: () -> Unit, on
             Modifier.fillMaxWidth().then(if (album != null) Modifier.clickable(onClickLabel = "Open album") { menu?.openAlbum?.invoke(album) } else Modifier),
             style = if (compact) MaterialTheme.typography.titleLarge else MaterialTheme.typography.headlineSmall,
         )
-        val viewArtist = menu?.viewArtist
-        com.opentune.ui.components.SubtitleLine(
+        // Each artist's name opens their own page.
+        val named = menu?.viewArtistNamed?.takeIf { !song.videoId.startsWith("local:") }
+        com.opentune.ui.components.ArtistLinks(
             song.artist,
+            onArtist = named?.let { open -> { name: String -> open(song, name) } },
             explicit = song.isExplicit == true,
             style = MaterialTheme.typography.titleMedium,
-            modifier = if (viewArtist != null && !song.videoId.startsWith("local:")) Modifier.clickable { viewArtist(song) } else Modifier,
         )
     }
     Spacer(Modifier.width(10.dp))

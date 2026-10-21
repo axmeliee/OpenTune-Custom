@@ -150,6 +150,16 @@ fun HomeScreen(
     LaunchedEffect(listState, covers) {
         snapshotFlow { listState.isScrollInProgress }.collect { covers.pageScrolling = it }
     }
+    // Home tapped again: back up to the top, and the page refreshes with its pull mark.
+    LaunchedEffect(listState) {
+        com.opentune.ui.TabEvents.reselected.collect { r ->
+            if (r != "home") return@collect
+            if (listState.firstVisibleItemIndex > 12) listState.scrollToItem(6)
+            listState.animateScrollToItem(0)
+            MusicRepository.refreshHomeRecommendations()
+            loader.reload(keepContent = true)
+        }
+    }
 
     com.opentune.ui.components.MarkRefreshBox(
         isRefreshing = refreshing,

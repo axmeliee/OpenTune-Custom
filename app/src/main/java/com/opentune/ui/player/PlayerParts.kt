@@ -829,31 +829,36 @@ fun MiniPlayer(
 private fun Modifier.pullToOpen(round: Boolean, onOpen: () -> Unit): Modifier {
     val reduce = com.opentune.data.settings.AppSettings.ui.collectAsState().value.reduceAnimation
     val scope = rememberCoroutineScope()
-    val pull = remember { Animatable(0f) }
+    val back = remember { Animatable(0f) }
     val density = LocalDensity.current
     val screenH = with(density) { androidx.compose.ui.platform.LocalConfiguration.current.screenHeightDp.dp.toPx() }
     val openPx = with(density) { 90.dp.toPx() }
     val open by androidx.compose.runtime.rememberUpdatedState(onOpen)
     val morph = com.opentune.ui.components.PlayerMorph
-    fun settle() = scope.launch {
-        pull.animateTo(0f, spring(dampingRatio = 0.85f, stiffness = 500f)) { if (!reduce) morph.pullOpen(value, round, screenH) }
+    // Read and written on the gesture itself, never from a launched step: a
+    // step landing after the finger lifts would pull the cover back up once
+    // the player has started opening, and leave it hanging there.
+    var pulled by remember { androidx.compose.runtime.mutableFloatStateOf(0f) }
+    fun settle(from: Float) = scope.launch {
+        back.snapTo(from)
+        back.animateTo(0f, spring(dampingRatio = 0.85f, stiffness = 500f)) { if (!reduce) morph.pullOpen(value, round, screenH) }
         morph.endPull()
     }
+    // Taken away mid-pull (the player opened over it, the dock folded): let go of the cover.
+    androidx.compose.runtime.DisposableEffect(Unit) { onDispose { morph.endPull() } }
     return pointerInput(round, reduce) {
         detectVerticalDragGestures(
+            onDragStart = { pulled = 0f; scope.launch { back.stop() } },
             onDragEnd = {
-                if (pull.value >= openPx || morph.pulling >= 0.25f) {
-                    open()
-                    scope.launch { pull.snapTo(0f) }
-                } else settle()
+                val far = pulled
+                pulled = 0f
+                if (far >= openPx || morph.pulling >= 0.25f) open() else settle(far)
             },
-            onDragCancel = { settle() },
+            onDragCancel = { settle(pulled).also { pulled = 0f } },
         ) { change, dy ->
             change.consume()
-            scope.launch {
-                pull.snapTo((pull.value - dy).coerceAtLeast(0f))
-                if (!reduce) morph.pullOpen(pull.value, round, screenH)
-            }
+            pulled = (pulled - dy).coerceAtLeast(0f)
+            if (!reduce) morph.pullOpen(pulled, round, screenH)
         }
     }
 }

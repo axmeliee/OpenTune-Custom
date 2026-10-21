@@ -4,24 +4,26 @@ import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.CubicBezierEasing
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.graphics.RectangleShape
+import androidx.compose.ui.graphics.TransformOrigin
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.boundsInRoot
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalDensity
-import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import kotlin.math.roundToInt
 
@@ -73,22 +75,33 @@ object PlayerMorph {
     fun Modifier.playerLanding(): Modifier = onGloballyPositioned { r ->
         val b = r.boundsInRoot()
         playerCover = b
+        playerLaidOut = true
         if (dragging == 0f && !collapsing) lastPlayerCover = b
     }
 
+    /** False from an open until the opening player reports its cover. */
+    private var playerLaidOut = true
+    internal fun awaitingPlayer() = !playerLaidOut
+
     /** Begins the grow from the mini cover; [round] when it's the circular one. */
     fun startOpen(round: Boolean) {
+        val at = pulling
+        pulling = 0f
+        playerLaidOut = false
         openFrom = miniCover ?: return
         this.round = round
-        openAt = pulling
-        pulling = 0f
+        openAt = at
         expanding = true
     }
 
     /** Begins the shrink back into the mini cover, captured before the player leaves. */
     fun startClose() {
         val from = dragRest ?: playerCover
-        if (from == null || miniCover == null) return
+        if (from == null || miniCover == null) {
+            // Nothing to fly between: don't leave the player's cover hidden behind a drag.
+            dragging = 0f; dragRest = null
+            return
+        }
         closeFrom = from
         closeAt = dragging
         collapsing = true
@@ -100,6 +113,8 @@ object PlayerMorph {
      * the folded, circular mini player.
      */
     fun pullOpen(px: Float, round: Boolean, screenHeight: Float) {
+        // The player is already on its way; a late pull mustn't hang a second cover over it.
+        if (expanding || collapsing) return
         val from = miniCover ?: return
         this.round = round
         val to = lastPlayerCover
@@ -140,25 +155,44 @@ object PlayerMorph {
     internal fun endClose() { collapsing = false; closeFrom = null; closeAt = 0f; dragging = 0f; dragRest = null }
 }
 
-/** Interpolates the cover between [from] and [to] (p 0..1) and draws it over everything. */
+/**
+ * Draws the cover between [from] and [to] (p 0..1) over everything. It's laid
+ * out once at the larger of the two sizes and only moved, scaled, clipped and
+ * shadowed in its layer, so each frame of the flight is a redraw on the render
+ * thread: no recomposition, no new layout, no image asked for at a new size.
+ */
 @Composable
-private fun MorphBox(url: String?, smallUrl: String?, from: Rect, to: Rect, p: Float, startCornerDp: Float, endCornerDp: Float) {
-    fun lerp(a: Float, b: Float) = a + (b - a) * p
-    val left = lerp(from.left, to.left)
-    val top = lerp(from.top, to.top)
-    val w = lerp(from.width, to.width)
-    val h = lerp(from.height, to.height)
+private fun MorphBox(url: String?, smallUrl: String?, from: Rect, to: Rect, p: () -> Float, startCornerDp: Float, endCornerDp: Float) {
+    val big = if (from.width >= to.width) from else to
+    val small = if (big === from) to else from
+    if (big.width <= 0f || big.height <= 0f) return
     val density = LocalDensity.current
-    val corner = with(density) { (startCornerDp + (endCornerDp - startCornerDp) * p).dp }
+    val shadowPx = with(density) { 28.dp.toPx() }
+    val startCorner = with(density) { startCornerDp.dp.toPx() }
+    val endCorner = with(density) { endCornerDp.dp.toPx() }
     Box(
         Modifier
-            .offset { IntOffset(left.roundToInt(), top.roundToInt()) }
-            .size(with(density) { w.toDp() }, with(density) { h.toDp() })
-            .shadow(with(density) { (28f * p).toDp() }, RoundedCornerShape(corner)),
+            .size(with(density) { big.width.toDp() }, with(density) { big.height.toDp() })
+            .graphicsLayer {
+                val t = p()
+                fun lerp(a: Float, b: Float) = a + (b - a) * t
+                val w = lerp(from.width, to.width)
+                transformOrigin = TransformOrigin(0f, 0f)
+                translationX = lerp(from.left, to.left)
+                translationY = lerp(from.top, to.top)
+                scaleX = w / big.width
+                scaleY = lerp(from.height, to.height) / big.height
+                // The corner as it should look on screen, undone by the scale.
+                shape = RoundedCornerShape(lerp(startCorner, endCorner) / scaleX.coerceAtLeast(0.01f))
+                clip = true
+                // Deepest at full size, none on the small cover.
+                val grown = if (big.width > small.width) (w - small.width) / (big.width - small.width) else 1f
+                shadowElevation = shadowPx * grown.coerceIn(0f, 1f)
+            },
     ) {
         // The mini player's own copy underneath, already loaded, so it never shows empty.
-        if (smallUrl != null) Artwork(smallUrl, Modifier.matchParentSize(), RoundedCornerShape(corner))
-        Artwork(url, Modifier.matchParentSize(), RoundedCornerShape(corner))
+        if (smallUrl != null) Artwork(smallUrl, Modifier.matchParentSize(), RectangleShape)
+        Artwork(url, Modifier.matchParentSize(), RectangleShape)
     }
 }
 
@@ -171,9 +205,12 @@ fun CoverMorph(url: String?, smallUrl: String? = null) {
         try {
             // From wherever a pull up left it.
             openT.snapTo(PlayerMorph.openAt())
-            var tries = 0
-            while (PlayerMorph.playerCover == null && tries++ < 25) kotlinx.coroutines.delay(16)
-            if (PlayerMorph.playerCover == null) return@LaunchedEffect
+            // Hold until the player has been composed and laid out: that first
+            // frame is the heavy one, and a flight already running through it
+            // would skip ahead. Then it starts from a clean frame.
+            var frames = 0
+            while (PlayerMorph.awaitingPlayer() && frames++ < 12) withFrameNanos { }
+            if (PlayerMorph.playerCover == null && PlayerMorph.lastPlayerCover == null) return@LaunchedEffect
             val left = 1f - openT.value
             openT.animateTo(1f, tween((460 * left).roundToInt().coerceAtLeast(180), easing = CubicBezierEasing(0.2f, 0f, 0f, 1f)))
         } finally {
@@ -203,26 +240,30 @@ fun CoverMorph(url: String?, smallUrl: String? = null) {
         Rect(24.dp.toPx(), top, 24.dp.toPx() + side, top + side)
     }
     fun roundStart(from: Rect) = if (PlayerMorph.round()) with(density) { from.width.toDp().value / 2f } else 12f
+    // Only whether a finger is on it decides what's drawn; how far it has gone
+    // is read in the layer alone, so a swipe doesn't recompose this every frame.
+    val pulled by remember { derivedStateOf { PlayerMorph.pulling > 0f } }
+    val dragged by remember { derivedStateOf { PlayerMorph.dragging > 0f } }
     when {
         PlayerMorph.expanding -> {
             val from = PlayerMorph.openFrom() ?: return
-            val to = PlayerMorph.playerCover?.let(PlayerMorph::scaled) ?: return
-            MorphBox(url, smallUrl, from, to, openT.value, startCornerDp = roundStart(from), endCornerDp = 28f)
+            val to = (PlayerMorph.playerCover ?: PlayerMorph.lastPlayerCover)?.let(PlayerMorph::scaled) ?: guess
+            MorphBox(url, smallUrl, from, to, { openT.value }, startCornerDp = roundStart(from), endCornerDp = 28f)
         }
         PlayerMorph.collapsing -> {
             val from = PlayerMorph.closeFrom() ?: return
             val to = PlayerMorph.miniCover ?: return
-            MorphBox(url, smallUrl, from, to, closeT.value, startCornerDp = 28f, endCornerDp = 12f)
+            MorphBox(url, smallUrl, from, to, { closeT.value }, startCornerDp = 28f, endCornerDp = 12f)
         }
-        PlayerMorph.pulling > 0f -> {
+        pulled -> {
             val from = PlayerMorph.miniCover ?: return
             val to = PlayerMorph.lastPlayerCover?.let(PlayerMorph::scaled) ?: guess
-            MorphBox(url, smallUrl, from, to, PlayerMorph.pulling, startCornerDp = roundStart(from), endCornerDp = 28f)
+            MorphBox(url, smallUrl, from, to, { PlayerMorph.pulling }, startCornerDp = roundStart(from), endCornerDp = 28f)
         }
-        PlayerMorph.dragging > 0f -> {
+        dragged -> {
             val from = PlayerMorph.dragRest() ?: return
             val to = PlayerMorph.miniCover ?: return
-            MorphBox(url, smallUrl, from, to, PlayerMorph.dragging, startCornerDp = 28f, endCornerDp = 12f)
+            MorphBox(url, smallUrl, from, to, { PlayerMorph.dragging }, startCornerDp = 28f, endCornerDp = 12f)
         }
     }
 }
