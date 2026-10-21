@@ -46,8 +46,17 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableStateMapOf
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawWithContent
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.lerp
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.positionInWindow
+import androidx.compose.ui.platform.LocalDensity
+import kotlin.math.abs
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.BlendMode
@@ -215,38 +224,56 @@ private enum class Tone(val color: Color) {
     INFO(Color(0xFF9E9E9E)),
 }
 
-/** The nodes down a single rail, with a light beam sweeping top to bottom. */
+/**
+ * The nodes down a single rail, with a bead of light running down the line: as
+ * it reaches each node the icon turns once and lights up, then it moves on.
+ */
 @Composable
 private fun Timeline(stages: List<Stage>) {
     val still = AppSettings.ui.collectAsState().value.reduceAnimation
-    val beam = if (still) null else rememberInfiniteTransition(label = "pipeline")
-        .animateFloat(0f, 1f, infiniteRepeatable(tween(2600, easing = LinearEasing), RepeatMode.Restart), label = "beam")
+    val phase = if (still) null else rememberInfiniteTransition(label = "pipeline")
+        .animateFloat(0f, 1f, infiniteRepeatable(tween(stages.size * 480, easing = LinearEasing), RepeatMode.Restart), label = "beam")
     val beamColor = MaterialTheme.colorScheme.primary
+    var boxTop by remember { mutableFloatStateOf(0f) }
+    var totalH by remember { mutableFloatStateOf(0f) }
+    val nodeY = remember { mutableStateMapOf<Int, Float>() }
+    // The bead's y within this box, or -1 when the motion is off.
+    val beamY = phase?.value?.let { it * totalH } ?: -1f
     Box(
-        Modifier.fillMaxWidth().drawWithContent {
-            drawContent()
-            val p = beam?.value ?: return@drawWithContent
-            val cx = RAIL_WIDTH.toPx() / 2f
-            val half = 9.dp.toPx()
-            val len = 64.dp.toPx()
-            val y = p * size.height
-            drawRect(
-                brush = Brush.verticalGradient(
-                    0f to Color.Transparent,
-                    0.5f to beamColor,
-                    1f to Color.Transparent,
-                    startY = y - len / 2f,
-                    endY = y + len / 2f,
-                ),
-                topLeft = Offset(cx - half, y - len / 2f),
-                size = Size(half * 2f, len),
-                blendMode = BlendMode.Plus,
-            )
-        },
+        Modifier
+            .fillMaxWidth()
+            .onGloballyPositioned { boxTop = it.positionInWindow().y; totalH = it.size.height.toFloat() }
+            .drawWithContent {
+                drawContent()
+                if (beamY < 0f) return@drawWithContent
+                val cx = RAIL_WIDTH.toPx() / 2f
+                // A comet: a short bright tail up the line to a glowing head.
+                val tail = 52.dp.toPx()
+                drawRect(
+                    brush = Brush.verticalGradient(
+                        0f to Color.Transparent,
+                        1f to beamColor.copy(alpha = 0.9f),
+                        startY = beamY - tail,
+                        endY = beamY,
+                    ),
+                    topLeft = Offset(cx - 1.4.dp.toPx(), beamY - tail),
+                    size = Size(2.8.dp.toPx(), tail),
+                    blendMode = BlendMode.Plus,
+                )
+                drawCircle(beamColor.copy(alpha = 0.5f), 9.dp.toPx(), Offset(cx, beamY), blendMode = BlendMode.Plus)
+                drawCircle(Color.White, 2.6.dp.toPx(), Offset(cx, beamY))
+            },
     ) {
         Column {
             stages.forEachIndexed { i, stage ->
-                StageRow(stage, first = i == 0, last = i == stages.lastIndex)
+                StageRow(
+                    stage,
+                    first = i == 0,
+                    last = i == stages.lastIndex,
+                    reportNodeY = { winY -> nodeY[i] = winY - boxTop },
+                    beamY = beamY,
+                    nodeY = nodeY[i] ?: -1f,
+                )
             }
         }
     }
@@ -259,28 +286,43 @@ private val NODE_SIZE = 34.dp
 private val NODE_CENTER = 23.dp
 
 @Composable
-private fun StageRow(stage: Stage, first: Boolean, last: Boolean) {
+private fun StageRow(stage: Stage, first: Boolean, last: Boolean, reportNodeY: (Float) -> Unit, beamY: Float, nodeY: Float) {
     val lineColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.3f)
+    val window = with(LocalDensity.current) { 40.dp.toPx() }
+    val onNode = beamY >= 0f && nodeY >= 0f
+    // How strongly the bead is on this node (1 at its centre, 0 a window away).
+    val near = if (onNode) (1f - abs(beamY - nodeY) / window).coerceIn(0f, 1f) else 0f
+    // As the bead sweeps through, the icon turns once.
+    val spin = if (onNode && abs(beamY - nodeY) < window) ((beamY - nodeY) / window * 0.5f + 0.5f) * 360f else 0f
+    val lit = lerp(stage.tone.color, Color.White, 0.6f * near)
     Row(Modifier.fillMaxWidth().height(IntrinsicSize.Min)) {
         Box(Modifier.width(RAIL_WIDTH).fillMaxHeight()) {
             Canvas(Modifier.fillMaxSize()) {
                 val cx = size.width / 2f
                 val cy = NODE_CENTER.toPx()
+                // Stop the line at the node's rim, so it meets the circle instead of crossing it.
+                val gap = NODE_SIZE.toPx() / 2f + 2.dp.toPx()
                 val w = 2.dp.toPx()
-                if (!first) drawLine(lineColor, Offset(cx, 0f), Offset(cx, cy), w)
-                if (!last) drawLine(lineColor, Offset(cx, cy), Offset(cx, size.height), w)
+                if (!first) drawLine(lineColor, Offset(cx, 0f), Offset(cx, cy - gap), w)
+                if (!last) drawLine(lineColor, Offset(cx, cy + gap), Offset(cx, size.height), w)
             }
             Box(
                 Modifier
                     .padding(top = NODE_CENTER - NODE_SIZE / 2)
                     .align(Alignment.TopCenter)
+                    .onGloballyPositioned { reportNodeY(it.positionInWindow().y + it.size.height / 2f) }
                     .size(NODE_SIZE)
                     .clip(CircleShape)
-                    .background(stage.tone.color.copy(alpha = 0.16f))
-                    .border(1.5.dp, stage.tone.color.copy(alpha = 0.6f), CircleShape),
+                    .background(stage.tone.color.copy(alpha = 0.16f + 0.5f * near))
+                    .border(1.5.dp, lit.copy(alpha = 0.6f + 0.4f * near), CircleShape),
                 contentAlignment = Alignment.Center,
             ) {
-                androidx.compose.material3.Icon(stage.icon, null, tint = stage.tone.color, modifier = Modifier.size(17.dp))
+                androidx.compose.material3.Icon(
+                    stage.icon,
+                    null,
+                    tint = lit,
+                    modifier = Modifier.size(17.dp).graphicsLayer { rotationZ = spin },
+                )
             }
         }
         Column(Modifier.padding(start = 6.dp, top = 12.dp, bottom = if (last) 4.dp else 18.dp)) {
