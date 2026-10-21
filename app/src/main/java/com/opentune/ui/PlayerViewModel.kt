@@ -51,6 +51,8 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
     val playbackError = player.error
     val source = player.source
     val audioFormat = player.audioFormat
+    /** Fires on each manual seek, for the lyrics clock to take a jump cleanly. */
+    val seeks = player.seeks
 
     private val _lyrics = MutableStateFlow<LyricsState>(LyricsState.Loading)
     val lyrics = _lyrics.asStateFlow()

@@ -115,6 +115,7 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.opentune.data.NerdStats
@@ -820,17 +821,17 @@ private fun ProgressRing(progress: () -> Float, color: Color, track: Color, stro
     }
 }
 
-/** "Playing from" and the queue's origin, or just "Now playing" when there isn't one. */
+/** One line naming where the song is playing from, as a plain label, or "Now playing" when there isn't one. */
 @Composable
 fun SongStatus(source: String?) {
-    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-        if (source.isNullOrBlank()) {
-            Text("Now playing", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        } else {
-            Text("PLAYING FROM", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            Text(source, style = MaterialTheme.typography.titleSmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
-        }
-    }
+    Text(
+        if (source.isNullOrBlank()) "Now playing" else "Playing from $source",
+        style = MaterialTheme.typography.labelLarge,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        maxLines = 1,
+        overflow = TextOverflow.Ellipsis,
+        textAlign = TextAlign.Center,
+    )
 }
 
 /** Codec, bitrate, sample rate and channels of what's actually playing. */

@@ -251,9 +251,18 @@ fun PlayerScreen(
         position = rememberPlaybackPosition(vm),
         buffered = vm::bufferedPositionMs,
         actions = actions,
+        seeks = rememberSeekCount(vm),
         onCovering = onCovering,
         docked = docked,
     )
+}
+
+/** A count that rises on each manual seek, for the lyrics clock to take a jump cleanly. */
+@Composable
+fun rememberSeekCount(vm: PlayerViewModel): () -> Long {
+    val count = remember { mutableLongStateOf(0L) }
+    LaunchedEffect(vm) { vm.seeks.collect { count.longValue++ } }
+    return { count.longValue }
 }
 
 private enum class Pane { COVER, LYRICS, QUEUE }
@@ -264,6 +273,8 @@ fun PlayerLayout(
     position: () -> Long,
     buffered: () -> Long,
     actions: PlayerActions,
+    /** Rises on each manual seek, for the lyrics clock to take jumps cleanly. */
+    seeks: () -> Long = { 0L },
     initialLyrics: Boolean = false,
     onCovering: (Boolean) -> Unit = {},
     /**
@@ -296,6 +307,11 @@ fun PlayerLayout(
     val autoOffsetMs = ((state.lyrics as? LyricsState.Found)?.lyrics as? com.opentune.data.lyrics.Lyrics.Synced)?.autoOffsetMs ?: 0L
     val offsetMs = com.opentune.data.lyrics.lyricsOffset(lyricsSettings.offsets[current.videoId], (state.lyrics as? LyricsState.Found)?.lyrics)
     val lyricsPosition: () -> Long = { position() + offsetMs }
+    // For the lyrics clock: the intent to play (true through a buffer stall, so the
+    // words coast rather than snapping back), and [seeks], which rises on each seek so
+    // a jump is taken cleanly instead of being refused as a backward reading.
+    val lyricsPlaying: () -> Boolean = { state.isPlaying || state.isBuffering }
+    val lyricsSeeks: () -> Long = seeks
     // Long-press on the line being sung: shift this song's lyrics so that line starts now.
     val syncLine: (Long) -> Unit = { lineStart ->
         val shift = lineStart - position()
@@ -454,6 +470,8 @@ fun PlayerLayout(
                                 blur = state.ui.blurLyrics,
                                 shareSong = current,
                                 onSyncLine = syncLine,
+                                playing = lyricsPlaying,
+                                seeks = lyricsSeeks,
                             )
                         }
                         Pane.QUEUE -> { ->
@@ -566,6 +584,8 @@ fun PlayerLayout(
                                 blur = state.ui.blurLyrics,
                                 shareSong = current,
                                 onSyncLine = syncLine,
+                                playing = lyricsPlaying,
+                                seeks = lyricsSeeks,
                             )
                         } else if (p == Pane.COVER) {
                             Box(Modifier.weight(1f).fillMaxWidth().then(if (docked) Modifier.fitSquare() else Modifier), contentAlignment = Alignment.Center) {
@@ -622,6 +642,8 @@ fun PlayerLayout(
                                     blur = state.ui.blurLyrics,
                                 shareSong = current,
                                     onSyncLine = syncLine,
+                                    playing = lyricsPlaying,
+                                    seeks = lyricsSeeks,
                                 )
                             } else {
                                 Text("Queue", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, modifier = Modifier.padding(vertical = 8.dp))

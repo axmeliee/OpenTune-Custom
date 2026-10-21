@@ -115,6 +115,10 @@ fun LyricsView(
     onSyncLine: ((Long) -> Unit)? = null,
     /** The song, for sharing its lines as a lyric card; no share button without it. */
     shareSong: com.opentune.data.model.Song? = null,
+    /** The intent to play (true through a buffer stall), so the sync clock coasts rather than snapping back. */
+    playing: () -> Boolean = { true },
+    /** Rises on each seek or skip, so the sync clock takes those jumps cleanly. */
+    seeks: () -> Long = { 0L },
 ) {
     // The song and its lines as they were when sharing began, so a song
     // change while the sheet is open can't mix one song's words with another's.
@@ -132,7 +136,7 @@ fun LyricsView(
             }
             is LyricsState.Found -> when (val lyrics = state.lyrics) {
                 is Lyrics.Synced ->
-                    if (synced) SyncedLyrics(lyrics.lines, position, onSeek, blur, lyrics.source, onSyncLine)
+                    if (synced) SyncedLyrics(lyrics.lines, position, onSeek, blur, lyrics.source, onSyncLine, playing, seeks)
                     else PlainLyrics(lyrics.lines.joinToString("\n") { it.text }, lyrics.source, note = null)
                 is Lyrics.Plain -> PlainLyrics(lyrics.text, lyrics.source)
             }
@@ -221,6 +225,8 @@ private fun SyncedLyrics(
     blur: Boolean,
     source: String,
     onSyncLine: ((Long) -> Unit)? = null,
+    playing: () -> Boolean = { true },
+    seeks: () -> Long = { 0L },
 ) {
     val ui by AppSettings.ui.collectAsState()
     val reduced = ui.reduceAnimation || !android.animation.ValueAnimator.areAnimatorsEnabled()
@@ -232,9 +238,11 @@ private fun SyncedLyrics(
     }
     // Two singers trade lines: the second voice's sit on the other side.
     val duet = remember(lines) { lines.any { it.voice == VOICE_SECOND } }
-    // A smooth clock that never steps back while playing, so a word that has just
-    // been sung can't count as unsung again and play its motion twice.
-    val clock = rememberLyricsClock(position)
+    // A clock steered by the player's readings: it never moves the words back
+    // without an announced seek, so a word just sung can't count as unsung and
+    // play its motion twice, and it coasts through a buffer stall rather than
+    // snapping back. Restarts for each new set of lines (a new song).
+    val clock = rememberLyricsClock(position, playing, seeks, trackKey = lines)
     val pos by rememberUpdatedState(clock)
     // A line lights a moment before its timestamp, so it's there as the singer starts it.
     val active by remember(lines) { derivedStateOf { lines.activeIndex(pos() + LINE_LEAD_MS) } }
