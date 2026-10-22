@@ -81,6 +81,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.layout.layout
 import androidx.compose.ui.unit.dp
 import com.opentune.data.lyrics.LyricGap
 import com.opentune.data.lyrics.LyricLine
@@ -577,6 +578,9 @@ private const val GLIDE_STIFFNESS = 64f
 private const val GLIDE_DAMPING = 16f
 
 /** How one [LyricsAnimation] treats lines: sizes, blur per line away, and glow. */
+/** Empty room round a blurred line inside its blur's buffer, so the blur fades out before the buffer's edge. */
+private val BLUR_BLEED = 28.dp
+
 private class LineMotion(
     val activeScale: Float,
     val inactiveScale: Float,
@@ -675,14 +679,38 @@ private fun LyricLineView(
             .background(card, MaterialTheme.shapes.medium)
             .combinedClickable(remember { MutableInteractionSource() }, indication = com.opentune.ui.components.FocusRing(MaterialTheme.shapes.medium), onLongClick = onLongClick, onClick = onClick)
             .padding(vertical = 10.dp, horizontal = cardPad)
+            // Android blurs a layer inside a buffer its own size, so whatever the
+            // blur would spread past the line was cut off in a hard box. The
+            // blurred layer is made BLUR_BLEED larger on every side, with that
+            // much empty space round the words, and laid out as if it weren't:
+            // the line takes the same room and wraps the same, and its blur fades
+            // to nothing inside the buffer. Inside, the line's fade is applied to
+            // each glyph drawn (ModulateAlpha), with no buffer of its own to clip.
+            .then(
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && blur > 0.dp) {
+                    Modifier
+                        .layout { measurable, constraints ->
+                            val bleed = BLUR_BLEED.roundToPx()
+                            val grown = constraints.copy(
+                                minWidth = constraints.minWidth + bleed * 2,
+                                maxWidth = if (constraints.hasBoundedWidth) constraints.maxWidth + bleed * 2 else constraints.maxWidth,
+                                minHeight = constraints.minHeight + bleed * 2,
+                                maxHeight = if (constraints.hasBoundedHeight) constraints.maxHeight + bleed * 2 else constraints.maxHeight,
+                            )
+                            val p = measurable.measure(grown)
+                            layout((p.width - bleed * 2).coerceAtLeast(0), (p.height - bleed * 2).coerceAtLeast(0)) { p.place(-bleed, -bleed) }
+                        }
+                        .blur(blur, androidx.compose.ui.draw.BlurredEdgeTreatment.Unbounded)
+                        .padding(BLUR_BLEED)
+                } else Modifier,
+            )
             .graphicsLayer {
                 scaleX = scale
                 scaleY = scale
                 this.alpha = alpha
+                compositingStrategy = CompositingStrategy.ModulateAlpha
                 transformOrigin = TransformOrigin(origin, 0.5f)
-            }
-            // Unbounded: the blur spreads past the line's bounds and fades out, with no edge to see.
-            .then(if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && blur > 0.dp) Modifier.blur(blur, androidx.compose.ui.draw.BlurredEdgeTreatment.Unbounded) else Modifier),
+            },
     ) {
         if (sweep) {
             // One crisp line: the whole active line stays readable and bright, sung words
