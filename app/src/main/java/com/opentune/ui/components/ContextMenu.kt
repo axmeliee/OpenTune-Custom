@@ -142,6 +142,8 @@ fun ContextMenu(anchor: Rect, onDismiss: () -> Unit, entries: List<MenuEntry>, p
             onDismiss()
         }
     }
+    // Where the menu was opened from: in a sheet, the frost behind keeps the sheet in sight.
+    val opener = LocalView.current
     Dialog(
         onDismissRequest = { close() },
         properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false),
@@ -150,7 +152,7 @@ fun ContextMenu(anchor: Rect, onDismiss: () -> Unit, entries: List<MenuEntry>, p
         var frost by remember { mutableStateOf(if (ui.reduceBlur) Frost.FAILED else Frost.PENDING) }
         FrostBehind(enabled = !ui.reduceBlur, standIn = frost != Frost.FAILED)
         if (frost != Frost.FAILED) {
-            val got = ScreenFrost(shown = { shown }, veil = 0.62f)
+            val got = ScreenFrost(shown = { shown }, veil = 0.62f, over = opener)
             LaunchedEffect(got) { frost = got }
         }
         val view = LocalView.current

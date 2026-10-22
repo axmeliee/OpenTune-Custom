@@ -8,6 +8,7 @@ import android.os.Build
 import android.os.Handler
 import android.os.Looper
 import android.view.PixelCopy
+import android.view.View
 import android.view.WindowManager
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.layout.fillMaxSize
@@ -47,11 +48,16 @@ internal enum class Frost { PENDING, READY, FAILED }
  * drawn, so it costs one copy, not a blur every frame. [shown] (0..1) fades
  * it in and out with the popup. Must be called inside a dialog.
  *
+ * [over] is the view the popup was opened from. When that sits in a sheet
+ * or dialog of its own (a menu opened from a song in the Recents sheet),
+ * that window is copied too and laid over the app's, so the frost shows
+ * the sheet still there rather than the page under it.
+ *
  * Returns [Frost.FAILED] where the copy couldn't be made: the caller then
  * falls back to the window's own blur and dim ([FrostBehind]).
  */
 @Composable
-internal fun ScreenFrost(shown: () -> Float, veil: Float = 0.42f): Frost {
+internal fun ScreenFrost(shown: () -> Float, veil: Float = 0.42f, over: View? = null): Frost {
     val context = LocalContext.current
     val view = LocalView.current
     val activity = remember(context) { context.findActivity() }
@@ -76,12 +82,30 @@ internal fun ScreenFrost(shown: () -> Float, veil: Float = 0.42f): Frost {
         val h = (decor.height / SHRINK).coerceAtLeast(1)
         val small = runCatching { Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888) }.getOrNull()
             ?: run { state = Frost.FAILED; return@LaunchedEffect }
-        val copied = suspendCancellableCoroutine { cont ->
-            runCatching {
-                PixelCopy.request(window, small, { result -> if (cont.isActive) cont.resume(result == PixelCopy.SUCCESS) }, Handler(Looper.getMainLooper()))
-            }.onFailure { if (cont.isActive) cont.resume(false) }
+        if (!copyWindow(window, small)) { small.recycle(); state = Frost.FAILED; return@LaunchedEffect }
+        // The sheet or dialog the popup came from, over the page, where it sits on the screen.
+        val sheet = over?.dialogWindow()?.takeIf { it !== window && it !== dialogWindow }
+        val sheetDecor = sheet?.decorView
+        if (sheet != null && sheetDecor != null && sheetDecor.width > 0 && sheetDecor.height > 0) {
+            val layer = runCatching {
+                Bitmap.createBitmap((sheetDecor.width / SHRINK).coerceAtLeast(1), (sheetDecor.height / SHRINK).coerceAtLeast(1), Bitmap.Config.ARGB_8888)
+            }.getOrNull()
+            if (layer != null) {
+                if (copyWindow(sheet, layer)) {
+                    val at = IntArray(2).also(sheetDecor::getLocationOnScreen)
+                    val app = IntArray(2).also(decor::getLocationOnScreen)
+                    val left = (at[0] - app[0]) / SHRINK.toFloat()
+                    val top = (at[1] - app[1]) / SHRINK.toFloat()
+                    android.graphics.Canvas(small).drawBitmap(
+                        layer,
+                        null,
+                        android.graphics.RectF(left, top, left + sheetDecor.width / SHRINK.toFloat(), top + sheetDecor.height / SHRINK.toFloat()),
+                        android.graphics.Paint(android.graphics.Paint.FILTER_BITMAP_FLAG),
+                    )
+                }
+                layer.recycle()
+            }
         }
-        if (!copied) { small.recycle(); state = Frost.FAILED; return@LaunchedEffect }
         // Blurred once, off the main thread: every frame after only draws it.
         withContext(Dispatchers.Default) { boxBlur(small, BLUR_RADIUS, BLUR_PASSES) }
         shot = small.asImageBitmap()
@@ -113,6 +137,23 @@ internal fun ScreenFrost(shown: () -> Float, veil: Float = 0.42f): Frost {
         drawRect(Color.Black.copy(alpha = veil))
     }
     return state
+}
+
+/** Copies [window] into [into], scaled to fit; false where it couldn't be done. */
+private suspend fun copyWindow(window: android.view.Window, into: Bitmap): Boolean = suspendCancellableCoroutine { cont ->
+    runCatching {
+        PixelCopy.request(window, into, { result -> if (cont.isActive) cont.resume(result == PixelCopy.SUCCESS) }, Handler(Looper.getMainLooper()))
+    }.onFailure { if (cont.isActive) cont.resume(false) }
+}
+
+/** The window of the sheet or dialog this view is in; null in the activity's own window. */
+private fun View.dialogWindow(): android.view.Window? {
+    var p = parent
+    while (p != null) {
+        if (p is DialogWindowProvider) return p.window
+        p = p.parent
+    }
+    return null
 }
 
 private tailrec fun Context.findActivity(): Activity? = when (this) {

@@ -160,6 +160,8 @@ fun FloatingCard(
         }
     }
 
+    // Where the card was opened from: in a sheet, the frost behind keeps the sheet in sight.
+    val opener = LocalView.current
     Dialog(
         onDismissRequest = { if (dismissible) card.close() },
         properties = DialogProperties(
@@ -180,7 +182,7 @@ fun FloatingCard(
             label = "card",
         )
         if (frost != Frost.FAILED) {
-            val got = ScreenFrost(shown = { shown })
+            val got = ScreenFrost(shown = { shown }, over = opener)
             LaunchedEffect(got) { frost = got }
         }
         // A dialog's content sits outside the app's Surface, so it needs its own text colour.
