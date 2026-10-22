@@ -6,6 +6,11 @@ latest **published stable** `justshivv/Opentune` release to an exact commit and
 prepares a separate clean source checkout. The patch must pass `git apply --check`;
 there is no fuzzy fallback or automated conflict resolution.
 
+Preparation pins `android.experimental.lint.version=9.3.3` in `gradle.properties`.
+This tested lint update fixes Android 37 inheritance analysis without suppressing
+manifest checks. `custom/lint-compatibility.md`, when present, is copied into each
+generated source tag as evidence of the diagnosis and validation.
+
 Preparation changes the Android application ID to `com.opentune.custom`, computes
 `upstream versionCode * 100 + 1`, and uses `<upstream>-custom.1` as versionName.
 It retains the upstream changelog and original copyright/license files. Exact
@@ -31,8 +36,14 @@ An interrupted draft can be resumed when prepared source is unchanged.
 
 Failures retain test reports for 14 days and open/update one issue per custom tag.
 Android still asks the user to approve installing an update on the phone.
-GitHub schedules can be delayed and public repository schedules may be disabled
-after 60 days of inactivity; inspect Actions periodically.
+The monitor commits only `.github/monitor-state.json` every 28 days to keep public
+repository scheduling active during long gaps between upstream releases. This
+also runs when there is no new release or signing secrets are still missing.
+It uses a normal push to the default branch and never overwrites concurrent
+external changes; a keepalive error is visible separately and does not stop the
+release check. This state-only commit does not trigger another workflow run.
+GitHub outages, delayed schedules and manually disabled Actions can still interrupt
+monitoring; the keepalive cannot run while Actions itself is disabled.
 
 Local pipeline tests (no Android SDK or Python packages required):
 `python -m unittest discover -s custom/tests -v`.

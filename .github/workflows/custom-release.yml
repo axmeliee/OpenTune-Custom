@@ -26,10 +26,18 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
+          ref: ${{ github.event.repository.default_branch }}
           persist-credentials: true
+      - name: Capture exact automation source before keepalive
+        run: echo "OPENTUNE_AUTOMATION_SHA=$(git rev-parse HEAD)" >> "$GITHUB_ENV"
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
+      - name: Keep idle public schedule active every 28 days
+        continue-on-error: true
+        env:
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+        run: python custom/pipeline.py keepalive "$DEFAULT_BRANCH"
       - name: Pipeline tests
         run: python -m unittest discover -s custom/tests -v
       - name: Select exact stable release and verify existing assets

@@ -1,6 +1,7 @@
 """Small, fail-closed stable release pipeline. Python standard library only."""
 import argparse
 import base64
+from datetime import date, timedelta
 import hashlib
 import json
 import os
@@ -13,6 +14,7 @@ import tempfile
 UPSTREAM = "justshivv/Opentune"
 CUSTOM = "axmeliee/OpenTune-Custom"
 ORIGINAL_CERT_SHA256 = "e8ce6f3b61626581556e2b245f98b9e4aa4c8e0d59dd457d6f5fd3a75c9f9483"
+LINT_VERSION = "9.3.3"
 SECRETS = ("OPENTUNE_KEYSTORE_BASE64", "OPENTUNE_KEYSTORE_PASSWORD",
            "OPENTUNE_KEY_ALIAS", "OPENTUNE_KEY_PASSWORD")
 
@@ -140,8 +142,24 @@ def transform_gradle(text, version):
     return text.replace(needle, needle + guard), custom_code
 
 
+def pin_lint(properties):
+    # AGP's bundled lint misidentifies valid inheritance chains in these Android
+    # 37 classes. A tested lint update fixes analysis without suppressing checks.
+    pattern = r"(?m)^[ \t]*android\.experimental\.lint\.version(?=[ \t:=]|$)[^\r\n]*$"
+    setting = f"android.experimental.lint.version={LINT_VERSION}"
+    matches = list(re.finditer(pattern, properties))
+    if len(matches) > 1:
+        raise ValueError("Duplicate upstream lint version properties require review")
+    if matches:
+        return re.sub(pattern, setting, properties)
+    return properties.rstrip("\r\n") + "\n# Tested Android 37 lint compatibility; see custom/lint-compatibility.md.\n" + setting + "\n"
+
+
 def prepare(source, patch, metadata):
     plan_data = json.loads(metadata.read_text())
+    automation_commit = os.environ.get("OPENTUNE_AUTOMATION_SHA", "local-unpublished")
+    if os.environ.get("GITHUB_ACTIONS") == "true" and not re.fullmatch(r"[0-9a-f]{40}", automation_commit):
+        raise ValueError("Actions preparation requires the exact automation checkout commit")
     actual = run("git", "rev-parse", "HEAD", cwd=source)
     if actual != plan_data["upstream_sha"]:
         raise ValueError("Source checkout is not the exact upstream release commit")
@@ -154,14 +172,18 @@ def prepare(source, patch, metadata):
     gradle = source / "app/build.gradle.kts"
     text, code = transform_gradle(gradle.read_text(encoding="utf-8"), plan_data["version"])
     gradle.write_text(text, encoding="utf-8", newline="\n")
+    properties = source / "gradle.properties"
+    properties.write_text(pin_lint(properties.read_text(encoding="utf-8")),
+                          encoding="utf-8", newline="\n")
     # No upstream publication workflow may execute on the generated custom source tag.
     shutil.rmtree(source / ".github/workflows", ignore_errors=True)
     provenance = dict(upstream_repository=f"https://github.com/{UPSTREAM}",
                       upstream_tag=plan_data["upstream_tag"], upstream_commit=actual,
                       patch_sha256=plan_data["patch_sha"], custom_tag=plan_data["tag"],
                       application_id="com.opentune.custom", version_code=code,
+                      lint_version=LINT_VERSION,
                       automation_repository=f"https://github.com/{CUSTOM}",
-                      automation_commit=os.environ.get("GITHUB_SHA", "local-unpublished"))
+                      automation_commit=automation_commit)
     custom = source / "custom"
     custom.mkdir(exist_ok=True)
     shutil.copy2(__file__, custom / "pipeline.py")
@@ -170,6 +192,9 @@ def prepare(source, patch, metadata):
     build_notes = Path(__file__).parent.parent / "CUSTOM-BUILD.md"
     if build_notes.is_file():
         shutil.copy2(build_notes, source / "CUSTOM-BUILD.md")
+    lint_notes = Path(__file__).parent / "lint-compatibility.md"
+    if lint_notes.is_file():
+        shutil.copy2(lint_notes, custom / "lint-compatibility.md")
     (custom / "provenance.json").write_text(json.dumps(provenance, indent=2) + "\n")
     (custom / "app.patch").write_bytes(patch.read_bytes())
     (custom / "README.md").write_text(
@@ -181,7 +206,9 @@ def prepare(source, patch, metadata):
         "platforms;android-37.0 and build-tools;36.0.0: "
         "`./gradlew -PuniversalOnly=true assembleRelease`. Supply the original signing "
         "keystore and OPENTUNE signing environment variables; the private key is never "
-        "included in source. Debug builds use `./gradlew assembleDebug`.\n")
+        "included in source. Debug builds use `./gradlew assembleDebug`. "
+        "gradle.properties pins the tested lint version; compatibility evidence "
+        "is in lint-compatibility.md when supplied with this source.\n")
 
 
 def signing(destination):
@@ -207,6 +234,42 @@ def key_fingerprint(keystore):
     return hashlib.sha256(certificate).hexdigest()
 
 
+def keepalive_due(state, today):
+    if state is None:
+        return True
+    previous = date.fromisoformat(state["last_keepalive"])
+    if previous > today:
+        raise ValueError("Monitor state date is in the future; inspect repository state")
+    return today - previous >= timedelta(days=28)
+
+
+def keepalive(branch, root=Path("."), today=None):
+    """Runner-only, ordinary no-force push; an external branch change wins."""
+    if os.environ.get("GITHUB_ACTIONS") != "true":
+        raise ValueError("Keepalive commits are only permitted in GitHub Actions")
+    today = today or date.today()
+    state_file = root / ".github/monitor-state.json"
+    state = json.loads(state_file.read_text()) if state_file.exists() else None
+    if not keepalive_due(state, today):
+        print("Monitor keepalive is current; no commit needed.")
+        return False
+    if run("git", "branch", "--show-current", cwd=root) != branch:
+        raise ValueError("Keepalive checkout is not the repository default branch")
+    if run("git", "status", "--porcelain", cwd=root):
+        raise ValueError("Keepalive requires a clean checkout")
+    state_file.parent.mkdir(parents=True, exist_ok=True)
+    state_file.write_text(json.dumps(dict(schema=1, last_keepalive=today.isoformat()), indent=2) + "\n")
+    run("git", "config", "user.name", "OpenTune Custom monitor", cwd=root)
+    run("git", "config", "user.email", "41898282+github-actions[bot]@users.noreply.github.com", cwd=root)
+    run("git", "add", "--", ".github/monitor-state.json", cwd=root)
+    if run("git", "diff", "--cached", "--name-only", cwd=root) != ".github/monitor-state.json":
+        raise ValueError("Unexpected files staged for monitor keepalive")
+    run("git", "commit", "-m", "Keep scheduled upstream monitoring active", cwd=root)
+    run("git", "push", "origin", f"HEAD:refs/heads/{branch}", cwd=root)
+    print("Monitor keepalive committed; next keepalive is due in 28 days.")
+    return True
+
+
 def main():
     parser = argparse.ArgumentParser()
     sub = parser.add_subparsers(dest="command", required=True)
@@ -218,13 +281,17 @@ def main():
     p.add_argument("metadata", type=Path)
     p = sub.add_parser("signing")
     p.add_argument("destination", type=Path)
+    p = sub.add_parser("keepalive")
+    p.add_argument("branch")
     args = parser.parse_args()
     if args.command == "plan":
         plan(args.patch)
     elif args.command == "prepare":
         prepare(args.source, args.patch, args.metadata)
-    else:
+    elif args.command == "signing":
         signing(args.destination)
+    else:
+        keepalive(args.branch)
 
 
 if __name__ == "__main__":

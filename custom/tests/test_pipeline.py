@@ -5,6 +5,7 @@ from pathlib import Path
 import subprocess
 import tempfile
 import unittest
+from datetime import date
 from unittest.mock import patch
 
 MODULE = Path(__file__).resolve().parents[1] / "pipeline.py"
@@ -29,6 +30,18 @@ android {
 
 
 class MetadataTest(unittest.TestCase):
+    def test_lint_pin_preserves_properties_and_does_not_duplicate(self):
+        original = "# upstream settings\nandroid.useAndroidX=true\n"
+        pinned = pipeline.pin_lint(original)
+        self.assertTrue(pinned.startswith(original))
+        self.assertEqual(1, pinned.count("android.experimental.lint.version=9.3.3"))
+        self.assertEqual(pinned, pipeline.pin_lint(pinned))
+        self.assertEqual("android.experimental.lint.version=9.3.3\n",
+                         pipeline.pin_lint("android.experimental.lint.version : 8.10.0\n"))
+        with self.assertRaisesRegex(ValueError, "Duplicate"):
+            pipeline.pin_lint("android.experimental.lint.version=8.1\n"
+                              "android.experimental.lint.version=8.2\n")
+
     def test_rejects_draft_prerelease_and_non_semver(self):
         for release in [dict(tag_name="v1.2.3", draft=True),
                         dict(tag_name="v1.2.3", prerelease=True),
@@ -69,6 +82,7 @@ class PreparationTest(unittest.TestCase):
             source = directory / "source"
             (source / "app").mkdir(parents=True)
             (source / "app/build.gradle.kts").write_text(GRADLE)
+            (source / "gradle.properties").write_text("android.useAndroidX=true\n")
             (source / "example.txt").write_text("original\n")
             (source / ".github/workflows").mkdir(parents=True)
             (source / ".github/workflows/release.yml").write_text("upstream")
@@ -88,7 +102,9 @@ class PreparationTest(unittest.TestCase):
                 if args[:3] == ("git", "status", "--porcelain"):
                     return ""
                 return original_run(*args, **kwargs)
-            with patch.object(pipeline, "run", side_effect=run):
+            with patch.object(pipeline, "run", side_effect=run), patch.dict(os.environ, {
+                    "GITHUB_ACTIONS": "true", "GITHUB_SHA": "c" * 40,
+                    "OPENTUNE_AUTOMATION_SHA": "b" * 40}):
                 pipeline.prepare(source, patch_file, metadata)
             self.assertEqual("custom\n", (source / "example.txt").read_text())
             self.assertFalse((source / ".github/workflows").exists())
@@ -96,6 +112,24 @@ class PreparationTest(unittest.TestCase):
             self.assertTrue((source / "custom/pipeline.py").exists())
             self.assertEqual(4201, json.loads((source / "custom/provenance.json").read_text())["version_code"])
             self.assertIn('versionCode = 4201', (source / "app/build.gradle.kts").read_text())
+            self.assertIn('android.experimental.lint.version=9.3.3',
+                          (source / "gradle.properties").read_text())
+            self.assertIn('android.useAndroidX=true', (source / "gradle.properties").read_text())
+            self.assertEqual("9.3.3", json.loads((source / "custom/provenance.json").read_text())["lint_version"])
+            self.assertEqual("b" * 40, json.loads((source / "custom/provenance.json").read_text())["automation_commit"])
+
+    def test_actions_provenance_rejects_missing_or_invalid_actual_checkout_sha(self):
+        with tempfile.TemporaryDirectory() as temp:
+            directory = Path(temp)
+            metadata = directory / "plan.json"
+            metadata.write_text("{}")
+            for sha in ("", "not-a-sha", "a" * 39):
+                with self.subTest(sha=sha), patch.dict(os.environ, {
+                        "GITHUB_ACTIONS": "true", "GITHUB_SHA": "c" * 40,
+                        "OPENTUNE_AUTOMATION_SHA": sha}), patch.object(pipeline, "run") as runner:
+                    with self.assertRaisesRegex(ValueError, "exact automation checkout"):
+                        pipeline.prepare(directory, directory / "app.patch", metadata)
+                    runner.assert_not_called()
 
     def test_wrong_source_and_patch_hash_fail_before_mutation(self):
         with tempfile.TemporaryDirectory() as temp:
@@ -214,6 +248,47 @@ class ReleaseTest(unittest.TestCase):
                         pipeline.plan(patch_file)
             finally:
                 os.chdir(previous)
+
+
+class KeepaliveTest(unittest.TestCase):
+    def test_due_dates_and_future_state(self):
+        self.assertTrue(pipeline.keepalive_due(None, date(2026, 10, 22)))
+        state = dict(last_keepalive="2026-10-22")
+        self.assertFalse(pipeline.keepalive_due(state, date(2026, 11, 18)))
+        self.assertTrue(pipeline.keepalive_due(state, date(2026, 11, 19)))
+        with self.assertRaisesRegex(ValueError, "future"):
+            pipeline.keepalive_due(state, date(2026, 10, 21))
+
+    def test_monthly_commit_only_state_no_force_and_same_day_noop(self):
+        with tempfile.TemporaryDirectory() as temp:
+            directory = Path(temp)
+            def response(*args, **kwargs):
+                if args[:3] == ("git", "branch", "--show-current"):
+                    return "custom"
+                if args[:4] == ("git", "diff", "--cached", "--name-only"):
+                    return ".github/monitor-state.json"
+                return ""
+            with patch.dict(os.environ, dict(GITHUB_ACTIONS="true")), \
+                    patch.object(pipeline, "run", side_effect=response) as runner:
+                self.assertTrue(pipeline.keepalive("custom", directory, date(2026, 10, 22)))
+                calls = [call.args for call in runner.call_args_list]
+                self.assertIn(("git", "add", "--", ".github/monitor-state.json"), calls)
+                self.assertIn(("git", "push", "origin", "HEAD:refs/heads/custom"), calls)
+                self.assertFalse(any("--force" in arg or arg.startswith("+") for call in calls for arg in call))
+                runner.reset_mock()
+                self.assertFalse(pipeline.keepalive("custom", directory, date(2026, 10, 22)))
+                runner.assert_not_called()
+
+    def test_local_use_and_dirty_checkout_refused_before_writing(self):
+        with tempfile.TemporaryDirectory() as temp:
+            directory = Path(temp)
+            with patch.dict(os.environ, dict(GITHUB_ACTIONS="false")), self.assertRaises(ValueError):
+                pipeline.keepalive("custom", directory)
+            with patch.dict(os.environ, dict(GITHUB_ACTIONS="true")), \
+                    patch.object(pipeline, "run", side_effect=["custom", " M unrelated.txt"]):
+                with self.assertRaisesRegex(ValueError, "clean checkout"):
+                    pipeline.keepalive("custom", directory)
+            self.assertFalse((directory / ".github/monitor-state.json").exists())
 
 
 if __name__ == "__main__":
