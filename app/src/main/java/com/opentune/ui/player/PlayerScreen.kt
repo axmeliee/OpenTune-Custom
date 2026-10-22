@@ -698,6 +698,8 @@ fun PlayerLayout(
                 AnimatedContent(
                     if (pane == Pane.COVER) Pane.COVER else Pane.LYRICS,
                     transitionSpec = {
+                        // Not clipped to the pane: a blurred lyric line spreads past the
+                        // page's side margin, and a clip there cut it off in a hard edge.
                         when {
                             state.ui.reduceAnimation -> fadeIn(tween(0)) togetherWith fadeOut(tween(0))
                             // Lyrics rise into place on a soft spring while the cover sinks back.
@@ -711,7 +713,7 @@ fun PlayerLayout(
                             else ->
                                 (fadeIn(tween(320)) + scaleIn(tween(240, easing = FastOutSlowInEasing), 0.94f)) togetherWith
                                     (fadeOut(tween(180)) + scaleOut(tween(220), 0.98f))
-                        }
+                        } using androidx.compose.animation.SizeTransform(clip = false)
                     },
                     label = "pane",
                     modifier = Modifier.weight(1f).fillMaxWidth(),
@@ -1297,7 +1299,7 @@ private fun Modifier.focusIn(animate: Boolean): Modifier {
     val blur = (1f - v.value) * 2f
     return this
         .graphicsLayer { val s = 0.96f + 0.04f * v.value; scaleX = s; scaleY = s }
-        .then(if (blur > 0.2f) Modifier.blur(blur.dp) else Modifier)
+        .then(if (blur > 0.2f) Modifier.blur(blur.dp, androidx.compose.ui.draw.BlurredEdgeTreatment.Unbounded) else Modifier)
 }
 
 
