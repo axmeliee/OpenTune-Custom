@@ -36,7 +36,7 @@ object Updater {
         Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES, "package:${context.packageName}".toUri())
 
     private fun dir(context: Context) = File(context.cacheDir, "updates")
-    private val VERSION_IN_NAME = Regex("""^OpenTune-v([0-9][0-9.]*)-[A-Za-z0-9_\-]+\.apk$""")
+    private val VERSION_IN_NAME = Regex("""^OpenTune-v([0-9][0-9.]*(?:-custom\.[1-9][0-9]*)?)-[A-Za-z0-9_\-]+\.apk$""")
 
     /** The version an update APK's file name carries, like 0.5.0 in OpenTune-v0.5.0-arm64-v8a.apk. */
     internal fun versionOf(fileName: String): String? = VERSION_IN_NAME.find(fileName)?.groupValues?.get(1)

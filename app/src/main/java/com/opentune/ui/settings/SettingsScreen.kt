@@ -1122,6 +1122,15 @@ private fun settingsSections(
         Section(
             "Content",
             listOf(
+                Entry("Add new songs to start", "playlist order first beginning top prepend новые песни начало плейлиста") {
+                    ToggleRow(
+                        "Add new songs to start",
+                        lib.addNewSongsFirst,
+                        { v -> AppSettings.updateLibrary { it.copy(addNewSongsFirst = v) } },
+                        summary = "New songs go to the beginning of your local playlists. Existing songs keep their order. Playlists synced with YouTube Music are unchanged.",
+                        icon = Icons.AutoMirrored.Rounded.PlaylistPlay,
+                    )
+                },
                 Entry("Hide explicit content", "explicit clean kids family parental filter") {
                     ToggleRow(
                         "Hide explicit content",

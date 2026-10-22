@@ -1,3 +1,13 @@
+# OpenTune Custom
+
+Unofficial Android build with **New songs first** for local playlists. Based on [justshivv/Opentune](https://github.com/justshivv/Opentune), licensed under GPL-3.0.
+
+**[Download the custom APK](https://github.com/axmeliee/OpenTune-Custom/releases/latest)** · [Automatic build status](https://github.com/axmeliee/OpenTune-Custom/actions/workflows/custom-release.yml) · [Installation and updates](CUSTOM-BUILD.md)
+
+The custom update channel checks stable upstream releases every six hours, applies the maintained patch, tests, and builds with the same signing certificate. Conflicts stop publication and need maintenance. This feature changes local playlists only. The original project's documentation follows below; its original download links refer to the official app.
+
+---
+
 <p align="center">
   <img src="docs/banner.jpg" alt="OpenTune: a free, open-source music player for Android, built on YouTube Music" width="100%">
 </p>

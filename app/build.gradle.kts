@@ -8,19 +8,19 @@ plugins {
 android {
     namespace = "com.opentune"
     // InnerTubeX's AAR is compiled against 37; targetSdk (runtime behaviour) stays 36.
-    compileSdk = 37
+    compileSdkVersion("android-37.0")
 
     defaultConfig {
-        applicationId = "com.opentune"
+        applicationId = "com.opentune.custom"
         minSdk = 26
         targetSdk = 36
-        versionCode = 42
-        versionName = "0.4.18"
+        versionCode = 4201
+        versionName = "0.4.18-custom.1"
         // This version's store changelog, shown as What's new when a release
         // goes out before the app's own notes for it are written.
-        val changelog = rootProject.file("fastlane/metadata/android/en-US/changelogs/$versionCode.txt")
+        val changelog = rootProject.file("fastlane/metadata/android/en-US/changelogs/42.txt")
             .takeIf { it.exists() }?.readText().orEmpty().trim()
-        buildConfigField("String", "CHANGELOG", "\"" + changelog.replace("\\", "\\\\").replace("\"", "\\\"").replace("\n", "\\n") + "\"")
+        buildConfigField("String", "CHANGELOG", "\"" + changelog.replace("\\", "\\\\").replace("\"", "\\\"").replace("\r\n", "\n").replace("\r", "\n").replace("\n", "\\n") + "\"")
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
@@ -29,6 +29,15 @@ android {
     // otherwise release builds are signed with the debug key so they still
     // install. See .github/workflows/release.yml.
     val releaseKeystore = System.getenv("OPENTUNE_KEYSTORE")?.let(::file)?.takeIf { it.exists() }
+    gradle.taskGraph.whenReady {
+        if (allTasks.any { it.path.startsWith(":app:") && it.name.contains("Release", ignoreCase = true) }) {
+            require(releaseKeystore != null) { "Custom release requires the original OPENTUNE_KEYSTORE" }
+            listOf("OPENTUNE_KEYSTORE_PASSWORD", "OPENTUNE_KEY_ALIAS", "OPENTUNE_KEY_PASSWORD").forEach {
+                require(!System.getenv(it).isNullOrBlank()) { "Missing custom signing secret: $it" }
+            }
+        }
+    }
+
     signingConfigs {
         if (releaseKeystore != null) {
             create("release") {
@@ -53,7 +62,7 @@ android {
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro",
             )
-            signingConfig = if (unsignedRelease) null else (signingConfigs.findByName("release") ?: signingConfigs.getByName("debug"))
+            signingConfig = signingConfigs.findByName("release")
         }
     }
 

@@ -1,0 +1,2 @@
+# Patch context markers contain intentional spaces; keep byte-stable on Windows.
+custom/*.patch text eol=lf -whitespace

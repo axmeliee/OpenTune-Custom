@@ -46,6 +46,7 @@ class PlaylistToolsScreenshotTest {
     @Before fun setUp() {
         val context = ApplicationProvider.getApplicationContext<android.app.Application>()
         AppSettings.init(context)
+        AppSettings.updateLibrary { it.copy(addNewSongsFirst = false) }
         LibraryStore.init(context)
         id = LibraryStore.createPlaylist("Late nights")
         LibraryStore.addAllToPlaylist(id, songs.take(2))
@@ -55,6 +56,24 @@ class PlaylistToolsScreenshotTest {
     @Test fun page() = shoot("playlist/page") { LocalPlaylistScreen(id, PaddingValues(), SongActions(null, false, { _, _, _, _ -> }, {}, {}), onBack = {}) }
 
     @Test fun addSheet() = shoot("playlist/add") { AddSongsSheet(id, onDismiss = {}) }
+
+    @Test fun newSongsFirstButtonControlsInsertion() {
+        AppSettings.updateLibrary { it.copy(addNewSongsFirst = false) }
+        shoot("playlist/insertion-order") { LocalPlaylistScreen(id, PaddingValues(), SongActions(null, false, { _, _, _, _ -> }, {}, {}), onBack = {}) }
+        compose.onNodeWithText("New songs first").assertIsEnabled().performClick()
+        compose.runOnIdle {
+            LibraryStore.addToPlaylist(id, songs[2])
+            assertEquals(songs[2].videoId, LibraryStore.playlist(id)!!.songs.first().videoId)
+        }
+        compose.onNodeWithText("New songs first").performClick()
+        compose.runOnIdle { assertEquals(false, AppSettings.library.value.addNewSongsFirst) }
+    }
+
+    @Test fun newSongsFirstIsHiddenForSyncedPlaylistEvenWithoutPrivacy() {
+        LibraryStore.link(id, "PLcustom-test", null)
+        shoot("playlist/synced-insertion-order") { LocalPlaylistScreen(id, PaddingValues(), SongActions(null, false, { _, _, _, _ -> }, {}, {}), onBack = {}) }
+        compose.onNodeWithText("New songs first").assertDoesNotExist()
+    }
 
     @Test fun completedPlaylistCanOpenRemovalAndKeepItsDownloads() {
         Downloads.init(ApplicationProvider.getApplicationContext())
