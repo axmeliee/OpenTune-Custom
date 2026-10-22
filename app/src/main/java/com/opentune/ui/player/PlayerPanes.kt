@@ -326,12 +326,23 @@ fun PillButton(icon: ImageVector, label: String, selected: Boolean, onClick: () 
  * motion of its own as it changes.
  */
 @Composable
-fun ModesPill(shuffle: ShuffleMode, smartShuffleAvailable: Boolean, repeatMode: Int, onShuffle: () -> Unit, onRepeat: () -> Unit) {
+fun ModesPill(
+    shuffle: ShuffleMode,
+    smartShuffleAvailable: Boolean,
+    repeatMode: Int,
+    onShuffle: () -> Unit,
+    onRepeat: () -> Unit,
+    /** False where the caller draws the pill's fill itself (a fill that morphs between pills). */
+    filled: Boolean = true,
+) {
     val autoplay = AppSettings.playback.collectAsState().value.autoplay
     val haptics = com.opentune.ui.components.rememberHaptics()
     val context = LocalContext.current
     val shape = RoundedCornerShape(30.dp)
-    Row(Modifier.height(52.dp).clip(shape).background(MaterialTheme.colorScheme.surfaceContainerHigh), verticalAlignment = Alignment.CenterVertically) {
+    Row(
+        Modifier.height(52.dp).clip(shape).then(if (filled) Modifier.background(MaterialTheme.colorScheme.surfaceContainerHigh) else Modifier),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
         // Like repeat beside it, shuffle has a third state for a queue from a
         // playlist or album: off, shuffle, smart shuffle, then off again.
         PillSegment(

@@ -149,6 +149,33 @@ fun AppRoot(vm: PlayerViewModel) {
     // Scrolling any page down folds the bottom bar into one row; scrolling up unfolds it.
     val chromeScroll = rememberChromeScroll()
     val chromeUi by com.opentune.data.settings.AppSettings.ui.collectAsState()
+    // A page opened from inside the player (the artist, from a tap on their
+    // name) folds the player away; back from that page opens the player
+    // again, as it was left. Held: the page the player was over, and the page
+    // it opened, by back stack entry.
+    var playerReturn by remember { mutableStateOf<Pair<String, String>?>(null) }
+    val fromPlayer: (go: () -> Unit) -> Unit = remember(nav) {
+        { go ->
+            val wasOpen = playerOpen
+            val below = nav.currentBackStackEntry?.id
+            playerOpen = false
+            go()
+            val opened = nav.currentBackStackEntry?.id
+            playerReturn = if (wasOpen && below != null && opened != null && opened != below) below to opened else null
+        }
+    }
+    LaunchedEffect(nav) {
+        nav.currentBackStackEntryFlow.collect { entry ->
+            val (below, opened) = playerReturn ?: return@collect
+            if (opened in nav.stackIds()) return@collect
+            playerReturn = null
+            // Back to where the player was opened over: the player comes back too.
+            if (entry.id == below && vm.currentSong.value != null) {
+                if (!chromeUi.reduceAnimation) com.opentune.ui.components.PlayerMorph.openSheet()
+                playerOpen = true
+            }
+        }
+    }
 
     // A newer release on GitHub, offered with an Update button. Checked each
     // time the app comes to the front and hourly while it stays there (the
@@ -247,7 +274,7 @@ fun AppRoot(vm: PlayerViewModel) {
             playNext = { id -> withSongs(id) { songs -> songs.asReversed().forEach(vm::playNext); com.opentune.data.Pills.done("${songs.size} songs play next") } },
             addToQueue = { id -> withSongs(id) { songs -> songs.forEach(vm::addToQueue); com.opentune.data.Pills.done("${songs.size} songs added to the queue") } },
             downloadAll = { id -> withSongs(id) { songs -> songs.forEach { com.opentune.data.download.Downloads.enqueue(appContext.applicationContext, it) }; com.opentune.data.Pills.done("Downloading ${songs.size} songs") } },
-            open = { id, type -> playerOpen = false; nav.openBrowse(id, type) },
+            open = { id, type -> fromPlayer { nav.openBrowse(id, type) } },
         )
     }
     // `song` is read when a menu action runs, so the menu doesn't need rebuilding as songs change.
@@ -255,8 +282,8 @@ fun AppRoot(vm: PlayerViewModel) {
         playNext = vm::playNext,
         addToQueue = vm::addToQueue,
         startRadio = vm::startRadio,
-        openAlbum = { id -> playerOpen = false; nav.openBrowse(id, BrowseType.ALBUM) },
-        openArtist = { id -> playerOpen = false; nav.openBrowse(id, BrowseType.ARTIST) },
+        openAlbum = { id -> fromPlayer { nav.openBrowse(id, BrowseType.ALBUM) } },
+        openArtist = { id -> fromPlayer { nav.openBrowse(id, BrowseType.ARTIST) } },
         dislike = { s ->
             LibraryStore.dislike(s)
             if (s.videoId == song?.videoId) vm.skipNext()
@@ -284,8 +311,7 @@ fun AppRoot(vm: PlayerViewModel) {
                 if (id == null) {
                     com.opentune.data.Pills.error("Couldn't find ${s.artist}'s page")
                 } else {
-                    playerOpen = false
-                    nav.openBrowse(id, BrowseType.ARTIST)
+                    fromPlayer { nav.openBrowse(id, BrowseType.ARTIST) }
                 }
             }
         },
@@ -295,8 +321,7 @@ fun AppRoot(vm: PlayerViewModel) {
                 if (id == null) {
                     com.opentune.data.Pills.error("Couldn't find $name's page")
                 } else {
-                    playerOpen = false
-                    nav.openBrowse(id, BrowseType.ARTIST)
+                    fromPlayer { nav.openBrowse(id, BrowseType.ARTIST) }
                 }
             }
         },
@@ -436,6 +461,8 @@ fun AppRoot(vm: PlayerViewModel) {
         }
     }
     val selectTab: (Int) -> Unit = { i ->
+        // A tab chosen is somewhere new, not a way back to the player.
+        playerReturn = null
         val t = Tab.entries[i]
         when {
             // On the tab's root already: Home scrolls to the top and refreshes.
@@ -809,8 +836,8 @@ fun AppRoot(vm: PlayerViewModel) {
                     vm,
                     onCollapse = { playerOpen = false },
                     onCovering = { still = it },
-                    onTogether = { playerOpen = false; nav.navigate("together") },
-                    onEqualizer = { playerOpen = false; nav.navigate("equalizer") },
+                    onTogether = { fromPlayer { nav.navigate("together") } },
+                    onEqualizer = { fromPlayer { nav.navigate("equalizer") } },
                 )
             }
             if (sheetMorph) {
@@ -836,6 +863,10 @@ fun AppRoot(vm: PlayerViewModel) {
         }
     }
 }
+
+/** The ids of the entries on the back stack, top last. The whole stack is only public as this restricted, long-stable flow. */
+@android.annotation.SuppressLint("RestrictedApi")
+private fun NavHostController.stackIds(): List<String> = currentBackStack.value.map { it.id }
 
 private fun NavHostController.openBrowse(browseId: String, type: BrowseType = MusicRepository.typeOf(browseId)) {
     val route = when {

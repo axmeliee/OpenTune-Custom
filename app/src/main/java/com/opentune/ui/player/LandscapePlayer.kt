@@ -62,7 +62,7 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
-import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.animation.togetherWith
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -76,7 +76,7 @@ import com.opentune.ui.formatTime
 /**
  * The player on its side: the cover fills the left, and the right holds
  * where the sound is going, the song, a slim time bar, the line being sung
- * in a serif, the controls, the lines that come next and the volume.
+ * with the next under it, the controls and the volume.
  * Tap the line being sung for all the lyrics, or use the queue button;
  * either takes the cover's place on the left, and the same tap goes back.
  */
@@ -163,8 +163,9 @@ internal fun LandscapePlayer(
                 }
                 TimeBar(position, state.durationMs, actions.seekTo)
                 if (state.ui.sourcePill) SourceQualityBadge(song.videoId, state.audioFormat, onClick = onSignal, modifier = Modifier.align(Alignment.CenterHorizontally))
-                val lines = if (showLines) rememberLyricLines(state.lyrics, lyricsPosition) else "" to ""
-                LyricLine(lines.first, alpha = 0.92f, onLyrics)
+                // The line being sung and the next, together above the controls, in the lyrics' own type.
+                val lines = if (showLines) rememberLyricLines(state.lyrics, lyricsPosition) else null
+                if (lines != null) LyricsPeek(lines, next = roomy, animate = animate, onClick = onLyrics)
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
                     RoundIcon(if (liked) Icons.Rounded.Favorite else Icons.Rounded.FavoriteBorder, if (liked) "Unlike" else "Like", { haptics.pattern(if (liked) com.opentune.ui.components.Haptics.Pattern.OFF else com.opentune.ui.components.Haptics.Pattern.LIKE); onLike() }, tint = if (liked) scheme.primary else scheme.onSurface)
                     Row(horizontalArrangement = Arrangement.spacedBy(18.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -190,7 +191,6 @@ internal fun LandscapePlayer(
                     if (showCast) com.opentune.ui.cast.CastSheet(onDismiss = { showCast = false })
                 }
                 if (roomy) {
-                    LyricLine(lines.second, alpha = 0.55f, onLyrics, maxLines = 2)
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Box(Modifier.weight(1f)) { VolumeBar() }
                         RoundIcon(Icons.AutoMirrored.Rounded.QueueMusic, "Queue", onQueue)
@@ -203,33 +203,70 @@ internal fun LandscapePlayer(
     }
 }
 
-/** The line being sung and the two after it; empty without synced lyrics. */
+/** Where the song is in its synced lyrics: the line being sung and the one after it. */
+private data class PeekLines(val index: Int, val now: String, val next: String)
+
+/** The line being sung and the one after it; null without synced lyrics. */
 @Composable
-private fun rememberLyricLines(lyrics: LyricsState, position: () -> Long): Pair<String, String> {
+private fun rememberLyricLines(lyrics: LyricsState, position: () -> Long): PeekLines? {
     val pos by rememberUpdatedState(position)
     val synced = (lyrics as? LyricsState.Found)?.lyrics as? Lyrics.Synced
     val lines by remember(synced) {
         derivedStateOf {
             val list = synced?.lines?.filter { it.text.isNotBlank() }.orEmpty()
-            if (list.isEmpty()) return@derivedStateOf "" to ""
-            val p = pos()
-            val at = list.indexOfLast { it.startMs <= p }.coerceAtLeast(0)
-            list[at].text to list.drop(at + 1).take(2).joinToString("\n") { it.text }
+            if (list.isEmpty()) return@derivedStateOf null
+            val at = list.indexOfLast { it.startMs <= pos() }.coerceAtLeast(0)
+            PeekLines(at, list[at].text, list.getOrNull(at + 1)?.text.orEmpty())
         }
     }
     return lines
 }
 
+/**
+ * The lyrics in brief beside the cover: the line being sung, large and
+ * bright, and the next one dimmer under it. As a line starts, the pair
+ * slides up a step, so the next line rises into the lit place. Tapping
+ * opens all the lyrics.
+ */
 @Composable
-private fun LyricLine(text: String, alpha: Float, onClick: () -> Unit, maxLines: Int = 1) {
-    Text(
-        text.lowercase(),
-        style = MaterialTheme.typography.bodyLarge.copy(fontFamily = FontFamily.Serif, fontSize = 17.sp, lineHeight = 22.sp),
-        color = MaterialTheme.colorScheme.onSurface.copy(alpha = alpha),
-        maxLines = maxLines,
-        overflow = TextOverflow.Ellipsis,
-        modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(8.dp)).clickable(enabled = text.isNotEmpty(), onClick = onClick),
-    )
+private fun LyricsPeek(lines: PeekLines, next: Boolean, animate: Boolean, onClick: () -> Unit) {
+    val ink = MaterialTheme.colorScheme.onSurface
+    val now = com.opentune.ui.theme.LyricsTextStyle.copy(fontSize = 22.sp, lineHeight = 27.sp)
+    val after = now.copy(fontSize = 17.sp, lineHeight = 22.sp)
+    androidx.compose.animation.AnimatedContent(
+        targetState = lines,
+        contentKey = { it.index },
+        transitionSpec = {
+            (if (!animate) androidx.compose.animation.EnterTransition.None togetherWith androidx.compose.animation.ExitTransition.None
+            else {
+                val forward = targetState.index > initialState.index
+                (androidx.compose.animation.slideInVertically(androidx.compose.animation.core.spring(dampingRatio = 1f, stiffness = 380f)) { if (forward) it / 3 else -it / 3 } +
+                    androidx.compose.animation.fadeIn(androidx.compose.animation.core.tween(260, delayMillis = 60))) togetherWith
+                    (androidx.compose.animation.slideOutVertically(androidx.compose.animation.core.tween(240)) { if (forward) -it / 3 else it / 3 } +
+                        androidx.compose.animation.fadeOut(androidx.compose.animation.core.tween(180)))
+            }) using androidx.compose.animation.SizeTransform(clip = false) { _, _ -> androidx.compose.animation.core.snap() }
+        },
+        label = "peek",
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(12.dp))
+            .clickable(onClick = onClick)
+            .padding(vertical = 4.dp),
+    ) { shown ->
+        Column(Modifier.fillMaxWidth()) {
+            Text(shown.now, style = now, color = ink, maxLines = 2, overflow = TextOverflow.Ellipsis)
+            if (next && shown.next.isNotEmpty()) {
+                Text(
+                    shown.next,
+                    style = after,
+                    color = ink.copy(alpha = 0.45f),
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.padding(top = 6.dp),
+                )
+            }
+        }
+    }
 }
 
 /** Elapsed time, a slim bar to drag or tap, and the time left. */
