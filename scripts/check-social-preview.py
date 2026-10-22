@@ -33,7 +33,7 @@ def dimensions(data):
 
 def validate(html, data):
     meta = Metadata(html).meta
-    url = BASE + 'img/share-waveform-v2.jpg'
+    url = BASE + 'img/share-card-v3.jpg'
     assert meta['og:image'] == meta['og:image:secure_url'] == meta['twitter:image'] == url
     assert html.index('property="og:image"') < 4096, 'Place preview metadata before large embedded assets'
     assert meta['og:image:type'] == 'image/jpeg'
@@ -57,8 +57,8 @@ if __name__ == '__main__':
                 return response.headers.get_content_type(), response.read()
         kind, page = get(BASE)
         assert kind == 'text/html'
-        kind, data = get(BASE + 'img/share-waveform-v2.jpg')
+        kind, data = get(BASE + 'img/share-card-v3.jpg')
         assert kind == 'image/jpeg'
         validate(page.decode(), data)
     else:
-        validate((ROOT / 'site/index.html').read_text(), (ROOT / 'site/img/share-waveform-v2.jpg').read_bytes())
+        validate((ROOT / 'site/index.html').read_text(), (ROOT / 'site/img/share-card-v3.jpg').read_bytes())
