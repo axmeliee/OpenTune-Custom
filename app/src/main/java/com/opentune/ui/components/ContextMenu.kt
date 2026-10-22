@@ -1,5 +1,9 @@
 package com.opentune.ui.components
 
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.draw.drawWithContent
+import androidx.compose.ui.draw.drawBehind
+import kotlin.math.roundToInt
 import android.view.View
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
@@ -175,10 +179,33 @@ fun ContextMenu(anchor: Rect, onDismiss: () -> Unit, entries: List<MenuEntry>, p
                 val item = anchor.translate(-o.x, -o.y)
                 Layout(
                     content = {
-                        // The item, lifted out as a card of its own.
+                        // The item, lifted out as a card of its own. Its card (rounding,
+                        // shadow, fill, edge) comes and goes with the lift, so on the
+                        // way back it lands as the plain row it came from.
+                        val fill = MaterialTheme.colorScheme.surfaceContainerLow
+                        val edge = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.08f)
                         Box(
                             Modifier
-                                .shadowCard(RoundedCornerShape(26.dp))
+                                .graphicsLayer {
+                                    val k = shown.coerceIn(0f, 1f)
+                                    shape = RoundedCornerShape(26.dp * k)
+                                    clip = true
+                                    shadowElevation = 18.dp.toPx() * k
+                                }
+                                .drawBehind {
+                                    val k = shown.coerceIn(0f, 1f)
+                                    drawRect(fill.copy(alpha = fill.alpha * k))
+                                }
+                                .drawWithContent {
+                                    drawContent()
+                                    val k = shown.coerceIn(0f, 1f)
+                                    val r = 26.dp.toPx() * k
+                                    drawRoundRect(
+                                        edge.copy(alpha = edge.alpha * k),
+                                        cornerRadius = androidx.compose.ui.geometry.CornerRadius(r),
+                                        style = androidx.compose.ui.graphics.drawscope.Stroke(1.dp.toPx()),
+                                    )
+                                }
                                 .pointerInput(Unit) { detectTapGestures { } },
                         ) { preview() }
                         MenuCard(entries) { entry -> close(entry.onClick) }
@@ -194,7 +221,12 @@ fun ContextMenu(anchor: Rect, onDismiss: () -> Unit, entries: List<MenuEntry>, p
                     val itemX = item.left.toInt().coerceAtLeast(margin)
                     val itemW = (minOf(item.right.toInt(), w - margin) - itemX).coerceIn(1, w)
                     val itemH = item.height.toInt().coerceIn(1, h)
-                    val itemPlaceable = measurables[0].measure(Constraints.fixed(itemW, itemH))
+                    // Drawn into the margins as it lifts and back out as it lands, so the
+                    // last frame matches the row in the list exactly.
+                    val k = shown.coerceIn(0f, 1f)
+                    val liftX = (item.left + (itemX - item.left) * k).roundToInt()
+                    val liftW = (item.width + (itemW - item.width) * k).roundToInt().coerceIn(1, w)
+                    val itemPlaceable = measurables[0].measure(Constraints.fixed(liftW, itemH))
                     val menuW = minOf((w * 0.7f).toInt().coerceAtLeast(260.dp.roundToPx()), w - margin * 2)
                     val roomForMenu = (bottom - top - itemH - gap).coerceAtLeast(200.dp.roundToPx())
                     val menuPlaceable = measurables[1].measure(Constraints(minWidth = menuW, maxWidth = menuW, maxHeight = roomForMenu))
@@ -213,14 +245,17 @@ fun ContextMenu(anchor: Rect, onDismiss: () -> Unit, entries: List<MenuEntry>, p
                         .coerceIn(margin, (w - margin - menuW).coerceAtLeast(margin))
                     val menuOnTop = !below && above
                     layout(w, h) {
-                        val y = startY + ((itemY - startY) * shown).toInt()
-                        itemPlaceable.placeWithLayer(itemX, y) {
+                        // The slide is a float translation, not whole-pixel steps.
+                        val slide = (startY - itemY) * (1f - shown)
+                        itemPlaceable.placeWithLayer(liftX, itemY) {
+                            translationY = slide
                             val lift = 1f + 0.025f * shown
                             scaleX = lift
                             scaleY = lift
                         }
                         // Moves with the item while it slides, and grows out of the edge it hangs from.
-                        menuPlaceable.placeWithLayer(menuX, menuY + (y - itemY)) {
+                        menuPlaceable.placeWithLayer(menuX, menuY) {
+                            translationY = slide
                             alpha = shown.coerceIn(0f, 1f)
                             val s = 0.86f + 0.14f * shown
                             scaleX = s
@@ -238,17 +273,6 @@ fun ContextMenu(anchor: Rect, onDismiss: () -> Unit, entries: List<MenuEntry>, p
 }
 
 private const val CLOSE_MS = 190L
-
-/** The lifted item's card: dark, rounded, with a hairline edge and a soft shadow. */
-@Composable
-private fun Modifier.shadowCard(shape: RoundedCornerShape): Modifier {
-    val c = MaterialTheme.colorScheme
-    return this
-        .shadow(18.dp, shape)
-        .background(c.surfaceContainerLow, shape)
-        .border(1.dp, c.onSurface.copy(alpha = 0.08f), shape)
-        .clip(shape)
-}
 
 /** The menu's card: the top group on a lighter band, a thick rule, then the rest. Scrolls if it must. */
 @Composable
