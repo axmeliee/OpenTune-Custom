@@ -1,5 +1,8 @@
 package com.opentune.ui.player
 
+import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.layout.onSizeChanged
 import android.content.ClipData
 import android.content.res.Configuration
 import android.content.ClipboardManager
@@ -910,19 +913,51 @@ fun PlayerLayout(
                 Spacer(Modifier.height(10.dp))
                 Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                     GlassToggle(PlayerIcons.Lyrics, "Lyrics", pane == Pane.LYRICS, { toggle(Pane.LYRICS) })
-                    Box(Modifier.weight(1f), contentAlignment = Alignment.Center) {
-                        // A crossfade at the final size: no width animated a frame at a time under the controls.
+                    // One pill that morphs between the two sets of buttons: its fill
+                    // stretches or narrows to the new set and takes its colour, drawn
+                    // each frame without measuring anything again, while the buttons
+                    // fade across inside it.
+                    val inQueueNow = pane == Pane.QUEUE
+                    val pillFill by androidx.compose.animation.animateColorAsState(
+                        if (inQueueNow) MaterialTheme.colorScheme.surfaceContainerHigh else Color.White.copy(alpha = 0.14f),
+                        tween(if (state.ui.reduceAnimation) 0 else 280),
+                        label = "pillFill",
+                    )
+                    val pillWidth = remember { androidx.compose.animation.core.Animatable(0f) }
+                    var pillTarget by remember { mutableFloatStateOf(0f) }
+                    LaunchedEffect(pillTarget) {
+                        if (pillTarget <= 0f) return@LaunchedEffect
+                        if (pillWidth.value <= 0f || state.ui.reduceAnimation) pillWidth.snapTo(pillTarget)
+                        else pillWidth.animateTo(pillTarget, spring(dampingRatio = 0.82f, stiffness = 420f))
+                    }
+                    Box(
+                        Modifier.weight(1f).height(52.dp).drawBehind {
+                            val w = pillWidth.value
+                            if (w > 0f) drawRoundRect(
+                                pillFill,
+                                topLeft = androidx.compose.ui.geometry.Offset((size.width - w) / 2f, 0f),
+                                size = androidx.compose.ui.geometry.Size(w, size.height),
+                                cornerRadius = androidx.compose.ui.geometry.CornerRadius(size.height / 2f),
+                            )
+                        },
+                        contentAlignment = Alignment.Center,
+                    ) {
                         AnimatedContent(
-                            pane == Pane.QUEUE,
-                            transitionSpec = { (fadeIn(tween(220)) togetherWith fadeOut(tween(150))) using androidx.compose.animation.SizeTransform(clip = false) { _, _ -> androidx.compose.animation.core.snap() } },
+                            inQueueNow,
+                            transitionSpec = {
+                                (fadeIn(tween(220, delayMillis = 60)) + scaleIn(tween(260, easing = FastOutSlowInEasing), 0.9f)) togetherWith
+                                    (fadeOut(tween(140)) + scaleOut(tween(200), 0.9f)) using
+                                    androidx.compose.animation.SizeTransform(clip = false) { _, _ -> androidx.compose.animation.core.snap() }
+                            },
                             label = "pill",
                         ) { inQueue ->
+                            val measure = Modifier.onSizeChanged { if (inQueue == inQueueNow) pillTarget = it.width.toFloat() }
                             if (inQueue) {
-                                ModesPill(state.shuffleMode, state.smartShuffleAvailable, state.repeatMode, actions.toggleShuffle, actions.cycleRepeat)
+                                Box(measure) { ModesPill(state.shuffleMode, state.smartShuffleAvailable, state.repeatMode, actions.toggleShuffle, actions.cycleRepeat, filled = false) }
                             } else {
-                                // One translucent pill, its two halves split by a hairline.
+                                // Its two halves split by a hairline; the fill is the morphing one behind.
                                 Row(
-                                    Modifier.height(52.dp).clip(RoundedCornerShape(30.dp)).background(Color.White.copy(alpha = 0.14f)),
+                                    measure.height(52.dp).clip(RoundedCornerShape(30.dp)),
                                     verticalAlignment = Alignment.CenterVertically,
                                 ) {
                                     // Each half is the button: a press fills the half, not a circle round the icon.
