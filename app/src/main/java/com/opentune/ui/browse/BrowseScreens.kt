@@ -174,7 +174,14 @@ internal fun CollapsingBar(
                 actions()
                 Spacer(Modifier.width(8.dp))
             },
-            colors = TopAppBarDefaults.topAppBarColors(containerColor = Color.Transparent),
+            // White over the cover, where grey sank into its colours; the page's
+            // own text colour once the bar has frosted over the list.
+            colors = TopAppBarDefaults.topAppBarColors(
+                containerColor = Color.Transparent,
+                actionIconContentColor = androidx.compose.animation.animateColorAsState(
+                    if (collapsed) MaterialTheme.colorScheme.onSurface else Color.White, androidx.compose.animation.core.tween(260), label = "barIcons",
+                ).value,
+            ),
         )
     }
 }
@@ -528,12 +535,7 @@ fun CollectionScreen(
                                     if (own != null) com.opentune.ui.library.ListTools(
                                         c.songs, onAddSongs = null, Modifier.fillMaxWidth().padding(bottom = 16.dp),
                                         list = com.opentune.ui.library.DownloadedListInfo(c.browseId, c.title, c.subtitle, c.thumbnailUrl),
-                                        saved = saved,
-                                        onSave = {
-                                            com.opentune.data.library.LibraryStore.setSaved(
-                                                com.opentune.data.library.SavedList(c.browseId, c.title, c.subtitle, c.thumbnailUrl), !saved,
-                                            )
-                                        },
+                                        // No heart here: the plus beside Play already saves it.
                                         onShare = { own.share() },
                                         privacy = own.privacy,
                                         onPrivacy = { own.choose() },
