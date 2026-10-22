@@ -823,6 +823,9 @@ fun PlayerLayout(
                                                 val q = toQueue.value
                                                 val inView = if (queueSide) q else 1f - q
                                                 alpha = inView
+                                                // Faded per draw, not through a buffer the size of the pane,
+                                                // which would cut the blurred lines off at the page margin.
+                                                compositingStrategy = androidx.compose.ui.graphics.CompositingStrategy.ModulateAlpha
                                                 // Coming in from below; going out, lifting a little.
                                                 val arriving = shown == list
                                                 translationY = if (arriving) size.height * 0.22f * (1f - inView) else -size.height * 0.06f * (1f - inView)
